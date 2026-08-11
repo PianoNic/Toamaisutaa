@@ -49,8 +49,10 @@
 
   <ItemGroup>
     <None Include="$(MSBuildThisFileDirectory)LICENSE.md" Pack="true" PackagePath="" Visible="false" />
-    <None Include="$(MSBuildThisFileDirectory)README.md" Pack="true" PackagePath="" Visible="false" />
     <None Include="$(MSBuildThisFileDirectory)assets\icon.png" Pack="true" PackagePath="" Visible="false" />
   </ItemGroup>
+
+  <!-- The README is NOT here. Each package packs its own from its own directory, wired up in
+       Directory.Build.targets - see the comment there for why it has to be a .targets file. -->
 
 </Project>
