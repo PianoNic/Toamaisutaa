@@ -1,16 +1,13 @@
 <Project Sdk="Microsoft.NET.Sdk">
-
   <PropertyGroup>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
+    <Description>Entity Framework Core storage for Toamaisutaa: users, external logins, password credentials, refresh tokens and password reset tokens, with public entity configurations you can apply to your own DbContext or a ready-made ToamaisutaaDbContext.</Description>
   </PropertyGroup>
-
   <ItemGroup>
     <ProjectReference Include="..\Toamaisutaa.Core\Toamaisutaa.Core.csproj" />
   </ItemGroup>
-
   <ItemGroup>
     <PackageReference Include="Microsoft.EntityFrameworkCore.Relational" />
   </ItemGroup>
-
 </Project>

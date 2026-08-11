@@ -10,19 +10,38 @@
   <PropertyGroup>
     <Version>0.1.0</Version>
     <Authors>Pianonic</Authors>
+    <Company>Pianonic</Company>
+    <Product>Toamaisutaa</Product>
     <Copyright>Copyright (c) 2026 Pianonic</Copyright>
     <PackageProjectUrl>https://github.com/PianoNic/Toamaisutaa</PackageProjectUrl>
     <RepositoryUrl>https://github.com/PianoNic/Toamaisutaa</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <!-- PolyForm Noncommercial is not OSI-approved, so it cannot be expressed as a licence
+         expression. The file is packed at the root instead. -->
     <PackageLicenseFile>LICENSE.md</PackageLicenseFile>
     <PackageReadmeFile>README.md</PackageReadmeFile>
-    <!-- Waiting on assets/icon.png. Restore this together with the None item below. -->
-    <!-- <PackageIcon>icon.png</PackageIcon> -->
+    <PackageTags>authentication;oidc;openid-connect;jwt;bearer;aspnetcore;identity;login;password;efcore</PackageTags>
+    <!-- Moves as a pair with the None item below: the property names the file, the item puts it in
+         the package, and packing with one and not the other fails. -->
+    <PackageIcon>icon.png</PackageIcon>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <!-- The XML comments are where the reasoning lives, so ship them: they are what a consumer sees
+         in IntelliSense. CS1591 is off because a docless public member is not worth failing a build
+         over. -->
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
+    <IncludeSymbols>true</IncludeSymbols>
+    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
+    <PublishRepositoryUrl>true</PublishRepositoryUrl>
+    <EmbedUntrackedSources>true</EmbedUntrackedSources>
   </PropertyGroup>
 
   <ItemGroup>
     <None Include="$(MSBuildThisFileDirectory)LICENSE.md" Pack="true" PackagePath="" Visible="false" />
     <None Include="$(MSBuildThisFileDirectory)README.md" Pack="true" PackagePath="" Visible="false" />
-    <!-- <None Include="$(MSBuildThisFileDirectory)assets\icon.png" Pack="true" PackagePath="" Visible="false" /> -->
+    <None Include="$(MSBuildThisFileDirectory)assets\icon.png" Pack="true" PackagePath="" Visible="false" />
   </ItemGroup>
 
 </Project>

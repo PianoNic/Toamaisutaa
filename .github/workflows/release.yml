@@ -1,0 +1,85 @@
+# Publishes to nuget.org with Trusted Publishing: no API key is stored anywhere, and none should be
+# added. The workflow asks GitHub for a short-lived OIDC token, nuget.org checks it against a policy,
+# and hands back an API key valid for one hour.
+#
+# The policy on nuget.org names this file BY NAME and has NO environment. So:
+#
+#   * Renaming this file breaks publishing until the policy is updated on nuget.org.
+#   * Adding `environment:` to the publish job breaks publishing, because the policy has none and a
+#     mismatch in either direction fails the trust check. Removing one it expects fails the same way.
+#   * `permissions: id-token: write` is what lets the job request the token at all.
+#
+# Policy: owner PianoNic, repository Toamaisutaa, workflow release.yml, no environment.
+# https://learn.microsoft.com/nuget/nuget-org/trusted-publishing
+
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+
+    permissions:
+      id-token: write   # request the OIDC token nuget.org exchanges for a short-lived key
+      contents: write   # create the GitHub release
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Restore
+        run: dotnet restore Toamaisutaa.slnx
+
+      - name: Build
+        run: dotnet build Toamaisutaa.slnx --configuration Release --no-restore
+
+      - name: Test
+        run: dotnet run --project src/Toamaisutaa.Core.Tests/Toamaisutaa.Core.Tests.csproj --configuration Release --no-build
+
+      # The tag is the version. v0.1.0 packs 0.1.0, so the tag and the package can never disagree.
+      # Per-project rather than per-solution: pack on a solution warns for every project that is
+      # deliberately not packable, and that warning carries no code, so it cannot be suppressed.
+      - name: Pack
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          echo "Packing $VERSION"
+          for project in src/Toamaisutaa.*/Toamaisutaa.*.csproj; do
+            case "$project" in *Tests*) continue ;; esac
+            dotnet pack "$project" --configuration Release --no-build --output artifacts -p:Version="$VERSION"
+          done
+
+      # Requested immediately before the push: the key it returns lives for one hour.
+      - name: NuGet login
+        uses: NuGet/login@v1
+        id: login
+        with:
+          user: ${{ vars.NUGET_USER || 'PianoNic' }}
+
+      # --skip-duplicate so re-running a release that partly succeeded is not fatal. Symbol packages
+      # are pushed automatically alongside the package of the same name.
+      - name: Push
+        run: >
+          dotnet nuget push "artifacts/*.nupkg"
+          --api-key ${{ steps.login.outputs.NUGET_API_KEY }}
+          --source https://api.nuget.org/v3/index.json
+          --skip-duplicate
+
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >
+          gh release create "$GITHUB_REF_NAME"
+          --repo "$GITHUB_REPOSITORY"
+          --title "$GITHUB_REF_NAME"
+          --generate-notes
+          artifacts/*.nupkg

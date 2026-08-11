@@ -1,14 +1,12 @@
 <Project Sdk="Microsoft.NET.Sdk">
-
   <PropertyGroup>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
+    <Description>PostgreSQL migrations for the Toamaisutaa schema. Migrations are provider-specific and cannot share an assembly, so each provider ships its own.</Description>
   </PropertyGroup>
-
   <ItemGroup>
     <ProjectReference Include="..\Toamaisutaa.EntityFrameworkCore\Toamaisutaa.EntityFrameworkCore.csproj" />
   </ItemGroup>
-
   <ItemGroup>
     <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Design">
@@ -16,5 +14,4 @@
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
     </PackageReference>
   </ItemGroup>
-
 </Project>

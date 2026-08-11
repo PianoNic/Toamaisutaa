@@ -1,20 +1,22 @@
 <Project Sdk="Microsoft.NET.Sdk">
-
   <PropertyGroup>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
+    <Description>SQLite migrations for the Toamaisutaa schema. Migrations are provider-specific and cannot share an assembly, so each provider ships its own.</Description>
   </PropertyGroup>
-
   <ItemGroup>
     <ProjectReference Include="..\Toamaisutaa.EntityFrameworkCore\Toamaisutaa.EntityFrameworkCore.csproj" />
   </ItemGroup>
-
   <ItemGroup>
     <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" />
+    <!-- Referenced directly, and on purpose. Microsoft.EntityFrameworkCore.Sqlite pulls in
+         SQLitePCLRaw.lib.e_sqlite3 2.1.11, which carries GHSA-2m69-gcr7-jv3q. Naming it here forces
+         the patched version and, because it becomes a real dependency of this package, carries that
+         floor to anyone who installs it rather than fixing it only for our own build. -->
+    <PackageReference Include="SQLitePCLRaw.lib.e_sqlite3" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Design">
       <PrivateAssets>all</PrivateAssets>
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
     </PackageReference>
   </ItemGroup>
-
 </Project>

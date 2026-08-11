@@ -1,0 +1,49 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Restore
+        run: dotnet restore Toamaisutaa.slnx
+
+      - name: Build
+        run: dotnet build Toamaisutaa.slnx --configuration Release --no-restore
+
+      # TUnit is a self-hosting test executable, so it runs rather than being driven by VSTest.
+      - name: Test
+        run: dotnet run --project src/Toamaisutaa.Core.Tests/Toamaisutaa.Core.Tests.csproj --configuration Release --no-build
+
+      # Packing on every build is the only thing that catches a broken icon path, a missing licence
+      # file or a bad dependency group before a tag does. Per-project rather than per-solution: pack
+      # on a solution warns for every project that is deliberately not packable, and that warning
+      # carries no code, so it cannot be suppressed.
+      - name: Pack
+        run: |
+          for project in src/Toamaisutaa.*/Toamaisutaa.*.csproj; do
+            case "$project" in *Tests*) continue ;; esac
+            dotnet pack "$project" --configuration Release --no-build --output artifacts
+          done
+
+      - name: Upload packages
+        uses: actions/upload-artifact@v4
+        with:
+          name: packages
+          path: artifacts/*

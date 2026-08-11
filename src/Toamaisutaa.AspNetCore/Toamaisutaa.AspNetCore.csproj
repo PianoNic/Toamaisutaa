@@ -1,16 +1,13 @@
 <Project Sdk="Microsoft.NET.Sdk">
-
   <PropertyGroup>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
+    <Description>ASP.NET Core integration for Toamaisutaa: the authenticated-by-default authorization policy, ICurrentUser, the runtime OIDC configuration endpoint a SPA reads at startup, and the local username and password sign-in endpoints.</Description>
   </PropertyGroup>
-
   <ItemGroup>
     <ProjectReference Include="..\Toamaisutaa.Core\Toamaisutaa.Core.csproj" />
   </ItemGroup>
-
   <ItemGroup>
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
   </ItemGroup>
-
 </Project>

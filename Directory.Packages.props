@@ -2,7 +2,10 @@
 
   <PropertyGroup>
     <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
-    <CentralPackageTransitivePinningEnabled>true</CentralPackageTransitivePinningEnabled>
+    <!-- Transitive pinning is deliberately OFF. It works, but it publishes every pinned transitive
+         package as a direct dependency of ours, so the gallery would show Toamaisutaa.EntityFrameworkCore
+         depending on four Microsoft.Extensions packages it never references. Where a transitive
+         version genuinely has to be forced, the project references it explicitly and says why. -->
   </PropertyGroup>
 
   <ItemGroup>
