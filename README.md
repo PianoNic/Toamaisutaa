@@ -69,8 +69,8 @@ out, and no database at all.
 - **Local password login** - for deployments that cannot run an identity provider: PBKDF2 hashing
   with an optional pepper, rotating refresh tokens with reuse detection, lockout, and reset tokens.
   Off unless you ask for it.
-- **Its own migrations** - Postgres and SQLite, shipped, or apply the entity configurations to a
-  `DbContext` you already have.
+- **Its own migrations** - Postgres, SQLite, SQL Server and MySQL, shipped, or apply the entity
+  configurations to a `DbContext` you already have.
 - **No ASP.NET where it does not belong** - `Abstractions` and `Core` carry no web stack, so a domain
   project can depend on `ICurrentUser` without one.
 
@@ -85,6 +85,8 @@ out, and no database at all.
 | [`Toamaisutaa.EntityFrameworkCore`](https://www.nuget.org/packages/Toamaisutaa.EntityFrameworkCore) | Entities, configurations, stores, `ToamaisutaaDbContext` |
 | [`Toamaisutaa.EntityFrameworkCore.Migrations.Postgres`](https://www.nuget.org/packages/Toamaisutaa.EntityFrameworkCore.Migrations.Postgres) | The Postgres migration set |
 | [`Toamaisutaa.EntityFrameworkCore.Migrations.Sqlite`](https://www.nuget.org/packages/Toamaisutaa.EntityFrameworkCore.Migrations.Sqlite) | The SQLite migration set |
+| [`Toamaisutaa.EntityFrameworkCore.Migrations.SqlServer`](https://www.nuget.org/packages/Toamaisutaa.EntityFrameworkCore.Migrations.SqlServer) | The SQL Server migration set |
+| [`Toamaisutaa.EntityFrameworkCore.Migrations.MySql`](https://www.nuget.org/packages/Toamaisutaa.EntityFrameworkCore.Migrations.MySql) | The MySQL migration set |
 
 ## Documentation
 

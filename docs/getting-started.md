@@ -19,7 +19,7 @@ Plus, if you want a local user row or local password login:
 
 ```sh
 dotnet add package Toamaisutaa.EntityFrameworkCore
-dotnet add package Toamaisutaa.EntityFrameworkCore.Migrations.Postgres   # or .Sqlite
+dotnet add package Toamaisutaa.EntityFrameworkCore.Migrations.Postgres   # or .Sqlite, .SqlServer, .MySql
 ```
 
 `Toamaisutaa.Abstractions` and `Toamaisutaa.Core` arrive as dependencies. Reference `Abstractions`

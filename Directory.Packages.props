@@ -13,6 +13,12 @@
     <PackageVersion Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.10" />
     <PackageVersion Include="Microsoft.EntityFrameworkCore.Relational" Version="10.0.10" />
     <PackageVersion Include="Microsoft.EntityFrameworkCore.Sqlite" Version="10.0.10" />
+    <PackageVersion Include="Microsoft.EntityFrameworkCore.SqlServer" Version="10.0.10" />
+    <!-- Oracle's provider rather than Pomelo, which is the usual community pick: Pomelo has no EF
+         Core 10 release and its latest, 9.0.0, pins Microsoft.EntityFrameworkCore.Relational to
+         [9.0.0, 9.0.999], so it cannot coexist with the rest of this solution. Swap it when Pomelo
+         ships for EF 10 - it is a provider package and a regenerated migration, nothing more. -->
+    <PackageVersion Include="MySql.EntityFrameworkCore" Version="10.0.9" />
     <PackageVersion Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.10" />
     <PackageVersion Include="Microsoft.Extensions.Hosting.Abstractions" Version="10.0.10" />
     <PackageVersion Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.10" />
