@@ -1,0 +1,37 @@
+{
+  "interactiveLogin": false,
+  "tokenCallbacks": [
+    {
+      "issuerId": "default",
+      "tokenExpiry": 3600,
+      "requestMappings": [
+        {
+          "requestParam": "client_id",
+          "match": "toamaisutaa-sample",
+          "claims": {
+            "sub": "sample-admin",
+            "name": "Demo Admin",
+            "preferred_username": "admin",
+            "email": "admin@toamaisutaa.local",
+            "email_verified": true,
+            "picture": "https://api.dicebear.com/9.x/thumbs/svg?seed=admin",
+            "aud": [ "toamaisutaa-sample" ],
+            "roles": [ "admin" ]
+          }
+        },
+        {
+          "requestParam": "client_id",
+          "match": "toamaisutaa-viewer",
+          "claims": {
+            "sub": "sample-viewer",
+            "name": "Demo Viewer",
+            "preferred_username": "viewer",
+            "email": "viewer@toamaisutaa.local",
+            "email_verified": true,
+            "aud": [ "toamaisutaa-sample" ]
+          }
+        }
+      ]
+    }
+  ]
+}

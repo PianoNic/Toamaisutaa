@@ -4,6 +4,8 @@
 	<Project Path="src/Toamaisutaa.Core.Tests/Toamaisutaa.Core.Tests.csproj" />
 	<Project Path="src/Toamaisutaa.Core/Toamaisutaa.Core.csproj" />
 	<Project Path="src/Toamaisutaa.EntityFrameworkCore/Toamaisutaa.EntityFrameworkCore.csproj" />
+	<Project Path="src/Toamaisutaa.EntityFrameworkCore.Migrations.Postgres/Toamaisutaa.EntityFrameworkCore.Migrations.Postgres.csproj" />
+	<Project Path="src/Toamaisutaa.EntityFrameworkCore.Migrations.Sqlite/Toamaisutaa.EntityFrameworkCore.Migrations.Sqlite.csproj" />
 	<Project Path="src/Toamaisutaa.OpenIdConnect/Toamaisutaa.OpenIdConnect.csproj" />
 	<Folder Name="/samples/">
 		<Project Path="samples/MinimalApiSample/MinimalApiSample.csproj" />
