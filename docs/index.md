@@ -25,7 +25,7 @@ features:
   - title: Local login when you need it
     details: Username and password sign-in for deployments that cannot run an identity provider, with rotating refresh tokens and lockout.
   - title: Bring your own database
-    details: Postgres and SQLite migrations ship with the package, or apply the entity configurations to a DbContext you already have.
+    details: Postgres, SQLite, SQL Server and MySQL migrations ship with the package, or apply the entity configurations to a DbContext you already have.
   - title: Optional user table
     details: Provisioning is opt-in. The package works perfectly well when the identity provider owns every user and you store nothing.
 ---

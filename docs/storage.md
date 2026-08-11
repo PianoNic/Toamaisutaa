@@ -38,12 +38,38 @@ packages only cover `ToamaisutaaDbContext`.
 EF Core cannot hold two providers' migration sets and model snapshots in one assembly. So each
 provider gets its own package, and the consumer names it:
 
+| Provider | Package | Options call | Migrations assembly |
+|---|---|---|---|
+| PostgreSQL | `…Migrations.Postgres` | `UseNpgsql` | `Toamaisutaa.EntityFrameworkCore.Migrations.Postgres` |
+| SQLite | `…Migrations.Sqlite` | `UseSqlite` | `Toamaisutaa.EntityFrameworkCore.Migrations.Sqlite` |
+| SQL Server | `…Migrations.SqlServer` | `UseSqlServer` | `Toamaisutaa.EntityFrameworkCore.Migrations.SqlServer` |
+| MySQL | `…Migrations.MySql` | `UseMySQL` | `Toamaisutaa.EntityFrameworkCore.Migrations.MySql` |
+
 ```csharp
-npgsql => npgsql.MigrationsAssembly("Toamaisutaa.EntityFrameworkCore.Migrations.Postgres")
-sqlite => sqlite.MigrationsAssembly("Toamaisutaa.EntityFrameworkCore.Migrations.Sqlite")
+// PostgreSQL
+db.UseNpgsql(cs, o => o.MigrationsAssembly("Toamaisutaa.EntityFrameworkCore.Migrations.Postgres"));
+
+// SQL Server
+db.UseSqlServer(cs, o => o.MigrationsAssembly("Toamaisutaa.EntityFrameworkCore.Migrations.SqlServer"));
+
+// MySQL
+db.UseMySQL(cs, o => o.MigrationsAssembly("Toamaisutaa.EntityFrameworkCore.Migrations.MySql"));
+
+// SQLite
+db.UseSqlite(cs, o => o.MigrationsAssembly("Toamaisutaa.EntityFrameworkCore.Migrations.Sqlite"));
 ```
 
-Postgres and SQLite ship today. SQL Server would be a third package, not a change to these two.
+Install only the one you use. Each pulls its own database driver, and none of them is a dependency
+of `Toamaisutaa.EntityFrameworkCore` itself.
+
+### A note on the MySQL provider
+
+The MySQL package builds on Oracle's `MySql.EntityFrameworkCore`, not the more commonly used
+[Pomelo](https://github.com/PomeloFoundation/Pomelo.EntityFrameworkCore.MySql). That is not a
+judgement about either: Pomelo has no EF Core 10 release, and its latest version pins
+`Microsoft.EntityFrameworkCore.Relational` to `[9.0.0, 9.0.999]`, so it cannot coexist with the rest
+of this package. If Pomelo ships for EF Core 10 and you would rather use it, the swap is a provider
+package and a regenerated migration - nothing in the schema changes.
 
 ## The tables
 

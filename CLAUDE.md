@@ -65,15 +65,23 @@ The temptation recurs. The rule is the whole defence.
 
 ## Migrations
 
-Each provider has its own assembly and is its own design-time startup project. Regenerate both
-together or they drift:
+Each provider has its own assembly and is its own design-time startup project. There are four -
+Postgres, Sqlite, SqlServer, MySql - and a model change means regenerating **all four**, or they
+drift:
 
 ```
 dotnet ef migrations add <Name> \
-  --project src/Toamaisutaa.EntityFrameworkCore.Migrations.Postgres \
-  --startup-project src/Toamaisutaa.EntityFrameworkCore.Migrations.Postgres \
+  --project src/Toamaisutaa.EntityFrameworkCore.Migrations.<Provider> \
+  --startup-project src/Toamaisutaa.EntityFrameworkCore.Migrations.<Provider> \
   --context ToamaisutaaDbContext --output-dir Migrations
 ```
+
+`dotnet ef` builds Debug by default, so build Debug before passing `--no-build`, and rebuild after
+generating a migration or the next `database update` will not see it.
+
+Verify a new provider against a real server before shipping it - a migration that scaffolds is not a
+migration that applies. MySQL in particular has index key-length limits that a 256-character unique
+column can trip.
 
 Instants are stored as Unix milliseconds via `InstantConverters`, not as provider timestamps -
 SQLite cannot range-query a `DateTimeOffset`. Use the converter for any new timestamp column.
