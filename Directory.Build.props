@@ -1,25 +1,28 @@
 <Project>
+
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
     <LangVersion>latest</LangVersion>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
   </PropertyGroup>
+
+  <PropertyGroup>
+    <Version>0.1.0</Version>
+    <Authors>Pianonic</Authors>
+    <Copyright>Copyright (c) 2026 Pianonic</Copyright>
+    <PackageProjectUrl>https://github.com/PianoNic/Toamaisutaa</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/PianoNic/Toamaisutaa</RepositoryUrl>
+    <PackageLicenseFile>LICENSE.md</PackageLicenseFile>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <!-- Waiting on assets/icon.png. Restore this together with the None item below. -->
+    <!-- <PackageIcon>icon.png</PackageIcon> -->
+  </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="$(MSBuildThisFileDirectory)LICENSE.md" Pack="true" PackagePath="" Visible="false" />
+    <None Include="$(MSBuildThisFileDirectory)README.md" Pack="true" PackagePath="" Visible="false" />
+    <!-- <None Include="$(MSBuildThisFileDirectory)assets\icon.png" Pack="true" PackagePath="" Visible="false" /> -->
+  </ItemGroup>
+
 </Project>
-
-<PropertyGroup>
-  <Version>0.1.0</Version>
-  <Authors>Pianonic</Authors>
-  <Copyright>Copyright (c) 2026 Pianonic</Copyright>
-  <PackageProjectUrl>https://github.com/PianoNic/Toamaisutaa</PackageProjectUrl>
-  <RepositoryUrl>https://github.com/PianoNic/Toamaisutaa</RepositoryUrl>
-  <PackageLicenseFile>LICENSE.md</PackageLicenseFile>
-  <PackageReadmeFile>README.md</PackageReadmeFile>
-  <PackageIcon>icon.png</PackageIcon>
-</PropertyGroup>
-
-<ItemGroup>
-  <None Include="$(MSBuildThisFileDirectory)LICENSE.md" Pack="true" PackagePath="" />
-  <None Include="$(MSBuildThisFileDirectory)README.md" Pack="true" PackagePath="" />
-  <None Include="$(MSBuildThisFileDirectory)assets\icon.png" Pack="true" PackagePath="" />
-</ItemGroup>
