@@ -1,0 +1,17 @@
+<Project>
+
+  <!-- Every package ships its own README, packed from its own directory.
+
+       This is a .targets rather than a .props because it has to read IsPackable, and that is set in
+       the csproj - which MSBuild evaluates after Directory.Build.props and before this file.
+
+       There is deliberately no fallback to the repository README and no Exists() condition. A
+       packable project with no README.md next to it fails the pack with "File not found", which is
+       exactly what should happen: every package pointing at the root README is the bug this
+       replaces, and it was invisible for four releases precisely because nothing ever failed. -->
+
+  <ItemGroup Condition="'$(IsPackable)' != 'false'">
+    <None Include="README.md" Pack="true" PackagePath="" Visible="false" />
+  </ItemGroup>
+
+</Project>
