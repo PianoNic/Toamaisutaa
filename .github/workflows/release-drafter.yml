@@ -23,8 +23,36 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+
       - uses: release-drafter/release-drafter@v6
+        id: drafter
         with:
           config-name: release-drafter.yml
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # Publishing a draft creates the tag and starts release.yml in one click - there is no moment
+      # in between to bump the version. The draft targets refs/heads/main rather than a fixed commit,
+      # so the tag lands on whatever main's tip is at that instant, which means the bump has to be
+      # merged BEFORE publishing to be part of the released commit.
+      #
+      # This says so on every push to main, while there is still time to act on it. A warning rather
+      # than a failure: main is allowed to sit ahead of the declared version between releases.
+      - name: Check the declared version against the draft
+        env:
+          RESOLVED: ${{ steps.drafter.outputs.resolved_version }}
+        run: |
+          set -euo pipefail
+
+          DECLARED="$(grep -oP '(?<=<Version>)[^<]+' Directory.Build.props | head -n1)"
+
+          echo "Draft version:               ${RESOLVED:-<none>}"
+          echo "Directory.Build.props says:  $DECLARED"
+
+          if [ -z "${RESOLVED:-}" ]; then
+            echo "No draft version resolved; nothing to compare."
+          elif [ "$RESOLVED" = "$DECLARED" ]; then
+            echo "In sync. The draft can be published as it stands."
+          else
+            echo "::warning title=Version bump outstanding::The draft is v$RESOLVED but Directory.Build.props declares $DECLARED. Set <Version> to $RESOLVED and merge it BEFORE publishing the draft - publishing tags main's tip and starts the release in one action, and release.yml refuses to publish while the two disagree."
+          fi
