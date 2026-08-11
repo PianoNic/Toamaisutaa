@@ -63,7 +63,9 @@ Then the same for `.Sqlite`. Both must be regenerated together, or the two provi
 
 ## Documentation
 
-This site is VitePress, self-contained in `docs/`:
+This site is VitePress, self-contained in `docs/`, and published to
+[docs.toamaisutaa.pianonic.ch](https://docs.toamaisutaa.pianonic.ch) by Cloudflare Pages - root
+directory `docs`, build `bun run build`, output `.vitepress/dist`:
 
 ```sh
 cd docs

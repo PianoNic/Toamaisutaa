@@ -9,7 +9,7 @@
   <a href="https://github.com/PianoNic/Toamaisutaa"><img src="https://badgetrack.pianonic.ch/badge?tag=toamaisutaa&label=visits&color=0d1117&style=flat" alt="visits" /></a>
   <a href="https://www.nuget.org/packages/Toamaisutaa.AspNetCore"><img src="https://img.shields.io/nuget/v/Toamaisutaa.AspNetCore?color=0d1117&label=NuGet" alt="NuGet" /></a>
   <a href="https://www.nuget.org/packages/Toamaisutaa.AspNetCore"><img src="https://img.shields.io/nuget/dt/Toamaisutaa.AspNetCore?color=0d1117&label=downloads" alt="downloads" /></a>
-  <a href="docs/getting-started.md"><img src="https://img.shields.io/badge/Getting--Started-Instructions-0d1117.svg" alt="Getting started" /></a>
+  <a href="https://docs.toamaisutaa.pianonic.ch/getting-started"><img src="https://img.shields.io/badge/Getting--Started-Instructions-0d1117.svg" alt="Getting started" /></a>
   <img src="https://img.shields.io/badge/.NET-10-0d1117.svg" alt=".NET 10" />
   <img src="https://img.shields.io/badge/Auth-OIDC-0d1117.svg" alt="OIDC" />
   <img src="https://img.shields.io/badge/License-PolyForm%20Noncommercial-0d1117.svg" alt="PolyForm Noncommercial" />
@@ -88,12 +88,14 @@ out, and no database at all.
 
 ## Documentation
 
-- [What is Toamaisutaa?](docs/intro.md)
-- [Getting started](docs/getting-started.md)
-- [OIDC bearer validation](docs/oidc.md)
-- [Local password login](docs/password-login.md)
-- [Storage and migrations](docs/storage.md)
-- [Developer setup](docs/dev-setup.md)
+**[docs.toamaisutaa.pianonic.ch](https://docs.toamaisutaa.pianonic.ch)**
+
+- [What is Toamaisutaa?](https://docs.toamaisutaa.pianonic.ch/intro)
+- [Getting started](https://docs.toamaisutaa.pianonic.ch/getting-started)
+- [OIDC bearer validation](https://docs.toamaisutaa.pianonic.ch/oidc)
+- [Local password login](https://docs.toamaisutaa.pianonic.ch/password-login)
+- [Storage and migrations](https://docs.toamaisutaa.pianonic.ch/storage)
+- [Developer setup](https://docs.toamaisutaa.pianonic.ch/dev-setup)
 
 ## Get started (development)
 
