@@ -51,7 +51,7 @@ app.MapToamaisutaaPasswordEndpoints();
 if (app.Environment.IsDevelopment())
     app.MapOpenApi().AllowAnonymous();
 
-app.MapGet("/api/public", () => "No token needed here.")
+app.MapGet("/api/public", () => "The gate stands open here. No token needed.")
     .AllowAnonymous()
     .WithName("Public");
 
@@ -71,17 +71,21 @@ app.MapGet("/api/me", async (ICurrentUser currentUser, CancellationToken cancell
 
 // Named policy from Oidc:AdminRole. Local accounts carry no roles until an IUserRoleProvider says
 // otherwise, so a locally issued token gets a 403 here - by design, and documented.
-app.MapGet("/api/admin", () => "You carry the admin role.")
+app.MapGet("/api/admin", () => "The gate master knows you. Come through.")
     .RequireAuthorization("Toamaisutaa.Admin")
     .WithName("Admin");
 
 app.Run();
 
-/// <summary>Stands in for whatever the application already uses to send mail.</summary>
+/// <summary>
+/// Stands in for whatever the application already uses to send mail. The token is the only thing
+/// here that matters, so it stays on its own and unadorned - paste it into /auth/password/reset.
+/// </summary>
 internal sealed class LoggingPasswordResetNotifier(ILogger<LoggingPasswordResetNotifier> logger) : IPasswordResetNotifier
 {
     public Task SendAsync(ToamaisutaaUser user, string resetToken, CancellationToken cancellationToken = default)
     {
+        logger.LogWarning("No postman in this sample, so the gate master reads it aloud.");
         logger.LogWarning("PASSWORD RESET for {Email}: token {Token}", user.Email, resetToken);
         return Task.CompletedTask;
     }

@@ -44,7 +44,9 @@ categories:
 
 change-template: '- $TITLE @$AUTHOR (#$NUMBER)'
 
-no-changes-template: 'No changes in this release.'
+# Nobody expects a joke here, which is the only reason it earns its place. Everything diagnostic
+# stays plain - see the personality rule in CLAUDE.md.
+no-changes-template: 'Nothing got through the gate this time.'
 
 # PRE-1.0. `breaking` and `major` resolve to MINOR here, and there is deliberately no major bucket.
 #

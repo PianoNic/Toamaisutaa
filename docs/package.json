@@ -1,0 +1,14 @@
+{
+  "name": "toamaisutaa-docs",
+  "private": true,
+  "type": "module",
+  "description": "Toamaisutaa documentation site (VitePress). Self-contained so Cloudflare Pages can build just this folder.",
+  "scripts": {
+    "dev": "vitepress dev",
+    "build": "vitepress build",
+    "preview": "vitepress preview"
+  },
+  "devDependencies": {
+    "vitepress": "^1.6.3"
+  }
+}
