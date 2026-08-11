@@ -1,6 +1,27 @@
-@MinimalApiSample_HostAddress = http://localhost:5203
+@host = http://localhost:5203
+@issuer = http://localhost:8080/default
 
-GET {{MinimalApiSample_HostAddress}}/weatherforecast/
-Accept: application/json
+### No token required.
+GET {{host}}/api/public
 
-###
+### What the SPA reads before anyone has signed in.
+GET {{host}}/api/app
+
+### Mint a token from the mock issuer. Copy access_token into @token below.
+POST {{issuer}}/token
+Content-Type: application/x-www-form-urlencoded
+
+grant_type=client_credentials&client_id=toamaisutaa-sample&client_secret=whatever&scope=openid profile email roles
+
+@token = paste-the-access-token-here
+
+### Provisions the local user on the first call, reads it on every one after.
+GET {{host}}/api/me
+Authorization: Bearer {{token}}
+
+### Requires the role named by Oidc:AdminRole.
+GET {{host}}/api/admin
+Authorization: Bearer {{token}}
+
+### Without a token: 401.
+GET {{host}}/api/me

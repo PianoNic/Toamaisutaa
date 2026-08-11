@@ -427,3 +427,8 @@ FodyWeavers.xsd
 *.msix
 *.msm
 *.msp
+
+# Sample database
+*.db
+*.db-shm
+*.db-wal
