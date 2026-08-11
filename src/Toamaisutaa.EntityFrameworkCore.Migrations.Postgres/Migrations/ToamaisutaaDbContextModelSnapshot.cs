@@ -27,15 +27,15 @@ namespace Toamaisutaa.EntityFrameworkCore.Migrations.Postgres.Migrations
                     b.Property<Guid>("Id")
                         .HasColumnType("uuid");
 
-                    b.Property<DateTimeOffset>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
+                    b.Property<long>("CreatedAt")
+                        .HasColumnType("bigint");
 
                     b.Property<string>("Issuer")
                         .HasMaxLength(512)
                         .HasColumnType("character varying(512)");
 
-                    b.Property<DateTimeOffset?>("LastSignInAt")
-                        .HasColumnType("timestamp with time zone");
+                    b.Property<long?>("LastSignInAt")
+                        .HasColumnType("bigint");
 
                     b.Property<string>("ProviderKey")
                         .IsRequired()
@@ -203,8 +203,8 @@ namespace Toamaisutaa.EntityFrameworkCore.Migrations.Postgres.Migrations
                     b.Property<Guid>("Id")
                         .HasColumnType("uuid");
 
-                    b.Property<DateTimeOffset>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
+                    b.Property<long>("CreatedAt")
+                        .HasColumnType("bigint");
 
                     b.Property<string>("DisplayName")
                         .HasMaxLength(256)
@@ -218,8 +218,8 @@ namespace Toamaisutaa.EntityFrameworkCore.Migrations.Postgres.Migrations
                         .HasMaxLength(2048)
                         .HasColumnType("character varying(2048)");
 
-                    b.Property<DateTimeOffset>("UpdatedAt")
-                        .HasColumnType("timestamp with time zone");
+                    b.Property<long>("UpdatedAt")
+                        .HasColumnType("bigint");
 
                     b.Property<string>("UserName")
                         .HasMaxLength(256)

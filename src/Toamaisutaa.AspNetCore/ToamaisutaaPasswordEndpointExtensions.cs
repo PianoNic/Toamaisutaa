@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using Toamaisutaa.Abstractions;
+using Toamaisutaa.AspNetCore;
 
 namespace Microsoft.AspNetCore.Builder;
 
@@ -12,8 +13,8 @@ public static class ToamaisutaaPasswordEndpointExtensions
     /// Maps the local sign-in endpoints under <c>LocalLogin:EndpointPrefix</c>.
     /// </summary>
     /// <remarks>
-    /// The rate limiting these carry needs <c>app.UseRateLimiter()</c> in the pipeline. Without it
-    /// the metadata is inert and the anonymous endpoints are unthrottled.
+    /// The anonymous endpoints throttle themselves through a limiter this package owns, so there is
+    /// no middleware for a consumer to remember to add.
     /// </remarks>
     public static IEndpointConventionBuilder MapToamaisutaaPasswordEndpoints(this IEndpointRouteBuilder endpoints)
     {
@@ -25,7 +26,7 @@ public static class ToamaisutaaPasswordEndpointExtensions
 
         group.MapPost("/login", LoginAsync)
             .AllowAnonymous()
-            .RequireRateLimiting(ToamaisutaaDefaults.PasswordEndpointRateLimitPolicy)
+            .AddEndpointFilter<PasswordRateLimitFilter>()
             .WithName("ToamaisutaaLogin");
 
         group.MapPost("/refresh", RefreshAsync)
@@ -41,7 +42,7 @@ public static class ToamaisutaaPasswordEndpointExtensions
         {
             group.MapPost("/register", RegisterAsync)
                 .AllowAnonymous()
-                .RequireRateLimiting(ToamaisutaaDefaults.PasswordEndpointRateLimitPolicy)
+                .AddEndpointFilter<PasswordRateLimitFilter>()
                 .WithName("ToamaisutaaRegister");
         }
 
@@ -53,7 +54,7 @@ public static class ToamaisutaaPasswordEndpointExtensions
 
         group.MapPost("/password/forgot", ForgotPasswordAsync)
             .AllowAnonymous()
-            .RequireRateLimiting(ToamaisutaaDefaults.PasswordEndpointRateLimitPolicy)
+            .AddEndpointFilter<PasswordRateLimitFilter>()
             .WithName("ToamaisutaaForgotPassword");
 
         group.MapPost("/password/reset", ResetPasswordAsync)

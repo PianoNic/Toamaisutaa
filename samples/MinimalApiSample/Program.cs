@@ -40,9 +40,6 @@ await using (var scope = app.Services.CreateAsyncScope())
 app.UseAuthentication();
 app.UseAuthorization();
 
-// Without this the rate limiting on the anonymous endpoints is inert metadata.
-app.UseRateLimiter();
-
 // What the SPA reads at startup to configure its OIDC client. Anonymous, since it is needed before
 // anyone has signed in.
 app.MapToamaisutaaConfiguration();

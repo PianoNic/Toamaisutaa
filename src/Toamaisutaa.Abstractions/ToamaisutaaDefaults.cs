@@ -23,7 +23,4 @@ public static class ToamaisutaaDefaults
     /// the identity provider's keys and refuse to validate one issuer's tokens with the other's
     /// key.</summary>
     public const string LocalSigningKeyId = "toamaisutaa-local";
-
-    /// <summary>Rate-limiting policy applied to the unauthenticated password endpoints.</summary>
-    public const string PasswordEndpointRateLimitPolicy = "Toamaisutaa.PasswordEndpoints";
 }

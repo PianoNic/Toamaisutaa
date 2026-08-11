@@ -570,19 +570,34 @@ Fixed for the three new tables by storing instants as Unix milliseconds through 
 (`InstantConverters`). The property stays a `DateTimeOffset`; only the column type changes, to
 `bigint`. It sorts identically on both providers and translates on both.
 
-**Phase 2's tables were left alone**, so this migration stays purely additive as promised. That
-leaves `ToamaisutaaUsers.CreatedAt`, `UpdatedAt` and `ToamaisutaaExternalLogins.CreatedAt`,
-`LastSignInAt` as timestamp columns that cannot be range-queried on SQLite. Nothing queries them
-that way today. The next person who writes "delete users who have not signed in for a year" will hit
-exactly this wall.
+**Resolved: unified now**, in this PR, on the grounds that nothing is published to NuGet so the only
+schemas that exist are dev databases, and half a schema being range-queryable reads as a bug to
+everyone who meets it later.
 
-Three options, and I would rather you picked than have me guess:
-- **Leave it.** Two column shapes in one schema, documented, and a trap waiting for a future query.
-- **Unify in a follow-up phase** with a migration that converts the Phase 2 columns. Postgres needs a
-  `USING` clause for `timestamptz` to `bigint`, so it is a hand-written migration, not a scaffolded
-  one. Correct, and not additive.
-- **Unify now**, before anything is published to NuGet, on the grounds that nobody has this schema in
-  production yet. Cheapest moment it will ever be, if that assumption holds.
+`ConvertTimestampsToUnixMilliseconds` moves `ToamaisutaaUsers.CreatedAt`, `UpdatedAt` and
+`ToamaisutaaExternalLogins.CreatedAt`, `LastSignInAt` onto the same representation. Both migrations
+are hand-written, for different reasons:
+
+- **Postgres** scaffolds `ALTER COLUMN ... TYPE bigint`, which the server refuses without a `USING`
+  clause because there is no implicit cast from a timestamp to an integer. It would fail on an empty
+  table just as surely as a full one. Replaced with explicit
+  `USING (EXTRACT(EPOCH FROM col) * 1000)::bigint`, which also keeps the existing values instead of
+  dropping them.
+- **SQLite** changes a column type by rebuilding the table and copying the old values across. A copy
+  alone moves ISO-8601 text into an integer column, where it stays text - column affinity only
+  converts what already looks like a number - and every later read fails. The scaffolded
+  `AlterColumn` calls are kept, with `UPDATE`s in front that rewrite the values first.
+
+Both were verified against populated databases rather than reasoned about: rows written in the old
+storage format through raw SQL, the migration applied, then read back through EF. On both providers
+`2026-03-14T15:09:26.535+02:00` came back as `2026-03-14T13:09:26.535+00:00` - same instant, offset
+normalised - and the range query that could not be translated before now returns rows.
+
+Two visible consequences, both documented on `InstantConverters` and in the README: the offset is
+discarded in favour of the instant, and the resolution drops to milliseconds
+(`.1683914` reads back as `.168`). Right for audit timestamps, wrong for anything whose offset
+carries meaning, and the sort of thing that is much cheaper to write down than to have someone
+discover.
 
 ### Everything else that deviated
 
@@ -611,9 +626,15 @@ Three options, and I would rather you picked than have me guess:
 8. **`IAccessTokenIssuer` is registered by `AddToamaisutaaBearer`**, and the password startup check
    requires it. Signing a token needs a JWT library, which `Core` does not carry, so the issuer lives
    in `OpenIdConnect` alongside the validation.
-9. **Rate limiting needs `app.UseRateLimiter()`.** `RequireRateLimiting` is inert metadata without
-   the middleware, and an endpoint mapping cannot add middleware to the pipeline. Documented on the
-   method and in the sample; there is no way to detect it at runtime, which I do not love.
+9. **Rate limiting is enforced inside the endpoints**, by a `PartitionedRateLimiter<HttpContext>`
+   the package owns and an endpoint filter, rather than by `RequireRateLimiting` plus
+   `UseRateLimiter()`. I checked whether `UseRateLimiter` leaves a marker in `app.Properties` the way
+   `UseAuthorization` does, so the omission could be caught at startup: it does not - it validates
+   services and adds the middleware, nothing else. So there was no way to fail fast on a forgotten
+   line, and for a security control on an anonymous endpoint "works because it is registered" beats
+   "works because someone read the documentation". The cost is the framework's metrics and its
+   configured rejection handling; `LocalLogin:RateLimit:Enabled` turns ours off for anyone who would
+   rather wire their own.
 
 ### A bug the tests caught
 

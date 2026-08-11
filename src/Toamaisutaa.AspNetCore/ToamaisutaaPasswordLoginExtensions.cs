@@ -1,5 +1,3 @@
-using Microsoft.AspNetCore.Builder;
-using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
@@ -63,8 +61,9 @@ public static class ToamaisutaaPasswordLoginExtensions
         services.TryAddScoped<IPasswordSignInService, PasswordSignInService>();
         services.TryAddScoped<IPasswordAccountService, PasswordAccountService>();
 
-        services.AddRateLimiter(limiter =>
-            limiter.AddPolicy<string, PasswordEndpointRateLimiterPolicy>(ToamaisutaaDefaults.PasswordEndpointRateLimitPolicy));
+        // Owned rather than delegated to the rate-limiting middleware, so that forgetting a call in
+        // Program.cs cannot silently leave the anonymous endpoints unthrottled.
+        services.TryAddSingleton<PasswordRateLimiter>();
 
         // A typed factory, not a plain one: TryAddEnumerable needs to know the implementation type
         // to tell this apart from every other hosted service.

@@ -25,6 +25,9 @@ public sealed class ToamaisutaaUserConfiguration : IEntityTypeConfiguration<Toam
         builder.Property(user => user.DisplayName).HasMaxLength(256);
         builder.Property(user => user.PictureUrl).HasMaxLength(2048);
 
+        builder.Property(user => user.CreatedAt).HasConversion(InstantConverters.Instant);
+        builder.Property(user => user.UpdatedAt).HasConversion(InstantConverters.Instant);
+
         // NOT UNIQUE, permanently, and not an oversight to be tidied up later.
         //
         // This model is multi-provider: one person with accounts at two identity providers is two

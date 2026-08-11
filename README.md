@@ -111,7 +111,6 @@ Opt in, on top of `AddToamaisutaaBearer`:
 builder.Services.AddToamaisutaaPasswordLogin(builder.Configuration);   // section "LocalLogin"
 builder.Services.AddSingleton<IPasswordResetNotifier, YourEmailSender>();
 
-app.UseRateLimiter();                     // required, see below
 app.MapToamaisutaaPasswordEndpoints();
 ```
 
@@ -162,8 +161,12 @@ who knows a user name can keep that person locked out. The alternative is an unt
 guessing oracle, which is worse. Per-IP rate limiting on the anonymous endpoints covers the other
 half.
 
-**Rate limiting needs `app.UseRateLimiter()`.** The endpoints carry the policy, but without the
-middleware in the pipeline that metadata does nothing and the anonymous endpoints are unthrottled.
+**Rate limiting is enforced by the endpoints themselves**, through a limiter this package owns,
+rather than by `RequireRateLimiting` plus the middleware. That is deliberate: the framework's
+version is metadata that does nothing unless the application also calls `UseRateLimiter()`, and
+there is no marker to detect the omission - so a forgotten line would leave anonymous endpoints
+silently unthrottled. The trade is losing the framework's metrics and its configured rejection
+handling. Set `LocalLogin:RateLimit:Enabled` to false if you would rather bring your own.
 
 **Registration reveals whether an account exists.** A taken user name answers 409. Hiding that needs
 an email round trip, and email delivery is deliberately not in this package. Registration is off by
@@ -205,6 +208,23 @@ delete; without it, plan to run `IRefreshTokenStore.DeleteExpiredAsync` from you
 | `LocalLogin:RateLimit:Enabled` | `true` | Per caller address, fixed window |
 | `LocalLogin:RateLimit:PermitLimit` / `Window` | `10` / `00:01:00` | |
 | `LocalLogin:TokenCleanupInterval` | `06:00:00` | Only used by `AddToamaisutaaTokenCleanup()` |
+
+## Timestamps
+
+Every instant in the schema is stored as Unix milliseconds in a signed integer column, not as a
+provider-native timestamp. SQLite has no timestamp type, so EF keeps a `DateTimeOffset` as text and
+then declines to translate `<` or `>` on it - correctly, since values written with different offsets
+do not sort right as strings. An integer sorts identically on both providers and can be
+range-queried on both.
+
+Two things change on a round trip, both on purpose:
+
+- **The offset is discarded and the instant is kept.** A value written as `12:00+02:00` reads back as
+  `10:00+00:00`: the same moment, described from UTC.
+- **The resolution is milliseconds.** `.1683914` reads back as `.168`.
+
+Both are right for audit timestamps, and both are visible enough that someone will notice, so they
+are stated here rather than left to be found.
 
 ## Notes for existing deployments
 
