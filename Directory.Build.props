@@ -8,6 +8,12 @@
   </PropertyGroup>
 
   <PropertyGroup>
+    <!-- The declared version. A release tag must match it exactly (release.yml refuses to publish
+         otherwise), and CI passes it back in as -p:Version so the tag is what gets stamped into
+         both the package and the assemblies. Locally it is what a plain `dotnet pack` produces, so
+         a local package and a CI one of the same version are the same thing.
+
+         To release: bump this, merge it, then publish the drafted release with the matching tag. -->
     <Version>0.1.0</Version>
     <Authors>Pianonic</Authors>
     <Company>Pianonic</Company>

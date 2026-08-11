@@ -1,3 +1,12 @@
+# Releasing, in order:
+#
+#   1. This drafts a release on every push to main and names it from the labels on the merged pull
+#      requests.
+#   2. Bump <Version> in Directory.Build.props to match that name, and merge it.
+#   3. Publish the draft. release.yml refuses to publish unless the two agree exactly, so step 2 is
+#      not optional - but it fails before anything reaches nuget.org, where a version can never be
+#      reused.
+
 name-template: 'v$RESOLVED_VERSION'
 
 categories:

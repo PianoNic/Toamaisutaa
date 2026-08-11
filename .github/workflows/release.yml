@@ -48,28 +48,18 @@ jobs:
         with:
           dotnet-version: '10.0.x'
 
-      - name: Restore
-        run: dotnet restore Toamaisutaa.slnx
-
-      - name: Build
-        run: dotnet build Toamaisutaa.slnx --configuration Release --no-restore
-
-      - name: Test
-        run: dotnet run --project src/Toamaisutaa.Core.Tests/Toamaisutaa.Core.Tests.csproj --configuration Release --no-build
-
-      # The tag is the version. v0.1.0 packs 0.1.0, so the tag and the package can never disagree.
-      # Per-project rather than per-solution: pack on a solution warns for every project that is
-      # deliberately not packable, and that warning carries no code, so it cannot be suppressed.
-      # Runs before anything is packed or pushed, because a version published to nuget.org can never
-      # be deleted or reused - only unlisted. Everything else in this workflow is repeatable; this is
-      # the one step that is not, so the tag has to prove itself first.
+      # FIRST, before anything is built, because the version it settles is then fed to every step
+      # below - and because a version published to nuget.org can never be deleted or reused, only
+      # unlisted. Everything else here is repeatable; the push is not.
       - name: Guard the release version
+        id: version
         env:
           TAG_NAME: ${{ github.event.release.tag_name }}
         run: |
           set -euo pipefail
 
           VERSION="${TAG_NAME#v}"
+          CORE="${VERSION%%-*}"                # 0.2.0-preview.1 -> 0.2.0
           DECLARED="$(grep -oP '(?<=<Version>)[^<]+' Directory.Build.props | head -n1)"
 
           echo "Release tag:                 $TAG_NAME"
@@ -81,20 +71,38 @@ jobs:
             exit 1
           fi
 
-          # Crossing a major version has to be a deliberate edit to the repository, not something a
-          # draft title can do on its own. Release Drafter proposes the tag; this decides whether it
-          # is allowed to become seven immutable packages.
-          if [ "${VERSION%%.*}" != "${DECLARED%%.*}" ]; then
+          # The whole version, not just the major. A tag of v0.2.0 against a declared 0.1.0 is
+          # exactly the mistake worth catching: it would publish packages nobody can correct, since
+          # a version on nuget.org cannot be reused. A prerelease suffix on the tag is allowed to
+          # differ, so v0.2.0-preview.1 ships from a declared 0.2.0 without a second edit.
+          if [ "$CORE" != "$DECLARED" ]; then
             echo "::error::Refusing to publish $VERSION while Directory.Build.props declares $DECLARED."
-            echo "::error::The major versions differ. If this is intentional, bump <Version> in Directory.Build.props first (and move 'breaking' back to the major bucket in .github/release-drafter.yml). If it is not, delete this release and the tag - nothing has been pushed."
+            echo "::error::Bump <Version> in Directory.Build.props to $CORE, merge it, then re-run this release. Nothing has been packed or pushed."
+            echo "::error::If crossing to 1.0, also move 'breaking' and 'major' into a major bucket in .github/release-drafter.yml."
             exit 1
           fi
 
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Restore
+        run: dotnet restore Toamaisutaa.slnx
+
+      # The version is passed to the BUILD, not only to the pack. Packing with -p:Version over an
+      # assembly compiled without it produces a package labelled with the tag containing a DLL
+      # stamped with whatever Directory.Build.props happened to say - a 0.2.0 package whose
+      # AssemblyVersion and FileVersion read 0.1.0.
+      - name: Build
+        run: dotnet build Toamaisutaa.slnx --configuration Release --no-restore -p:Version=${{ steps.version.outputs.version }}
+
+      - name: Test
+        run: dotnet run --project src/Toamaisutaa.Core.Tests/Toamaisutaa.Core.Tests.csproj --configuration Release --no-build -p:Version=${{ steps.version.outputs.version }}
+
+      # Per-project rather than per-solution: pack on a solution warns for every project that is
+      # deliberately not packable, and that warning carries no code, so it cannot be suppressed.
       - name: Pack
         env:
-          TAG_NAME: ${{ github.event.release.tag_name }}
+          VERSION: ${{ steps.version.outputs.version }}
         run: |
-          VERSION="${TAG_NAME#v}"
           echo "Packing $VERSION"
           for project in src/Toamaisutaa.*/Toamaisutaa.*.csproj; do
             case "$project" in *Tests*) continue ;; esac
