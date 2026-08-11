@@ -55,7 +55,7 @@ The salt handles the other half. Without one, identical passwords produce identi
 cracking one row cracks every account that shares that password and a precomputed table works
 against everybody at once. With one, each row has to be attacked on its own.
 
-#### The rule underneath, which is worth carrying
+#### The rule underneath
 
 This codebase uses both. Passwords go through 600,000 rounds of PBKDF2 with a salt; refresh tokens,
 password reset tokens and recovery codes are stored as a **plain, unsalted, single-round SHA-256**.
@@ -74,17 +74,30 @@ That is not an inconsistency, and the deciding question is always the same one:
 So: slow and salted when a human picked it, fast and plain when the random generator did. Reach for
 the expensive one by default, and be able to say why when you do not.
 
-### Passwords are hashed with PBKDF2, not Argon2id
+### Where PBKDF2 stops, and how to replace it
 
-PBKDF2-HMAC-SHA256 at 600,000 iterations, from the base class library. This is a dependency
-decision, not a cryptographic preference: nothing third-party belongs in the credential path of a
-library other people consume, and .NET has no in-box Argon2 - the runtime delegates primitives to
-the platform and only OpenSSL implements it, so there is none coming.
+PBKDF2 is **compute-hard but not memory-hard**: each guess costs processor time and almost no memory,
+which is the shape an attacker with a rack of GPUs is best equipped to parallelise. A memory-hard
+function - Argon2id is the usual choice - makes each guess claim real memory too, and that is
+materially harder to run thousands of at once. If you are protecting credentials whose loss would be
+serious, that difference is worth having.
 
-State the cost plainly: PBKDF2 is compute-hard, not memory-hard, so it is materially weaker than
-Argon2id against an attacker with GPUs. If you want Argon2, register your own `IPasswordHasher`.
-Every stored hash names the algorithm and parameters that produced it, so your rows and ours
-interoperate and each one is rewritten on the next successful login.
+It is not the default here for a dependency reason rather than a cryptographic one. PBKDF2 is in the
+base class library; .NET has no in-box Argon2, and none is coming, because the runtime delegates
+primitives to the platform and only OpenSSL implements it. Taking a third-party package into the
+credential path of a library other people install is a decision this package will not make on your
+behalf.
+
+So it is a seam instead. Register your own `IPasswordHasher` and it wins:
+
+```csharp
+builder.Services.AddSingleton<IPasswordHasher, YourArgon2Hasher>();
+builder.Services.AddToamaisutaaPasswordLogin(builder.Configuration);
+```
+
+Every stored hash is a PHC string naming the algorithm and parameters that produced it, so existing
+rows keep verifying and each one is rewritten under the new scheme on that user's next successful
+sign-in. There is no migration to run and no flag day.
 
 ### A pepper is available, and off by default
 

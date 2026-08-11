@@ -62,17 +62,12 @@ is why it is a status shape rather than a new status code: the branch is explici
 missed by a client that only checks for 200.
 :::
 
-### The challenge is not a JWT
+### The challenge is not a token
 
-It is 32 random bytes, stored as a SHA-256 hash, single-use, and valid for five minutes.
-
-A signed challenge would be *structurally* a valid bearer token, kept out of your API only by a
-validation rule - and rules are configuration a consumer can loosen. An opaque token cannot be
-presented as a bearer token at all. The bypass is impossible rather than defended against, which is
-a different and better property.
-
-There is still a test asserting that a challenge gets a 401 from an ordinary endpoint. Not because
-the design needs one, but because someone in two years may decide to "simplify" this into a JWT.
+It is 32 random bytes, stored as a SHA-256 hash, single-use, and valid for five minutes. It is not a
+JWT and carries no claims, so it cannot be presented as a bearer token to your API - an ordinary
+endpoint returns 401 no matter how your validation is configured. Treat it as a credential in
+transit: it is worth exactly one sign-in to whoever holds it.
 
 ## Recovery codes
 
@@ -109,9 +104,10 @@ in this package that cannot be a one-way function. AES-256-GCM, under **its own 
 }
 ```
 
-Not `LocalLogin:SigningKey`, for three reasons: a key used to sign and a key used to encrypt should
-not be the same bytes; the signing key may one day become an RSA private key for asymmetric
-validation, which cannot also be an AES key; and they rotate on completely different schedules.
+Use a different key from `LocalLogin:SigningKey`. They do different jobs, they rotate on different
+schedules - rotating a signing key signs people out for fifteen minutes, rotating this one means
+re-encrypting every enrolment - and a signing key may later need to be asymmetric, which an AES key
+cannot be.
 
 Rotate the same way as the pepper - move the old key into `TwoFactor:RetiredEncryptionKeys` under its
 version marker, set a new key and version, and rows re-encrypt themselves as people sign in.

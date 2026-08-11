@@ -19,8 +19,9 @@ dotnet run --project src/Toamaisutaa.Core.Tests/Toamaisutaa.Core.Tests.csproj
 
 The suite covers the parts with real branching: claims mapping and the display-name fallback chain,
 the provisioning and linking decision matrix, userinfo JSON flattening, password hashing including
-pepper rotation, lockout arithmetic, refresh rotation and reuse detection, and reset-token
-lifecycle.
+pepper rotation, lockout arithmetic, refresh rotation and reuse detection, reset-token lifecycle,
+and two-factor enrolment, challenge redemption, recovery codes and key rotation. TOTP is checked
+against the published RFC 6238 vectors rather than against its own output.
 
 ## Running the sample
 
@@ -59,7 +60,8 @@ dotnet ef migrations add YourMigration \
   --context ToamaisutaaDbContext --output-dir Migrations
 ```
 
-Then the same for `.Sqlite`. Both must be regenerated together, or the two providers drift.
+Then the same for `.Sqlite`, `.SqlServer` and `.MySql`. All four must be regenerated together, or
+the providers drift.
 
 ## Documentation
 

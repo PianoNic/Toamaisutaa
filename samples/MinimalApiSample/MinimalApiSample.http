@@ -78,6 +78,72 @@ Content-Type: application/json
 
 { "refreshToken": "{{refresh}}" }
 
+# ───────────────────────── two-factor authentication ─────────────────────────
+
+### Nothing enrolled yet.
+GET {{host}}/auth/2fa
+Authorization: Bearer {{token}}
+
+### A password-only token is refused here: the policy wants amr to contain mfa.
+GET {{host}}/api/sensitive
+Authorization: Bearer {{token}}
+
+### Begin. Returns the secret and an otpauth:// URI - scan it, or type the secret in by hand.
+### Nothing is enabled yet, and signing in is unchanged until the next request succeeds.
+POST {{host}}/auth/2fa/begin
+Authorization: Bearer {{token}}
+
+### Confirm with the code your authenticator is showing. Returns the recovery codes, once.
+POST {{host}}/auth/2fa/confirm
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+{ "code": "000000" }
+
+### Now log in again: 200, but with a challenge and no tokens.
+POST {{host}}/auth/login
+Content-Type: application/json
+
+{ "identifier": "nic@example.com", "password": "correct horse battery" }
+
+@challenge = paste-the-challenge-here
+
+### The challenge is not a bearer token. This is 401, and cannot be configured into working.
+GET {{host}}/api/me
+Authorization: Bearer {{challenge}}
+
+### Finish the sign-in. "code" takes a TOTP code or a recovery code - either shape works.
+POST {{host}}/auth/2fa/verify
+Content-Type: application/json
+
+{ "challenge": "{{challenge}}", "code": "000000" }
+
+@mfaToken = paste-the-new-accessToken-here
+
+### That token carries amr ["pwd","otp","mfa"], so the policy lets it through.
+GET {{host}}/api/sensitive
+Authorization: Bearer {{mfaToken}}
+
+### Present the same challenge again: 401. It was spent the moment it worked.
+POST {{host}}/auth/2fa/verify
+Content-Type: application/json
+
+{ "challenge": "{{challenge}}", "code": "000000" }
+
+### New codes, invalidating every previous one. Needs proof, same as disabling.
+POST {{host}}/auth/2fa/recovery-codes
+Content-Type: application/json
+Authorization: Bearer {{mfaToken}}
+
+{ "proof": "000000" }
+
+### Disabling needs a current code too: an authenticated session alone is not enough.
+POST {{host}}/auth/2fa/disable
+Content-Type: application/json
+Authorization: Bearer {{mfaToken}}
+
+{ "proof": "000000" }
+
 # ───────────────────────── identity provider ─────────────────────────
 
 ### Mint a token from the mock issuer. Copy access_token into @idpToken below.

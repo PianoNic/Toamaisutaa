@@ -37,8 +37,8 @@ app.MapToamaisutaaConfiguration();   // GET /api/app, for the SPA to read at sta
 ```
 
 That authenticates every endpoint by default, opts individual ones out with `[AllowAnonymous]`, and
-needs no database at all. Three of the four applications this was extracted from want nothing more
-than that.
+needs no database at all. For a resource server whose identity provider owns every user, that is the
+whole integration.
 
 Configuration lives under `Oidc`:
 
@@ -92,5 +92,6 @@ resolution, which is the only part with real logic in it, stays in one place eit
 ## The sample
 
 `samples/MinimalApiSample` in the repository runs the whole thing against a throwaway identity
-provider: an anonymous endpoint, a provisioning endpoint, an admin-only endpoint, the configuration
-endpoint, and the local sign-in endpoints. Four lines of Docker and a `dotnet run`.
+provider: an anonymous endpoint, a provisioning endpoint, an admin-only endpoint, one behind the
+two-factor policy, the configuration endpoint, and the local sign-in and two-factor endpoints. Four
+lines of Docker and a `dotnet run`.

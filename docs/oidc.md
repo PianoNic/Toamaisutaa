@@ -67,9 +67,10 @@ Results are cached per subject for `Oidc:UserInfoCacheDuration`. Set
 The default mapper reads `sub`, `preferred_username`, `email`, `name` and `picture`, with the
 display name falling back `name` → `preferred_username` → `email`.
 
-Claim types are the raw JWT names. Inbound claim mapping is **off and not configurable**: remapping
-to WS-Federation URIs while every other setting names raw JWT claims is how two of the four
-codebases this replaces ended up with a `NameClaimType` that matched nothing.
+Claim types are the raw JWT names. Inbound claim mapping is **off and not configurable**. .NET's
+default remaps claims to WS-Federation URIs, which leaves `Oidc:NameClaim` and `Oidc:RoleClaim`
+naming raw JWT claims that no longer exist on the principal - a `NameClaimType` that quietly matches
+nothing. Turning it off everywhere means one set of names, the issuer's.
 
 To map claims differently, register your own `IClaimsProfileMapper` before
 `AddToamaisutaaProvisioning()`. `DefaultClaimsProfileMapper` is public so you can delegate to it for
