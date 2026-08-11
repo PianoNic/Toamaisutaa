@@ -2,14 +2,17 @@
 # added. The workflow asks GitHub for a short-lived OIDC token, nuget.org checks it against a policy,
 # and hands back an API key valid for one hour.
 #
-# The policy on nuget.org names this file BY NAME and has NO environment. So:
+# The policy is active, and nuget.org has pinned the permanent GitHub numeric IDs rather than the
+# names: owner PianoNic (79938743) and repository Toamaisutaa (1330631134). That protects against
+# someone deleting the repository and recreating it under the same name, and it means renaming the
+# owner or the repository is safe. Two things are still matched as plain strings:
 #
-#   * Renaming this file breaks publishing until the policy is updated on nuget.org.
-#   * Adding `environment:` to the publish job breaks publishing, because the policy has none and a
-#     mismatch in either direction fails the trust check. Removing one it expects fails the same way.
-#   * `permissions: id-token: write` is what lets the job request the token at all.
+#   * THE NAME OF THIS FILE. A workflow file has no numeric id, so `release.yml` is compared
+#     literally. Renaming or moving it breaks publishing until the policy is updated on nuget.org.
+#   * The environment. The policy has none, so this job must not declare `environment:` - a mismatch
+#     in either direction fails the trust check, including adding one the policy does not expect.
 #
-# Policy: owner PianoNic, repository Toamaisutaa, workflow release.yml, no environment.
+# `permissions: id-token: write` is what lets the job request the token at all.
 # https://learn.microsoft.com/nuget/nuget-org/trusted-publishing
 
 name: Release
