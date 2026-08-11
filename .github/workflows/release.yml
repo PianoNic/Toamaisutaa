@@ -1,0 +1,173 @@
+# Publishes to nuget.org with Trusted Publishing: no API key is stored anywhere, and none should be
+# added. The workflow asks GitHub for a short-lived OIDC token, nuget.org checks it against a policy,
+# and hands back an API key valid for one hour.
+#
+# The policy is active, and nuget.org has pinned the permanent GitHub numeric IDs rather than the
+# names: owner PianoNic (79938743) and repository Toamaisutaa (1330631134). That protects against
+# someone deleting the repository and recreating it under the same name, and it means renaming the
+# owner or the repository is safe. Two things are still matched as plain strings:
+#
+#   * THE NAME OF THIS FILE. A workflow file has no numeric id, so `release.yml` is compared
+#     literally. Renaming or moving it breaks publishing until the policy is updated on nuget.org.
+#   * The environment. The policy has none, so this job must not declare `environment:` - a mismatch
+#     in either direction fails the trust check, including adding one the policy does not expect.
+#
+# `permissions: id-token: write` is what lets the job request the token at all.
+# https://learn.microsoft.com/nuget/nuget-org/trusted-publishing
+
+name: Release
+
+# Triggered by PUBLISHING a release, not by pushing a tag - the same shape the other repositories
+# use. Release Drafter keeps a draft up to date on every push to main; publishing that draft in the
+# UI is the deliberate act that runs this. Two consequences worth knowing:
+#
+#   * Nothing here creates a release. The draft already exists, with its notes and its tag, so this
+#     workflow attaches to it. Only one workflow ever owns the release object.
+#   * Pushing a tag on its own does nothing at all now.
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+
+    permissions:
+      id-token: write   # request the OIDC token nuget.org exchanges for a short-lived key
+      contents: write   # attach the packages to the release that triggered this
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      # FIRST, before anything is built, because the version it settles feeds every step below - and
+      # because a version published to nuget.org can never be deleted or reused, only unlisted.
+      # Everything else here is repeatable; the push is not.
+      #
+      # The tag is the only source of the version. Nothing in the repository has to be bumped to
+      # match it, so there is no commit to forget before publishing - which matters because
+      # publishing a draft creates the tag and starts this pipeline in a single click.
+      - name: Guard the release version
+        id: version
+        env:
+          TAG_NAME: ${{ github.event.release.tag_name }}
+        run: |
+          set -euo pipefail
+
+          VERSION="${TAG_NAME#v}"
+          echo "Release tag:        $TAG_NAME"
+          echo "Version to publish: $VERSION"
+
+          if ! printf '%s' "$VERSION" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$'; then
+            echo "::error::'$TAG_NAME' does not name a semantic version. Tag releases as vMAJOR.MINOR.PATCH."
+            exit 1
+          fi
+
+          # Crossing to 1.0 has to be a deliberate edit here, not something a draft title can do on
+          # its own. To release 1.0.0: drop this check and move 'breaking' and 'major' into a major
+          # bucket in .github/release-drafter.yml.
+          if [ "${VERSION%%.*}" != "0" ]; then
+            echo "::error::Refusing to publish $VERSION. This library is pre-1.0; releasing a 1.x version is a decision to make in the repository, not in a release title."
+            exit 1
+          fi
+
+          # What actually protects the release: nuget.org versions are immutable. Re-publishing one
+          # that already exists cannot be undone, and going backwards produces a package that no
+          # ordinary restore will ever pick. Ask nuget.org rather than trusting a file in the repo
+          # to be in step. Package ids come from the same glob the pack step uses, so a package
+          # added later is covered without editing this.
+          PUBLISHED=""
+          for project in src/Toamaisutaa.*/Toamaisutaa.*.csproj; do
+            case "$project" in *Tests*) continue ;; esac
+            id="$(basename "$project" .csproj | tr '[:upper:]' '[:lower:]')"
+            if body="$(curl -fsSL "https://api.nuget.org/v3-flatcontainer/$id/index.json" 2>/dev/null)"; then
+              PUBLISHED="$PUBLISHED$(printf '%s' "$body" | jq -r '.versions[]')"$'\n'
+            else
+              echo "  $id: never published"
+            fi
+          done
+
+          PUBLISHED="$(printf '%s' "$PUBLISHED" | grep -v '^$' | sort -Vu || true)"
+
+          if [ -z "$PUBLISHED" ]; then
+            echo "Nothing is published yet; $VERSION is the first release."
+            echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "Already on nuget.org: $(printf '%s' "$PUBLISHED" | tr '\n' ' ')"
+
+          if printf '%s\n' "$PUBLISHED" | grep -qxF "$VERSION"; then
+            echo "::error::$VERSION is already published on nuget.org. Versions there cannot be deleted or reused, only unlisted. Tag a new version."
+            exit 1
+          fi
+
+          HIGHEST="$(printf '%s\n' "$PUBLISHED" | tail -n1)"
+          if [ "$(printf '%s\n%s\n' "$HIGHEST" "$VERSION" | sort -V | tail -n1)" != "$VERSION" ]; then
+            echo "::error::$VERSION is not greater than $HIGHEST, which is already on nuget.org. A package that sorts below the latest is one no ordinary restore will resolve."
+            exit 1
+          fi
+
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Restore
+        run: dotnet restore Toamaisutaa.slnx
+
+      # The version is passed to the BUILD, not only to the pack. Packing with -p:Version over an
+      # assembly compiled without it produces a package labelled with the tag containing a DLL
+      # stamped with whatever Directory.Build.props happened to say - a 0.2.0 package whose
+      # AssemblyVersion and FileVersion read 0.1.0.
+      - name: Build
+        run: dotnet build Toamaisutaa.slnx --configuration Release --no-restore -p:Version=${{ steps.version.outputs.version }}
+
+      - name: Test
+        run: dotnet run --project src/Toamaisutaa.Core.Tests/Toamaisutaa.Core.Tests.csproj --configuration Release --no-build -p:Version=${{ steps.version.outputs.version }}
+
+      # Per-project rather than per-solution: pack on a solution warns for every project that is
+      # deliberately not packable, and that warning carries no code, so it cannot be suppressed.
+      - name: Pack
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          echo "Packing $VERSION"
+          for project in src/Toamaisutaa.*/Toamaisutaa.*.csproj; do
+            case "$project" in *Tests*) continue ;; esac
+            dotnet pack "$project" --configuration Release --no-build --output artifacts -p:Version="$VERSION"
+          done
+
+      # Requested immediately before the push: the key it returns lives for one hour.
+      - name: NuGet login
+        uses: NuGet/login@v1
+        id: login
+        with:
+          user: ${{ vars.NUGET_USER || 'PianoNic' }}
+
+      # --skip-duplicate so re-running a release that partly succeeded is not fatal. Symbol packages
+      # are pushed automatically alongside the package of the same name.
+      - name: Push
+        run: >
+          dotnet nuget push "artifacts/*.nupkg"
+          --api-key ${{ steps.login.outputs.NUGET_API_KEY }}
+          --source https://api.nuget.org/v3/index.json
+          --skip-duplicate
+
+      # Attaches to the release that triggered this run. Not `gh release create`: the release
+      # already exists, Release Drafter wrote its notes, and creating one here would either fail on
+      # the duplicate tag or replace notes somebody reviewed before publishing.
+      - name: Attach packages to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG_NAME: ${{ github.event.release.tag_name }}
+        run: >
+          gh release upload "$TAG_NAME"
+          --repo "$GITHUB_REPOSITORY"
+          --clobber
+          artifacts/*.nupkg

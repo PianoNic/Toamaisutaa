@@ -32,7 +32,10 @@ internal sealed class LocalAccessTokenIssuer(
 
     private readonly JsonWebTokenHandler _handler = new();
 
-    public AccessToken Issue(ToamaisutaaUser user, IReadOnlyList<string> roles)
+    public Task<AccessToken> IssueAsync(
+        ToamaisutaaUser user,
+        IReadOnlyList<string> roles,
+        CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(user);
 
@@ -68,7 +71,7 @@ internal sealed class LocalAccessTokenIssuer(
             TokenType = "at+jwt",
         };
 
-        return new AccessToken(_handler.CreateToken(descriptor), expires);
+        return Task.FromResult(new AccessToken(_handler.CreateToken(descriptor), expires));
     }
 
     internal static string? ResolveAudience(ToamaisutaaLocalLoginOptions local, ToamaisutaaOidcOptions oidc) =>

@@ -153,7 +153,7 @@ internal sealed class PasswordSignInService(
         CancellationToken cancellationToken)
     {
         var userRoles = await roles.GetRolesAsync(user, cancellationToken);
-        var access = accessTokens.Issue(user, userRoles);
+        var access = await accessTokens.IssueAsync(user, userRoles, cancellationToken);
 
         var raw = SecureTokens.Create();
 

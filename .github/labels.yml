@@ -1,0 +1,41 @@
+# The canonical label set, matching HOPPER and KRINT exactly, plus `breaking`.
+#
+# A deliberate addition: the other repositories keep their labels only on GitHub, and they have
+# drifted apart as a result - CommandBlock gives `feature` the same colour as `enhancement`, which
+# makes the two indistinguishable in the UI, and gaggaotaku has neither. Writing the set down is
+# what stops that happening again.
+#
+# Nothing syncs this automatically. It is the reference; `gh label create` / `gh label edit` apply
+# it, and a label-sync action can be added later if that becomes tedious.
+
+- name: breaking
+  color: B60205
+  description: A change that alters the public API and requires consumers to update
+
+- name: feature
+  color: 0052CC
+  description: Introduction of a new capability or function to the project
+
+- name: enhancement
+  color: a2eeef
+  description: Requests or changes aimed at improving existing functionality or user experience
+
+- name: bug
+  color: d73a4a
+  description: A defect or issue in the code causing unintended behavior or errors
+
+- name: refactor
+  color: D93F0B
+  description: Changes that improve code structure, readability, or performance without altering functionality
+
+- name: documentation
+  color: 318BCB
+  description: Problems or improvements related to project documentation
+
+- name: CI/CD
+  color: 8834EF
+  description: Continuous Integration/Continuous Deployment-related issues or tasks
+
+- name: duplicate
+  color: cfd3d7
+  description: This issue or pull request already exists

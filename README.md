@@ -19,6 +19,29 @@ conservative rather than convenient.
 Server-side interactive sign-in and two-factor authentication are later phases and are deliberately
 absent rather than stubbed.
 
+## Before you install
+
+- **Requires .NET 10.** Every package targets `net10.0` and nothing older.
+- **Licence: PolyForm Noncommercial 1.0.0.** Free for noncommercial use; commercial use needs a
+  separate licence from the author. It is not an OSI-approved open-source licence, so read
+  `LICENSE.md` before you build a business on it.
+- **Version 0.1.0.** The shape is settled enough to use and not yet settled enough to promise: expect
+  breaking changes in the public interfaces before 1.0, particularly in the store interfaces as
+  two-factor authentication lands.
+
+```sh
+# A resource server validating tokens from your identity provider:
+dotnet add package Toamaisutaa.OpenIdConnect
+dotnet add package Toamaisutaa.AspNetCore
+
+# Plus, if you want a local user row, or local password login:
+dotnet add package Toamaisutaa.EntityFrameworkCore
+dotnet add package Toamaisutaa.EntityFrameworkCore.Migrations.Postgres   # or .Sqlite
+```
+
+`Toamaisutaa.Abstractions` and `Toamaisutaa.Core` come along as dependencies; reference
+`Abstractions` directly from a domain project that wants `ICurrentUser` without ASP.NET.
+
 ## Packages
 
 | Package | Contains |

@@ -1,0 +1,79 @@
+# Releasing, in order:
+#
+#   1. This drafts a release on every push to main and names it from the labels on the merged pull
+#      requests.
+#   2. Publish the draft. That is the whole procedure - nothing in the repository has to be bumped
+#      first. The tag is the only source of the version; release.yml passes it to build and pack,
+#      and refuses to publish a version that is already on nuget.org or that goes backwards.
+#
+# One thing worth knowing about drafts: this stores target_commitish as refs/heads/main, a BRANCH,
+# not a pinned commit. GitHub resolves it when you publish, so the tag lands on whatever main's tip
+# is at that moment - anything merged between the draft appearing and you publishing it is included
+# in the release, whether or not it is mentioned in the notes. That is usually what you want, and it
+# surprises people who assume a draft is a snapshot.
+
+name-template: 'v$RESOLVED_VERSION'
+
+categories:
+  # Not in the other repos' configs, and added here because this ships a public API rather than an
+  # application. Those configs list `breaking` and `major` under version-resolver only, so a
+  # breaking pull request bumps the version and then appears in the notes with no heading saying
+  # what it broke. First, because it is the one section a consumer must read.
+  - title: '⚠️ Breaking Changes'
+    labels:
+      - 'breaking'
+      - 'major'
+  - title: '🚀 Features'
+    labels:
+      - 'feature'
+  - title: '✨ Enhancements'
+    labels:
+      - 'enhancement'
+  - title: '🐛 Bug Fixes'
+    labels:
+      - 'bug'
+  - title: '🛠️ Refactors'
+    labels:
+      - 'refactor'
+  - title: '📚 Documentation'
+    labels:
+      - 'documentation'
+  - title: '🔧 CI / Build'
+    labels:
+      - 'CI/CD'
+
+change-template: '- $TITLE @$AUTHOR (#$NUMBER)'
+
+no-changes-template: 'No changes in this release.'
+
+# PRE-1.0. `breaking` and `major` resolve to MINOR here, and there is deliberately no major bucket.
+#
+# This is not a workaround. Semver gives 0.x no compatibility guarantee at all, so a breaking change
+# before 1.0 is a minor bump by the spec rather than in spite of it. It also removes a trap: with
+# `breaking` mapped to major, one labelled pull request makes the drafter title the draft v1.0.0,
+# and publishing that draft without reading the title carefully packs and pushes seven packages as
+# 1.0.0. Versions on nuget.org can never be deleted or reused, only unlisted, so that mistake cannot
+# be taken back.
+#
+# AT 1.0.0: move `breaking` and `major` out of `minor` and into their own `major:` bucket. The guard
+# in release.yml refuses to publish a 1.x tag until Directory.Build.props is bumped, which is the
+# moment to do this.
+version-resolver:
+  minor:
+    labels:
+      - 'breaking'
+      - 'major'
+      - 'feature'
+  patch:
+    labels:
+      - 'bug'
+      - 'refactor'
+      - 'enhancement'
+  default: patch
+
+template: |
+  ## What's Changed
+
+  $CHANGES
+
+  **Full Changelog**: https://github.com/$OWNER/$REPOSITORY/compare/$PREVIOUS_TAG...v$RESOLVED_VERSION

@@ -1,8 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
-
   <PropertyGroup>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
+    <Description>Interfaces, options and DTOs for Toamaisutaa authentication. Carries no dependencies of any kind, so it can be referenced from a domain or application layer without dragging in ASP.NET or Entity Framework.</Description>
   </PropertyGroup>
-
 </Project>

@@ -1,4 +1,4 @@
-Required Notice: Copyright PianoNic (https://github.com/PianoNic/CommandBlock)
+Required Notice: Copyright PianoNic (https://github.com/PianoNic/Toamaisutaa)
 
 # PolyForm Noncommercial License 1.0.0
 

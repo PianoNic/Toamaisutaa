@@ -1,21 +1,17 @@
 <Project Sdk="Microsoft.NET.Sdk">
-
   <PropertyGroup>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
+    <Description>OIDC bearer token validation for Toamaisutaa. Adds AddToamaisutaaBearer: provider-agnostic JWT validation driven entirely by the issuer discovery document, a configurable role claim, userinfo claims enrichment for issuers that keep groups out of the access token, and issuance of locally signed access tokens for password login.</Description>
   </PropertyGroup>
-
   <ItemGroup>
     <ProjectReference Include="..\Toamaisutaa.Core\Toamaisutaa.Core.csproj" />
   </ItemGroup>
-
   <ItemGroup>
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
   </ItemGroup>
-
   <ItemGroup>
     <!-- Not part of the shared framework: JwtBearer has shipped as a package since ASP.NET Core 3.0. -->
     <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" />
   </ItemGroup>
-
 </Project>

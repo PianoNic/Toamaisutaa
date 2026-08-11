@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Toamaisutaa">
+  <!-- A gateway arch on its threshold. The name means "gate master", and the gallery is already
+       full of padlocks, shields and keys.
+
+       Contained mark: the opaque tile is what keeps the contrast identical on the light and dark
+       nuget.org galleries. Two flat colours, no gradient - a gradient turns to mush at 16px.
+
+       Teal because the alternatives all carry the wrong signal: purple is both the AI-startup
+       cliche and .NET's own brand colour, blue is what every identity product already uses, and
+       red or amber read as error and warning in a developer tool. -->
+  <rect width="64" height="64" rx="14" fill="#0D6B63"/>
+  <g fill="#FAF6F0">
+    <path d="M14 49V27a18 18 0 0 1 36 0v22h-8V27a10 10 0 0 0-20 0v22z"/>
+    <rect x="11" y="49" width="42" height="6"/>
+  </g>
+</svg>
