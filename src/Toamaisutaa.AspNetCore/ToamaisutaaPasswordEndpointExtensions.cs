@@ -75,13 +75,23 @@ public static class ToamaisutaaPasswordEndpointExtensions
 
     private static async Task<IResult> LoginAsync(
         LoginRequest request,
+        HttpContext context,
         IPasswordSignInService signIn,
         CancellationToken cancellationToken)
     {
         if (request is null || string.IsNullOrEmpty(request.Identifier) || string.IsNullOrEmpty(request.Password))
             return SignInFailed();
 
-        var result = await signIn.SignInAsync(request.Identifier, request.Password, cancellationToken);
+        var result = await signIn.SignInAsync(
+            new PasswordSignInRequest
+            {
+                Identifier = request.Identifier,
+                Password = request.Password,
+                DeviceToken = request.DeviceToken,
+                UserAgent = context.Request.Headers.UserAgent.ToString(),
+                IpAddress = context.Connection.RemoteIpAddress?.ToString(),
+            },
+            cancellationToken);
 
         // A second shape on the success path, not a new status code: the password was right, and
         // what comes back is what to do next rather than an error. Clients that assumed tokens do
@@ -90,14 +100,35 @@ public static class ToamaisutaaPasswordEndpointExtensions
         {
             return Results.Ok(new
             {
-                two_factor_required = true,
+                twoFactorRequired = true,
                 challenge = challenge.Token,
-                expires_in = challenge.ExpiresIn,
+                expiresIn = challenge.ExpiresIn,
             });
         }
 
-        return result.Succeeded ? Results.Ok(result.Tokens) : SignInFailed();
+        return result.Succeeded ? SignInSucceeded(result) : SignInFailed();
     }
+
+    /// <summary>
+    /// The one place a successful sign-in is shaped, shared with <c>/auth/2fa/verify</c>.
+    /// </summary>
+    /// <remarks>
+    /// Shared because it was not, and the device token this returns went missing: a device-trusted
+    /// sign-in rotates the token, and an endpoint that returned only the token pair left the caller
+    /// holding a dead one. The next sign-in then presented an already-rotated token, which is the
+    /// theft signal, and the family was revoked. One use and the device silently stopped working.
+    /// </remarks>
+    internal static IResult SignInSucceeded(SignInResult result) =>
+        Results.Ok(new
+        {
+            result.Tokens!.AccessToken,
+            result.Tokens.RefreshToken,
+            result.Tokens.ExpiresIn,
+            result.Tokens.TokenType,
+            RecoveryCodesRunningLow = result.RecoveryCodesRunningLow ? true : (bool?)null,
+            DeviceToken = result.TrustedDevice?.Token,
+            DeviceExpiresIn = result.TrustedDevice?.ExpiresIn,
+        });
 
     private static async Task<IResult> RefreshAsync(
         RefreshRequest request,

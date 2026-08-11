@@ -22,7 +22,7 @@ jobs:
       pull-requests: read    # read the merged pull requests and their labels
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - uses: release-drafter/release-drafter@v6
         with:

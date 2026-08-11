@@ -44,4 +44,17 @@ public static class ToamaisutaaDefaults
     /// because nothing standard says it, and prefixed so it cannot collide with a provider's own.
     /// </summary>
     public const string TwoFactorRequiredClaim = "toa_2fa_required";
+
+    /// <summary>Configuration section trusted devices bind from.</summary>
+    public const string TrustedDevicesConfigurationSection = "TrustedDevices";
+
+    /// <summary>How the second factor was satisfied: <c>otp</c>, <c>recovery</c> or <c>device</c>.</summary>
+    public const string TwoFactorSourceClaim = "toa_2fa_source";
+
+    /// <summary>
+    /// Unix seconds of the last <i>live</i> second factor. A device-trusted token carries the
+    /// original challenge time, so <c>now - toa_2fa_at</c> is how a step-up policy asks for
+    /// freshness rather than merely asking whether the factor was cached.
+    /// </summary>
+    public const string SecondFactorAtClaim = "toa_2fa_at";
 }

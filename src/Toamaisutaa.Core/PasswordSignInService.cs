@@ -13,14 +13,17 @@ internal sealed class PasswordSignInService(
     IUserRoleProvider roles,
     DummyPasswordHash dummy,
     TwoFactorGate twoFactor,
+    TrustedDeviceGate trustedDevices,
     IOptions<ToamaisutaaLocalLoginOptions> options,
     TimeProvider timeProvider,
     ILogger<PasswordSignInService> logger) : IPasswordSignInService
 {
-    public async Task<SignInResult> SignInAsync(string identifier, string password, CancellationToken cancellationToken = default)
+    public async Task<SignInResult> SignInAsync(PasswordSignInRequest request, CancellationToken cancellationToken = default)
     {
-        ArgumentNullException.ThrowIfNull(identifier);
-        ArgumentNullException.ThrowIfNull(password);
+        ArgumentNullException.ThrowIfNull(request);
+
+        var identifier = request.Identifier;
+        var password = request.Password;
 
         var now = timeProvider.GetUtcNow();
         var credential = await credentials.FindByIdentifierAsync(Normalizer.Normalize(identifier), cancellationToken);
@@ -77,12 +80,38 @@ internal sealed class PasswordSignInService(
 
         // The password was right, which is the first factor and, for an enrolled account, not the
         // last. Nothing is issued until the second one arrives.
+        //
+        // The device token is only consulted here - after lockout and after the password. Checking
+        // it earlier would skip the lockout check for anyone holding one, and would answer "is this
+        // device trusted" to somebody who has the token but not the password.
         if (await twoFactor.RequiresChallengeAsync(user.Id, cancellationToken))
         {
-            var challenge = await twoFactor.IssueChallengeAsync(user.Id, now, cancellationToken);
-            logger.LogInformation("Password accepted for user {UserId}; a second factor is required.", user.Id);
+            var trust = await trustedDevices.TryRedeemAsync(user, request.DeviceToken, now, cancellationToken);
 
-            return new SignInResult { Outcome = SignInOutcome.TwoFactorRequired, Challenge = challenge };
+            if (!trust.Trusted)
+            {
+                var challenge = await twoFactor.IssueChallengeAsync(user.Id, now, cancellationToken);
+                logger.LogInformation("Password accepted for user {UserId}; a second factor is required.", user.Id);
+
+                return new SignInResult { Outcome = SignInOutcome.TwoFactorRequired, Challenge = challenge };
+            }
+
+            logger.LogInformation("Sign-in succeeded for user {UserId} with a cached second factor.", user.Id);
+
+            return await IssueAsync(
+                user,
+                familyId: null,
+                familyStartedAt: null,
+
+                // No otp: nothing one-time was presented. mfa still holds - a second factor was
+                // performed, just not now, which is what toa_2fa_at reports.
+                methods: ["pwd", ToamaisutaaDefaults.MultiFactorMethod],
+                recoveryCodesRunningLow: false,
+                twoFactorSource: TwoFactorSource.Device,
+                secondFactorAt: trust.SecondFactorAt,
+                trustedDevice: trust.RotatedToken,
+                now,
+                cancellationToken);
         }
 
         logger.LogInformation("Sign-in succeeded for user {UserId}.", user.Id);
@@ -93,17 +122,19 @@ internal sealed class PasswordSignInService(
             familyStartedAt: null,
             methods: ["pwd"],
             recoveryCodesRunningLow: false,
+            twoFactorSource: null,
+            secondFactorAt: null,
+            trustedDevice: null,
             now,
             cancellationToken);
     }
 
-    public async Task<SignInResult> VerifyTwoFactorAsync(string challengeToken, string code, CancellationToken cancellationToken = default)
+    public async Task<SignInResult> VerifyTwoFactorAsync(TwoFactorSignInRequest request, CancellationToken cancellationToken = default)
     {
-        ArgumentNullException.ThrowIfNull(challengeToken);
-        ArgumentNullException.ThrowIfNull(code);
+        ArgumentNullException.ThrowIfNull(request);
 
         var now = timeProvider.GetUtcNow();
-        var redemption = await twoFactor.RedeemChallengeAsync(challengeToken, code, now, cancellationToken);
+        var redemption = await twoFactor.RedeemChallengeAsync(request.ChallengeToken, request.Code, now, cancellationToken);
 
         if (redemption.Outcome != SignInOutcome.Succeeded)
             return Failed(redemption.Outcome);
@@ -111,14 +142,31 @@ internal sealed class PasswordSignInService(
         var user = await users.FindByIdAsync(redemption.UserId, cancellationToken)
             ?? throw new InvalidOperationException($"Challenge points at user {redemption.UserId}, which does not exist.");
 
+        // A recovery code means the authenticator is gone. Trusting devices at that moment is
+        // exactly backwards, and the security stamp cannot carry this one: bumping it here would
+        // revoke the refresh family of the session being established.
+        if (redemption.UsedRecoveryCode)
+            await trustedDevices.RevokeAllAsync(user.Id, "recovery-code-redeemed", now, cancellationToken);
+
+        // Only here. A device-trusted sign-in never reaches this method, which is what stops a
+        // family from renewing itself past its absolute lifetime.
+        var issued = redemption.UsedRecoveryCode
+            ? null
+            : await trustedDevices.IssueAsync(user, request, now, cancellationToken);
+
         logger.LogInformation("Sign-in completed for user {UserId} with a second factor.", user.Id);
 
         return await IssueAsync(
             user,
             familyId: null,
             familyStartedAt: null,
-            methods: redemption.UsedRecoveryCode ? ["pwd", "mfa"] : ["pwd", "otp", "mfa"],
+            methods: redemption.UsedRecoveryCode
+                ? ["pwd", ToamaisutaaDefaults.MultiFactorMethod]
+                : ["pwd", "otp", ToamaisutaaDefaults.MultiFactorMethod],
             redemption.RecoveryCodesRunningLow,
+            twoFactorSource: redemption.UsedRecoveryCode ? TwoFactorSource.Recovery : TwoFactorSource.Otp,
+            secondFactorAt: now,
+            trustedDevice: issued,
             now,
             cancellationToken);
     }
@@ -146,6 +194,12 @@ internal sealed class PasswordSignInService(
                 stored.FamilyId);
 
             await refreshTokens.RevokeFamilyAsync(stored.FamilyId, "refresh-token-reuse", now, cancellationToken);
+
+            // Explicit, because the stamp cannot carry this one either: bumping it would revoke
+            // this user's other legitimate sessions, which is a behaviour change beyond what reuse
+            // detection has ever done.
+            await trustedDevices.RevokeAllAsync(stored.UserId, "refresh-token-reuse", now, cancellationToken);
+
             return Failed(SignInOutcome.RefreshTokenReused);
         }
 
@@ -194,6 +248,13 @@ internal sealed class PasswordSignInService(
             stored.FamilyStartedAt,
             stored.AuthenticationMethods.Length == 0 ? ["pwd"] : stored.AuthenticationMethods.Split(' '),
             recoveryCodesRunningLow: false,
+
+            // Replayed, never recomputed. A rotation that dropped these would report a session as
+            // password-only, and any step-up policy would start failing one access-token lifetime
+            // after a perfectly good two-factor sign-in.
+            twoFactorSource: stored.TwoFactorSource,
+            secondFactorAt: stored.SecondFactorAt,
+            trustedDevice: null,
             now,
             cancellationToken);
     }
@@ -218,6 +279,9 @@ internal sealed class PasswordSignInService(
         DateTimeOffset? familyStartedAt,
         IReadOnlyList<string> methods,
         bool recoveryCodesRunningLow,
+        string? twoFactorSource,
+        DateTimeOffset? secondFactorAt,
+        TrustedDeviceToken? trustedDevice,
         DateTimeOffset now,
         CancellationToken cancellationToken)
     {
@@ -230,6 +294,8 @@ internal sealed class PasswordSignInService(
                 Roles = userRoles,
                 AuthenticationMethods = methods,
                 TwoFactorEnrolmentRequired = await twoFactor.MustEnrolAsync(user.Id, cancellationToken),
+                TwoFactorSource = twoFactorSource,
+                SecondFactorAt = secondFactorAt,
             },
             cancellationToken);
 
@@ -250,6 +316,8 @@ internal sealed class PasswordSignInService(
                 // Carried on the family so a rotation does not quietly downgrade a session that was
                 // established with a second factor into one that only ever proved a password.
                 AuthenticationMethods = string.Join(' ', methods),
+                TwoFactorSource = twoFactorSource,
+                SecondFactorAt = secondFactorAt,
             },
             cancellationToken);
 
@@ -257,6 +325,7 @@ internal sealed class PasswordSignInService(
         {
             Outcome = SignInOutcome.Succeeded,
             RecoveryCodesRunningLow = recoveryCodesRunningLow,
+            TrustedDevice = trustedDevice,
             Tokens = new TokenPair
             {
                 AccessToken = access.Value,

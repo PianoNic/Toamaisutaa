@@ -17,4 +17,8 @@ public sealed record RegenerateRecoveryCodesRequest(string Proof);
 /// or a recovery code - one field, because the person typing it should not have to tell us which
 /// kind they are holding when the shape already says.
 /// </summary>
-public sealed record VerifyTwoFactorRequest(string Challenge, string Code);
+public sealed record VerifyTwoFactorRequest(
+    string Challenge,
+    string Code,
+    bool RememberDevice = false,
+    string? DeviceLabel = null);

@@ -79,6 +79,11 @@ public static class ToamaisutaaTwoFactorExtensions
 
         services.TryAddScoped<TwoFactorVerifier>();
         services.TryAddScoped<TwoFactorGate>();
+
+        // Registered here too: enabling or disabling a second factor takes the trusted devices with
+        // it, and the gate answers harmlessly when no device store exists.
+        services.AddOptions<ToamaisutaaTrustedDeviceOptions>();
+        services.TryAddScoped<TrustedDeviceGate>();
         services.TryAddScoped<ITwoFactorService, TwoFactorService>();
 
         services.TryAddEnumerable(

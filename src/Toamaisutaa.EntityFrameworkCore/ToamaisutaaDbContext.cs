@@ -42,6 +42,8 @@ public class ToamaisutaaDbContext : DbContext
 
     public DbSet<ToamaisutaaTwoFactorChallenge> TwoFactorChallenges => Set<ToamaisutaaTwoFactorChallenge>();
 
+    public DbSet<ToamaisutaaTrustedDevice> TrustedDevices => Set<ToamaisutaaTrustedDevice>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);

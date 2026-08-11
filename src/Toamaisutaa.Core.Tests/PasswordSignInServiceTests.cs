@@ -12,7 +12,7 @@ public class PasswordSignInServiceTests
         var harness = PasswordHarness.Create();
         await harness.RegisterAsync();
 
-        var result = await harness.SignIn.SignInAsync("pianonic", Password);
+        var result = await harness.SignInAsync("pianonic", Password);
 
         await Assert.That(result.Outcome).IsEqualTo(SignInOutcome.Succeeded);
         await Assert.That(result.Tokens!.AccessToken).IsNotNull();
@@ -26,7 +26,7 @@ public class PasswordSignInServiceTests
         var harness = PasswordHarness.Create();
         await harness.RegisterAsync();
 
-        var result = await harness.SignIn.SignInAsync("nic@example.com", Password);
+        var result = await harness.SignInAsync("nic@example.com", Password);
 
         await Assert.That(result.Outcome).IsEqualTo(SignInOutcome.Succeeded);
     }
@@ -40,7 +40,7 @@ public class PasswordSignInServiceTests
         var harness = PasswordHarness.Create();
         await harness.RegisterAsync();
 
-        var result = await harness.SignIn.SignInAsync(identifier, Password);
+        var result = await harness.SignInAsync(identifier, Password);
 
         await Assert.That(result.Outcome).IsEqualTo(SignInOutcome.Succeeded);
     }
@@ -53,8 +53,8 @@ public class PasswordSignInServiceTests
         var harness = PasswordHarness.Create();
         await harness.RegisterAsync();
 
-        var unknown = await harness.SignIn.SignInAsync("nobody", Password);
-        var wrong = await harness.SignIn.SignInAsync("pianonic", "not the password");
+        var unknown = await harness.SignInAsync("nobody", Password);
+        var wrong = await harness.SignInAsync("pianonic", "not the password");
 
         await Assert.That(unknown.Outcome).IsEqualTo(SignInOutcome.UnknownUser);
         await Assert.That(wrong.Outcome).IsEqualTo(SignInOutcome.InvalidPassword);
@@ -72,10 +72,10 @@ public class PasswordSignInServiceTests
         await harness.RegisterAsync();
 
         for (var attempt = 0; attempt < 5; attempt++)
-            await harness.SignIn.SignInAsync("pianonic", "wrong");
+            await harness.SignInAsync("pianonic", "wrong");
 
         // Even the right password is refused now, and refused the same way as everything else.
-        var result = await harness.SignIn.SignInAsync("pianonic", Password);
+        var result = await harness.SignInAsync("pianonic", Password);
 
         await Assert.That(result.Outcome).IsEqualTo(SignInOutcome.LockedOut);
     }
@@ -87,11 +87,11 @@ public class PasswordSignInServiceTests
         await harness.RegisterAsync();
 
         for (var attempt = 0; attempt < 5; attempt++)
-            await harness.SignIn.SignInAsync("pianonic", "wrong");
+            await harness.SignInAsync("pianonic", "wrong");
 
         harness.Clock.Now = harness.Clock.Now + harness.Options.LockoutDuration + TimeSpan.FromSeconds(1);
 
-        var result = await harness.SignIn.SignInAsync("pianonic", Password);
+        var result = await harness.SignInAsync("pianonic", Password);
 
         await Assert.That(result.Outcome).IsEqualTo(SignInOutcome.Succeeded);
     }
@@ -103,9 +103,9 @@ public class PasswordSignInServiceTests
         await harness.RegisterAsync();
 
         for (var attempt = 0; attempt < 4; attempt++)
-            await harness.SignIn.SignInAsync("pianonic", "wrong");
+            await harness.SignInAsync("pianonic", "wrong");
 
-        await harness.SignIn.SignInAsync("pianonic", Password);
+        await harness.SignInAsync("pianonic", Password);
 
         await Assert.That(harness.Passwords.Credentials.Single().FailedAttemptCount).IsEqualTo(0);
     }
@@ -121,7 +121,7 @@ public class PasswordSignInServiceTests
         // The deployment raises its iteration count.
         harness.Options.Pbkdf2Iterations *= 2;
 
-        var result = await harness.SignIn.SignInAsync("pianonic", Password);
+        var result = await harness.SignInAsync("pianonic", Password);
         var after = harness.Passwords.Credentials.Single().PasswordHash;
 
         await Assert.That(result.Outcome).IsEqualTo(SignInOutcome.Succeeded);
@@ -137,7 +137,7 @@ public class PasswordSignInServiceTests
         var harness = PasswordHarness.Create();
         await harness.RegisterAsync();
 
-        var first = (await harness.SignIn.SignInAsync("pianonic", Password)).Tokens!;
+        var first = (await harness.SignInAsync("pianonic", Password)).Tokens!;
         var second = await harness.SignIn.RefreshAsync(first.RefreshToken);
 
         await Assert.That(second.Outcome).IsEqualTo(SignInOutcome.Succeeded);
@@ -153,7 +153,7 @@ public class PasswordSignInServiceTests
         var harness = PasswordHarness.Create();
         await harness.RegisterAsync();
 
-        var first = (await harness.SignIn.SignInAsync("pianonic", Password)).Tokens!;
+        var first = (await harness.SignInAsync("pianonic", Password)).Tokens!;
         var issued = harness.Passwords.RefreshTokens[^1];
 
         harness.Clock.Now = harness.Clock.Now.AddDays(1);
@@ -177,7 +177,7 @@ public class PasswordSignInServiceTests
         var harness = PasswordHarness.Create();
         await harness.RegisterAsync();
 
-        var first = (await harness.SignIn.SignInAsync("pianonic", Password)).Tokens!;
+        var first = (await harness.SignInAsync("pianonic", Password)).Tokens!;
         var family = harness.Passwords.RefreshTokens[^1].FamilyId;
         var second = (await harness.SignIn.RefreshAsync(first.RefreshToken)).Tokens!;
 
@@ -216,7 +216,7 @@ public class PasswordSignInServiceTests
         var harness = PasswordHarness.Create();
         await harness.RegisterAsync();
 
-        var tokens = (await harness.SignIn.SignInAsync("pianonic", Password)).Tokens!;
+        var tokens = (await harness.SignInAsync("pianonic", Password)).Tokens!;
         harness.Clock.Now = harness.Clock.Now + harness.Options.RefreshTokenLifetime + TimeSpan.FromSeconds(1);
 
         var result = await harness.SignIn.RefreshAsync(tokens.RefreshToken);
@@ -235,7 +235,7 @@ public class PasswordSignInServiceTests
         });
 
         await harness.RegisterAsync();
-        var tokens = (await harness.SignIn.SignInAsync("pianonic", Password)).Tokens!;
+        var tokens = (await harness.SignInAsync("pianonic", Password)).Tokens!;
 
         // Refresh every ten days, so no single token ever expires.
         for (var day = 0; day < 3; day++)
@@ -262,7 +262,7 @@ public class PasswordSignInServiceTests
         var harness = PasswordHarness.Create();
         await harness.RegisterAsync();
 
-        var tokens = (await harness.SignIn.SignInAsync("pianonic", Password)).Tokens!;
+        var tokens = (await harness.SignInAsync("pianonic", Password)).Tokens!;
         await harness.SignIn.SignOutAsync(tokens.RefreshToken);
 
         var result = await harness.SignIn.RefreshAsync(tokens.RefreshToken);

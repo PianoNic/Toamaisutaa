@@ -334,6 +334,80 @@ The brief's eight, plus what falls out of section 8:
 
 ---
 
+## What changed while implementing this
+
+Signed off as proposed. Four things the proposal did not have, and one bug the end-to-end run found
+that no unit test would have.
+
+### 1. The bug: `/auth/login` rotated the device token and did not return it
+
+A device-trusted sign-in rotates the token. `/auth/login` returned `result.Tokens` and dropped
+`result.TrustedDevice`, so the caller kept holding the token it had just spent. The next sign-in
+presented an already-rotated token, which is the theft signal, so the family was revoked and the
+device silently stopped working after exactly one use.
+
+Invisible to every unit test, because the service layer was correct throughout - the gate rotated,
+the store recorded it, `SignInResult.TrustedDevice` was populated. Only the HTTP shape lost it. The
+same three-things-must-coincide pattern: it needs a device trust, a second sign-in, and someone
+looking at the response body.
+
+Both endpoints now share one `SignInSucceeded` helper.
+
+### 2. `/auth/2fa/verify` and `/auth/login` disagreed about casing
+
+Found while fixing the above. `/auth/login` returned `accessToken` from `TokenPair`;
+`/auth/2fa/verify` returned `access_token` from a hand-written anonymous object added in Phase 4. A
+client had to parse both. Now both are camelCase, matching every other endpoint in the package.
+`TokenPair`'s XML doc claimed it was "OAuth-shaped", which was never true of its serialisation;
+corrected rather than the shape changed.
+
+**This breaks `/auth/2fa/verify` clients from 0.2.0**, which shipped hours ago.
+
+### 3. `ToamaisutaaRefreshToken` gained two more columns
+
+`TwoFactorSource` and `SecondFactorAt`, for exactly the reason `AuthenticationMethods` was added last
+phase: without them, a refresh reports a device-trusted session as having no second-factor source at
+all, and a step-up policy starts failing one access-token lifetime after a good sign-in. Caught by
+writing the refresh path rather than by testing it.
+
+Also: the first generated migration had `SecondFactorAt` as a native `timestamp with time zone`,
+because the converter was applied on the new table but not on the refresh-token column. Regenerated
+across all four providers after fixing the configuration.
+
+### 4. D3 is the security guarantee, but not enough for the device list
+
+`Revoked_when_two_factor_is_disabled` failed on the first run, and correctly. The stamp check is
+lazy - it fires when a token is presented - so disabling two-factor left a row that could never be
+honoured sitting in the user's device list looking live. Section 8.3 predicted the state and
+prescribed "reject, delete, continue", which only runs when a challenge is required; disabling means
+no challenge, so nothing ever looked.
+
+Revocation is now **explicit** at every stamp-bumping site as well: `BumpSecurityStampAsync` in
+`TwoFactorService` and both password paths in `PasswordAccountService`. The stamp check stays as the
+backstop that nothing forgotten is ever actually honoured.
+
+So the honest version of section 1's conclusion: **D3 covers five of eight for security. It covers
+none of them for list accuracy.** Both mechanisms are needed, for different reasons.
+
+### 5. `TwoFactorSignInRequest`
+
+`VerifyTwoFactorAsync` needed remember-device, a label, a user agent and an address. Same reasoning
+as `PasswordSignInRequest`, applied without asking because the principle was already signed off.
+
+### Verification performed
+
+- **191 tests green**, including the eight named D4 revocations, the loop that would defeat the
+  absolute lifetime, sign-out *not* revoking, lockout ahead of device logic, and `RequiredForAll`.
+- **All four migration assemblies regenerated together**, with every new instant column confirmed
+  integer on all four providers.
+- **End to end over HTTP**: a device-trusted sign-in returning `amr` `["pwd","mfa"]` with no `otp`,
+  `toa_2fa_source=device`, and `toa_2fa_at` reporting the original live challenge rather than now;
+  the device token refused as a bearer token with 401; a rotated token replayed revoking the family
+  and its sibling; the device list with label, `::/48` truncated address and `isCurrent`; and after a
+  password change, a challenge instead of a skip and an empty list.
+- **The log line the brief asked for**: `Revoked 2 trusted device(s) for user ...: password-changed.`
+- **No device token, enrolment secret or recovery code anywhere in the sample's log.**
+
 ## Open items
 
 1. `toa_2fa_at` as well as `toa_2fa_source`, or just the source.

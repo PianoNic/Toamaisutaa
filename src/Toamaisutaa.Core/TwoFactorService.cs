@@ -14,6 +14,7 @@ internal sealed class TwoFactorService(
     IRecoveryCodeProvider recoveryCodeProvider,
     ISecretProtector protector,
     TwoFactorVerifier verifier,
+    TrustedDeviceGate trustedDevices,
     IOptions<ToamaisutaaTwoFactorOptions> options,
     TimeProvider timeProvider,
     ILogger<TwoFactorService> logger) : ITwoFactorService
@@ -181,9 +182,20 @@ internal sealed class TwoFactorService(
         return plaintext;
     }
 
+    /// <summary>
+    /// Moves the stamp, ends the sessions, and takes the trusted devices with it.
+    /// </summary>
+    /// <remarks>
+    /// The device revocation is explicit rather than left to the stamp check on the next
+    /// presentation. The check is lazy by design - it fires when a token is offered - so a row that
+    /// can never be honoured again would still sit in the user's device list looking live until the
+    /// cleanup sweep. Revoking here keeps the list honest; the stamp check stays as the guarantee
+    /// that anything missed is never actually accepted.
+    /// </remarks>
     private async Task BumpSecurityStampAsync(Guid userId, string reason, DateTimeOffset now, CancellationToken cancellationToken)
     {
         await users.UpdateSecurityStampAsync(userId, SecureTokens.Create(), cancellationToken);
         await refreshTokens.RevokeAllForUserAsync(userId, reason, now, cancellationToken);
+        await trustedDevices.RevokeAllAsync(userId, reason, now, cancellationToken);
     }
 }

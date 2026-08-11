@@ -10,8 +10,15 @@ internal sealed class PasswordHarness
 {
     internal static readonly DateTimeOffset Start = new(2026, 8, 11, 12, 0, 0, TimeSpan.Zero);
 
-    private PasswordHarness(ToamaisutaaLocalLoginOptions options, ToamaisutaaTwoFactorOptions twoFactorOptions, bool withTwoFactor)
+    private PasswordHarness(
+        ToamaisutaaLocalLoginOptions options,
+        ToamaisutaaTwoFactorOptions twoFactorOptions,
+        ToamaisutaaTrustedDeviceOptions trustedDeviceOptions,
+        bool withTwoFactor,
+        bool withTrustedDevices)
     {
+        TrustedDeviceOptions = trustedDeviceOptions;
+
         Clock = new FixedTimeProvider(Start);
         Options = options;
         TwoFactorOptions = twoFactorOptions;
@@ -55,6 +62,18 @@ internal sealed class PasswordHarness
 
         var gate = new TwoFactorGate(provider, wrappedTwoFactor, NullLogger<TwoFactorGate>.Instance);
 
+        Devices = new FakeTrustedDeviceStore();
+
+        if (withTrustedDevices)
+            provider.Add<ITrustedDeviceStore>(Devices);
+
+        var deviceGate = new TrustedDeviceGate(
+            provider,
+            Microsoft.Extensions.Options.Options.Create(trustedDeviceOptions),
+            NullLogger<TrustedDeviceGate>.Instance);
+
+        TrustedDevices = new TrustedDeviceService(Devices, Clock, NullLogger<TrustedDeviceService>.Instance);
+
         SignIn = new PasswordSignInService(
             Passwords,
             Users,
@@ -64,6 +83,7 @@ internal sealed class PasswordHarness
             new EmptyUserRoleProvider(),
             new DummyPasswordHash(Hasher),
             gate,
+            deviceGate,
             wrapped,
             Clock,
             NullLogger<PasswordSignInService>.Instance);
@@ -77,6 +97,7 @@ internal sealed class PasswordHarness
             new DefaultPasswordValidator(wrapped),
             Notifier,
             SignIn,
+            deviceGate,
             wrapped,
             Clock,
             NullLogger<PasswordAccountService>.Instance);
@@ -90,6 +111,7 @@ internal sealed class PasswordHarness
             RecoveryCodes,
             Protector,
             Verifier,
+            deviceGate,
             wrappedTwoFactor,
             Clock,
             NullLogger<TwoFactorService>.Instance);
@@ -127,10 +149,37 @@ internal sealed class PasswordHarness
 
     internal TwoFactorService TwoFactor { get; }
 
+    internal FakeTrustedDeviceStore Devices { get; }
+
+    internal TrustedDeviceService TrustedDevices { get; }
+
+    internal ToamaisutaaTrustedDeviceOptions TrustedDeviceOptions { get; }
+
+    /// <summary>What every existing test used to call directly, kept as a helper so the request
+    /// record does not have to appear in fifty places.</summary>
+    internal Task<SignInResult> SignInAsync(string identifier, string password, string? deviceToken = null) =>
+        SignIn.SignInAsync(new PasswordSignInRequest
+        {
+            Identifier = identifier,
+            Password = password,
+            DeviceToken = deviceToken,
+        });
+
+    internal Task<SignInResult> VerifyAsync(string challenge, string code, bool rememberDevice = false, string? label = null) =>
+        SignIn.VerifyTwoFactorAsync(new TwoFactorSignInRequest
+        {
+            ChallengeToken = challenge,
+            Code = code,
+            RememberDevice = rememberDevice,
+            DeviceLabel = label,
+        });
+
     internal static PasswordHarness Create(
         Action<ToamaisutaaLocalLoginOptions>? configure = null,
         Action<ToamaisutaaTwoFactorOptions>? configureTwoFactor = null,
-        bool withTwoFactor = false)
+        Action<ToamaisutaaTrustedDeviceOptions>? configureTrustedDevices = null,
+        bool withTwoFactor = false,
+        bool withTrustedDevices = false)
     {
         // Iterations far below the production floor: these tests run many derivations and the floor
         // is a startup check, not a property of the hasher.
@@ -144,7 +193,10 @@ internal sealed class PasswordHarness
 
         configureTwoFactor?.Invoke(twoFactor);
 
-        return new PasswordHarness(options, twoFactor, withTwoFactor);
+        var trustedDevices = new ToamaisutaaTrustedDeviceOptions();
+        configureTrustedDevices?.Invoke(trustedDevices);
+
+        return new PasswordHarness(options, twoFactor, trustedDevices, withTwoFactor, withTrustedDevices);
     }
 
     /// <summary>A registered local account, as self-registration would have produced it.</summary>

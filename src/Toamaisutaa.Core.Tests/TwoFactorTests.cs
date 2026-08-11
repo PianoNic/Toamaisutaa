@@ -27,7 +27,7 @@ public class TwoFactorTests
         await Assert.That(status.Enabled).IsFalse();
         await Assert.That(status.EnrolmentPending).IsTrue();
 
-        var result = await harness.SignIn.SignInAsync("pianonic", "correct horse battery");
+        var result = await harness.SignInAsync("pianonic", "correct horse battery");
         await Assert.That(result.Outcome).IsEqualTo(SignInOutcome.Succeeded);
         await Assert.That(result.Tokens).IsNotNull();
     }
@@ -109,7 +109,7 @@ public class TwoFactorTests
         var user = await harness.RegisterAsync();
         await harness.EnrolAsync(user.Id);
 
-        var result = await harness.SignIn.SignInAsync("pianonic", "correct horse battery");
+        var result = await harness.SignInAsync("pianonic", "correct horse battery");
 
         await Assert.That(result.Outcome).IsEqualTo(SignInOutcome.TwoFactorRequired);
         await Assert.That(result.Tokens).IsNull();
@@ -123,12 +123,12 @@ public class TwoFactorTests
         var user = await harness.RegisterAsync();
         var (secret, _) = await harness.EnrolAsync(user.Id);
 
-        var started = await harness.SignIn.SignInAsync("pianonic", "correct horse battery");
+        var started = await harness.SignInAsync("pianonic", "correct horse battery");
 
         // A step forward, because confirming the enrolment already spent the current one.
         harness.Clock.Now = harness.Clock.Now.AddSeconds(30);
 
-        var finished = await harness.SignIn.VerifyTwoFactorAsync(started.Challenge!.Token, harness.CurrentCode(secret));
+        var finished = await harness.VerifyAsync(started.Challenge!.Token, harness.CurrentCode(secret));
 
         await Assert.That(finished.Succeeded).IsTrue();
         await Assert.That(finished.Tokens).IsNotNull();
@@ -144,13 +144,13 @@ public class TwoFactorTests
         var user = await harness.RegisterAsync();
         var (secret, _) = await harness.EnrolAsync(user.Id);
 
-        var started = await harness.SignIn.SignInAsync("pianonic", "correct horse battery");
+        var started = await harness.SignInAsync("pianonic", "correct horse battery");
 
         harness.Clock.Now = harness.Clock.Now.AddSeconds(30);
-        await harness.SignIn.VerifyTwoFactorAsync(started.Challenge!.Token, harness.CurrentCode(secret));
+        await harness.VerifyAsync(started.Challenge!.Token, harness.CurrentCode(secret));
 
         harness.Clock.Now = harness.Clock.Now.AddSeconds(30);
-        var again = await harness.SignIn.VerifyTwoFactorAsync(started.Challenge.Token, harness.CurrentCode(secret));
+        var again = await harness.VerifyAsync(started.Challenge.Token, harness.CurrentCode(secret));
 
         await Assert.That(again.Outcome).IsEqualTo(SignInOutcome.ChallengeAlreadyUsed);
     }
@@ -162,11 +162,11 @@ public class TwoFactorTests
         var user = await harness.RegisterAsync();
         var (secret, _) = await harness.EnrolAsync(user.Id);
 
-        var started = await harness.SignIn.SignInAsync("pianonic", "correct horse battery");
+        var started = await harness.SignInAsync("pianonic", "correct horse battery");
 
         harness.Clock.Now = harness.Clock.Now.AddMinutes(6);
 
-        var result = await harness.SignIn.VerifyTwoFactorAsync(started.Challenge!.Token, harness.CurrentCode(secret));
+        var result = await harness.VerifyAsync(started.Challenge!.Token, harness.CurrentCode(secret));
 
         await Assert.That(result.Outcome).IsEqualTo(SignInOutcome.ChallengeExpired);
     }
@@ -183,14 +183,14 @@ public class TwoFactorTests
         var user = await harness.RegisterAsync();
         var (secret, _) = await harness.EnrolAsync(user.Id);
 
-        var started = await harness.SignIn.SignInAsync("pianonic", "correct horse battery");
+        var started = await harness.SignInAsync("pianonic", "correct horse battery");
 
         harness.Clock.Now = harness.Clock.Now.AddSeconds(30);
         var disabled = await harness.TwoFactor.DisableAsync(user.Id, harness.CurrentCode(secret));
         await Assert.That(disabled.Succeeded).IsTrue();
 
         harness.Clock.Now = harness.Clock.Now.AddSeconds(30);
-        var result = await harness.SignIn.VerifyTwoFactorAsync(started.Challenge!.Token, harness.CurrentCode(secret));
+        var result = await harness.VerifyAsync(started.Challenge!.Token, harness.CurrentCode(secret));
 
         await Assert.That(result.Outcome).IsEqualTo(SignInOutcome.InvalidChallenge);
     }
@@ -202,7 +202,7 @@ public class TwoFactorTests
         var user = await harness.RegisterAsync();
         await harness.EnrolAsync(user.Id);
 
-        var result = await harness.SignIn.VerifyTwoFactorAsync("not-a-challenge", "000000");
+        var result = await harness.VerifyAsync("not-a-challenge", "000000");
 
         await Assert.That(result.Outcome).IsEqualTo(SignInOutcome.InvalidChallenge);
     }
@@ -216,8 +216,8 @@ public class TwoFactorTests
         var user = await harness.RegisterAsync();
         var (_, codes) = await harness.EnrolAsync(user.Id);
 
-        var started = await harness.SignIn.SignInAsync("pianonic", "correct horse battery");
-        var finished = await harness.SignIn.VerifyTwoFactorAsync(started.Challenge!.Token, codes[0]);
+        var started = await harness.SignInAsync("pianonic", "correct horse battery");
+        var finished = await harness.VerifyAsync(started.Challenge!.Token, codes[0]);
 
         await Assert.That(finished.Succeeded).IsTrue();
 
@@ -225,8 +225,8 @@ public class TwoFactorTests
         // was involved - so no otp.
         await Assert.That(harness.Issuer.Issued[^1].AuthenticationMethods).IsEquivalentTo(new[] { "pwd", "mfa" });
 
-        var second = await harness.SignIn.SignInAsync("pianonic", "correct horse battery");
-        var reused = await harness.SignIn.VerifyTwoFactorAsync(second.Challenge!.Token, codes[0]);
+        var second = await harness.SignInAsync("pianonic", "correct horse battery");
+        var reused = await harness.VerifyAsync(second.Challenge!.Token, codes[0]);
 
         await Assert.That(reused.Outcome).IsEqualTo(SignInOutcome.InvalidTwoFactorCode);
     }
@@ -240,8 +240,8 @@ public class TwoFactorTests
 
         var typed = codes[0].Replace("-", string.Empty).ToLowerInvariant();
 
-        var started = await harness.SignIn.SignInAsync("pianonic", "correct horse battery");
-        var finished = await harness.SignIn.VerifyTwoFactorAsync(started.Challenge!.Token, typed);
+        var started = await harness.SignInAsync("pianonic", "correct horse battery");
+        var finished = await harness.VerifyAsync(started.Challenge!.Token, typed);
 
         await Assert.That(finished.Succeeded).IsTrue();
     }
@@ -258,8 +258,8 @@ public class TwoFactorTests
         var user = await harness.RegisterAsync();
         var (_, codes) = await harness.EnrolAsync(user.Id);
 
-        var started = await harness.SignIn.SignInAsync("pianonic", "correct horse battery");
-        var finished = await harness.SignIn.VerifyTwoFactorAsync(started.Challenge!.Token, codes[0]);
+        var started = await harness.SignInAsync("pianonic", "correct horse battery");
+        var finished = await harness.VerifyAsync(started.Challenge!.Token, codes[0]);
 
         await Assert.That(finished.Succeeded).IsTrue();
         await Assert.That(finished.RecoveryCodesRunningLow).IsTrue();
@@ -277,8 +277,8 @@ public class TwoFactorTests
 
         await Assert.That(regenerated.RecoveryCodes.Intersect(oldCodes).Any()).IsFalse();
 
-        var started = await harness.SignIn.SignInAsync("pianonic", "correct horse battery");
-        var result = await harness.SignIn.VerifyTwoFactorAsync(started.Challenge!.Token, oldCodes[0]);
+        var started = await harness.SignInAsync("pianonic", "correct horse battery");
+        var result = await harness.VerifyAsync(started.Challenge!.Token, oldCodes[0]);
 
         await Assert.That(result.Outcome).IsEqualTo(SignInOutcome.InvalidTwoFactorCode);
     }
@@ -310,7 +310,7 @@ public class TwoFactorTests
 
         await Assert.That(harness.TwoFactorStore.Codes.Count(code => code.UserId == user.Id)).IsEqualTo(0);
 
-        var result = await harness.SignIn.SignInAsync("pianonic", "correct horse battery");
+        var result = await harness.SignInAsync("pianonic", "correct horse battery");
         await Assert.That(result.Outcome).IsEqualTo(SignInOutcome.Succeeded);
     }
 
@@ -348,7 +348,7 @@ public class TwoFactorTests
         var harness = Harness();
         var user = await harness.RegisterAsync();
 
-        var signedIn = await harness.SignIn.SignInAsync("pianonic", "correct horse battery");
+        var signedIn = await harness.SignInAsync("pianonic", "correct horse battery");
         var refreshToken = signedIn.Tokens!.RefreshToken;
 
         // Enrolling is one of the six operations that ends outstanding sessions.
@@ -373,10 +373,10 @@ public class TwoFactorTests
         var user = await harness.RegisterAsync();
         var (secret, _) = await harness.EnrolAsync(user.Id);
 
-        var started = await harness.SignIn.SignInAsync("pianonic", "correct horse battery");
+        var started = await harness.SignInAsync("pianonic", "correct horse battery");
 
         harness.Clock.Now = harness.Clock.Now.AddSeconds(30);
-        var finished = await harness.SignIn.VerifyTwoFactorAsync(started.Challenge!.Token, harness.CurrentCode(secret));
+        var finished = await harness.VerifyAsync(started.Challenge!.Token, harness.CurrentCode(secret));
 
         var refreshed = await harness.SignIn.RefreshAsync(finished.Tokens!.RefreshToken);
 
@@ -453,7 +453,7 @@ public class TwoFactorTests
         var harness = PasswordHarness.Create(withTwoFactor: false);
         await harness.RegisterAsync();
 
-        var result = await harness.SignIn.SignInAsync("pianonic", "correct horse battery");
+        var result = await harness.SignInAsync("pianonic", "correct horse battery");
 
         await Assert.That(result.Outcome).IsEqualTo(SignInOutcome.Succeeded);
         await Assert.That(harness.Issuer.Issued[^1].AuthenticationMethods).IsEquivalentTo(new[] { "pwd" });

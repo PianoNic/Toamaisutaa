@@ -71,6 +71,9 @@ out, and no database at all.
 - **Two-factor authentication** - TOTP, no library and no new dependency, with recovery codes, an
   opaque single-use challenge that cannot be presented as a bearer token, and secrets encrypted at
   rest under a key of their own.
+- **Trusted devices** - "remember this device", as a cached second factor that rotates on every use
+  and dies with any credential change. Tokens say whether the factor was live or cached, and when,
+  so a sensitive route can demand a fresh one.
 - **Its own migrations** - Postgres, SQLite, SQL Server and MySQL, shipped, or apply the entity
   configurations to a `DbContext` you already have.
 - **No ASP.NET where it does not belong** - `Abstractions` and `Core` carry no web stack, so a domain
@@ -123,6 +126,7 @@ traffic - there is no third option that does not cost a read per request.
 - [OIDC bearer validation](https://docs.toamaisutaa.pianonic.ch/oidc)
 - [Local password login](https://docs.toamaisutaa.pianonic.ch/password-login)
 - [Two-factor authentication](https://docs.toamaisutaa.pianonic.ch/two-factor)
+- [Trusted devices](https://docs.toamaisutaa.pianonic.ch/trusted-devices)
 - [Storage and migrations](https://docs.toamaisutaa.pianonic.ch/storage)
 - [Developer setup](https://docs.toamaisutaa.pianonic.ch/dev-setup)
 

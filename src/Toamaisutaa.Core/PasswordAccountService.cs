@@ -13,6 +13,7 @@ internal sealed class PasswordAccountService(
     IPasswordValidator validator,
     IPasswordResetNotifier notifier,
     IPasswordSignInService signIn,
+    TrustedDeviceGate trustedDevices,
     IOptions<ToamaisutaaLocalLoginOptions> options,
     TimeProvider timeProvider,
     ILogger<PasswordAccountService> logger) : IPasswordAccountService
@@ -57,7 +58,9 @@ internal sealed class PasswordAccountService(
 
         logger.LogInformation("Registered local account for user {UserId}.", user.Id);
 
-        var tokens = await signIn.SignInAsync(request.UserName.Trim(), request.Password, cancellationToken);
+        var tokens = await signIn.SignInAsync(
+            new PasswordSignInRequest { Identifier = request.UserName.Trim(), Password = request.Password },
+            cancellationToken);
 
         return new AccountResult { Succeeded = true, UserId = user.Id, Tokens = tokens.Tokens };
     }
@@ -123,6 +126,7 @@ internal sealed class PasswordAccountService(
         // most likely to be reacting to someone else having access.
         await users.UpdateSecurityStampAsync(userId, SecureTokens.Create(), cancellationToken);
         await refreshTokens.RevokeAllForUserAsync(userId, "password-changed", now, cancellationToken);
+        await trustedDevices.RevokeAllAsync(userId, "password-changed", now, cancellationToken);
         await resetTokens.InvalidateAllForUserAsync(userId, now, cancellationToken);
 
         return new AccountResult { Succeeded = true, UserId = userId };
@@ -220,6 +224,7 @@ internal sealed class PasswordAccountService(
         // identity provider issued keeps working until it expires, because we cannot revoke it.
         await users.UpdateSecurityStampAsync(stored.UserId, SecureTokens.Create(), cancellationToken);
         await refreshTokens.RevokeAllForUserAsync(stored.UserId, "password-reset", now, cancellationToken);
+        await trustedDevices.RevokeAllAsync(stored.UserId, "password-reset", now, cancellationToken);
 
         logger.LogInformation("Password reset completed for user {UserId}; all local sessions revoked.", stored.UserId);
         return new AccountResult { Succeeded = true, UserId = stored.UserId };

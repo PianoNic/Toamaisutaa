@@ -68,6 +68,18 @@ internal sealed class LocalAccessTokenIssuer(
         if (request.TwoFactorEnrolmentRequired)
             Add(claims, ToamaisutaaDefaults.TwoFactorRequiredClaim, "true");
 
+        Add(claims, ToamaisutaaDefaults.TwoFactorSourceClaim, request.TwoFactorSource);
+
+        // Unix seconds, so a policy can subtract it from now without parsing a date format. For a
+        // device-trusted sign-in this is the original live challenge, which is the whole point.
+        if (request.SecondFactorAt is { } secondFactorAt)
+        {
+            Add(
+                claims,
+                ToamaisutaaDefaults.SecondFactorAtClaim,
+                secondFactorAt.ToUnixTimeSeconds().ToString(System.Globalization.CultureInfo.InvariantCulture));
+        }
+
         var descriptor = new SecurityTokenDescriptor
         {
             Issuer = local.Issuer,

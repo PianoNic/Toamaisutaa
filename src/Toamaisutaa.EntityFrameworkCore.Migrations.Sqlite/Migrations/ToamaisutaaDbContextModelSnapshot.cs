@@ -199,6 +199,9 @@ namespace Toamaisutaa.EntityFrameworkCore.Migrations.Sqlite.Migrations
                     b.Property<long?>("RotatedAt")
                         .HasColumnType("INTEGER");
 
+                    b.Property<long?>("SecondFactorAt")
+                        .HasColumnType("INTEGER");
+
                     b.Property<string>("SecurityStamp")
                         .IsRequired()
                         .HasMaxLength(128)
@@ -207,6 +210,10 @@ namespace Toamaisutaa.EntityFrameworkCore.Migrations.Sqlite.Migrations
                     b.Property<string>("TokenHash")
                         .IsRequired()
                         .HasMaxLength(64)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("TwoFactorSource")
+                        .HasMaxLength(32)
                         .HasColumnType("TEXT");
 
                     b.Property<Guid>("UserId")
@@ -222,6 +229,76 @@ namespace Toamaisutaa.EntityFrameworkCore.Migrations.Sqlite.Migrations
                     b.HasIndex("UserId");
 
                     b.ToTable("ToamaisutaaRefreshTokens", (string)null);
+                });
+
+            modelBuilder.Entity("Toamaisutaa.Abstractions.ToamaisutaaTrustedDevice", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("TEXT");
+
+                    b.Property<long>("CreatedAt")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<long>("ExpiresAt")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<Guid>("FamilyId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<long>("FamilyStartedAt")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("IpAddress")
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Label")
+                        .HasMaxLength(128)
+                        .HasColumnType("TEXT");
+
+                    b.Property<long>("LastUsedAt")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<long?>("RevokedAt")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("RevokedReason")
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
+
+                    b.Property<long?>("RotatedAt")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<long>("SecondFactorAt")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("SecurityStamp")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("TokenHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("UserAgent")
+                        .HasMaxLength(256)
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("FamilyId");
+
+                    b.HasIndex("TokenHash")
+                        .IsUnique();
+
+                    b.HasIndex("UserId");
+
+                    b.ToTable("ToamaisutaaTrustedDevices", (string)null);
                 });
 
             modelBuilder.Entity("Toamaisutaa.Abstractions.ToamaisutaaTwoFactorChallenge", b =>
@@ -374,6 +451,15 @@ namespace Toamaisutaa.EntityFrameworkCore.Migrations.Sqlite.Migrations
                 });
 
             modelBuilder.Entity("Toamaisutaa.Abstractions.ToamaisutaaRefreshToken", b =>
+                {
+                    b.HasOne("Toamaisutaa.Abstractions.ToamaisutaaUser", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Toamaisutaa.Abstractions.ToamaisutaaTrustedDevice", b =>
                 {
                     b.HasOne("Toamaisutaa.Abstractions.ToamaisutaaUser", null)
                         .WithMany()

@@ -204,6 +204,9 @@ namespace Toamaisutaa.EntityFrameworkCore.Migrations.Postgres.Migrations
                     b.Property<long?>("RotatedAt")
                         .HasColumnType("bigint");
 
+                    b.Property<long?>("SecondFactorAt")
+                        .HasColumnType("bigint");
+
                     b.Property<string>("SecurityStamp")
                         .IsRequired()
                         .HasMaxLength(128)
@@ -213,6 +216,10 @@ namespace Toamaisutaa.EntityFrameworkCore.Migrations.Postgres.Migrations
                         .IsRequired()
                         .HasMaxLength(64)
                         .HasColumnType("character varying(64)");
+
+                    b.Property<string>("TwoFactorSource")
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
 
                     b.Property<Guid>("UserId")
                         .HasColumnType("uuid");
@@ -227,6 +234,76 @@ namespace Toamaisutaa.EntityFrameworkCore.Migrations.Postgres.Migrations
                     b.HasIndex("UserId");
 
                     b.ToTable("ToamaisutaaRefreshTokens", (string)null);
+                });
+
+            modelBuilder.Entity("Toamaisutaa.Abstractions.ToamaisutaaTrustedDevice", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid");
+
+                    b.Property<long>("CreatedAt")
+                        .HasColumnType("bigint");
+
+                    b.Property<long>("ExpiresAt")
+                        .HasColumnType("bigint");
+
+                    b.Property<Guid>("FamilyId")
+                        .HasColumnType("uuid");
+
+                    b.Property<long>("FamilyStartedAt")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("IpAddress")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<string>("Label")
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)");
+
+                    b.Property<long>("LastUsedAt")
+                        .HasColumnType("bigint");
+
+                    b.Property<long?>("RevokedAt")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("RevokedReason")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<long?>("RotatedAt")
+                        .HasColumnType("bigint");
+
+                    b.Property<long>("SecondFactorAt")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("SecurityStamp")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)");
+
+                    b.Property<string>("TokenHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<string>("UserAgent")
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("FamilyId");
+
+                    b.HasIndex("TokenHash")
+                        .IsUnique();
+
+                    b.HasIndex("UserId");
+
+                    b.ToTable("ToamaisutaaTrustedDevices", (string)null);
                 });
 
             modelBuilder.Entity("Toamaisutaa.Abstractions.ToamaisutaaTwoFactorChallenge", b =>
@@ -379,6 +456,15 @@ namespace Toamaisutaa.EntityFrameworkCore.Migrations.Postgres.Migrations
                 });
 
             modelBuilder.Entity("Toamaisutaa.Abstractions.ToamaisutaaRefreshToken", b =>
+                {
+                    b.HasOne("Toamaisutaa.Abstractions.ToamaisutaaUser", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Toamaisutaa.Abstractions.ToamaisutaaTrustedDevice", b =>
                 {
                     b.HasOne("Toamaisutaa.Abstractions.ToamaisutaaUser", null)
                         .WithMany()

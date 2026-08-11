@@ -148,29 +148,31 @@ public static class ToamaisutaaTwoFactorEndpointExtensions
 
     private static async Task<IResult> VerifyAsync(
         VerifyTwoFactorRequest request,
+        HttpContext context,
         IPasswordSignInService signIn,
         CancellationToken cancellationToken)
     {
         if (request is null || string.IsNullOrWhiteSpace(request.Challenge) || string.IsNullOrWhiteSpace(request.Code))
             return Unauthorized();
 
-        var result = await signIn.VerifyTwoFactorAsync(request.Challenge, request.Code, cancellationToken);
-
-        if (!result.Succeeded)
-            return Unauthorized();
-
-        // The one thing this response says beyond the tokens. Somebody who just spent their
-        // second-to-last recovery code should find that out now, not when the last one is gone.
-        return result.RecoveryCodesRunningLow
-            ? Results.Ok(new
+        var result = await signIn.VerifyTwoFactorAsync(
+            new TwoFactorSignInRequest
             {
-                access_token = result.Tokens!.AccessToken,
-                refresh_token = result.Tokens.RefreshToken,
-                expires_in = result.Tokens.ExpiresIn,
-                token_type = result.Tokens.TokenType,
-                recovery_codes_running_low = true,
-            })
-            : Results.Ok(result.Tokens);
+                ChallengeToken = request.Challenge,
+                Code = request.Code,
+                RememberDevice = request.RememberDevice,
+                DeviceLabel = request.DeviceLabel,
+                UserAgent = context.Request.Headers.UserAgent.ToString(),
+                IpAddress = context.Connection.RemoteIpAddress?.ToString(),
+            },
+            cancellationToken);
+
+        // The same shape /auth/login returns, deliberately: these two endpoints both end a sign-in,
+        // and a client that had to parse one casing here and another there would be carrying our
+        // history rather than an API.
+        return result.Succeeded
+            ? ToamaisutaaPasswordEndpointExtensions.SignInSucceeded(result)
+            : Unauthorized();
     }
 
     /// <summary>

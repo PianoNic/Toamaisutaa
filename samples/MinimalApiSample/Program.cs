@@ -29,6 +29,11 @@ builder.Services.AddToamaisutaaPasswordLogin(builder.Configuration);
 // but anyone who does enrol is challenged on every local sign-in from then on.
 builder.Services.AddToamaisutaaTwoFactor(builder.Configuration);
 
+// Remember this device: skip the second factor on a device that already completed a live challenge.
+// A cached second factor, and nothing more - it never stands in for the password, and every
+// credential change takes it with them.
+builder.Services.AddToamaisutaaTrustedDevices(builder.Configuration);
+
 builder.Services.AddToamaisutaaTokenCleanup();
 
 // Required, and deliberately not shipped: sending mail is not an authentication library's job. This
@@ -56,6 +61,9 @@ app.MapToamaisutaaPasswordEndpoints();
 // GET /auth/2fa, POST /auth/2fa/begin, /auth/2fa/confirm, /auth/2fa/disable,
 // /auth/2fa/recovery-codes, /auth/2fa/verify.
 app.MapToamaisutaaTwoFactorEndpoints();
+
+// GET /auth/devices, DELETE /auth/devices/{id}, DELETE /auth/devices.
+app.MapToamaisutaaTrustedDeviceEndpoints();
 
 if (app.Environment.IsDevelopment())
     app.MapOpenApi().AllowAnonymous();

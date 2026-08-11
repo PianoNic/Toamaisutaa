@@ -53,13 +53,18 @@ internal sealed class TokenCleanupService(
         var challenges = scope.ServiceProvider.GetService<ITwoFactorChallengeStore>();
         var removedChallenges = challenges is null ? 0 : await challenges.DeleteExpiredAsync(now, cancellationToken);
 
-        if (removedRefresh + removedReset + removedChallenges > 0)
+        var devices = scope.ServiceProvider.GetService<ITrustedDeviceStore>();
+        var removedDevices = devices is null ? 0 : await devices.DeleteExpiredAsync(now, cancellationToken);
+
+        if (removedRefresh + removedReset + removedChallenges + removedDevices > 0)
         {
             logger.LogInformation(
-                "Removed {RefreshTokens} expired refresh token(s), {ResetTokens} expired reset token(s) and {Challenges} expired two-factor challenge(s).",
+                "Removed {RefreshTokens} expired refresh token(s), {ResetTokens} expired reset token(s), {Challenges} "
+                + "expired two-factor challenge(s) and {Devices} expired trusted device row(s).",
                 removedRefresh,
                 removedReset,
-                removedChallenges);
+                removedChallenges,
+                removedDevices);
         }
     }
 }

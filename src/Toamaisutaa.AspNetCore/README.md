@@ -70,9 +70,21 @@ application that owns its users - it ships with the framework and is better test
 
 [The longer answer, with the comparison table](https://docs.toamaisutaa.pianonic.ch/intro#why-not-asp-net-core-identity).
 
+## Optional: trusted devices
+
+```csharp
+builder.Services.AddToamaisutaaTrustedDevices(builder.Configuration);   // section "TrustedDevices"
+
+app.MapToamaisutaaTrustedDeviceEndpoints();
+```
+
+"Remember this device", as a cached second factor: it rotates on every use with reuse detection, dies
+with any credential change, and never stands in for the password. Tokens carry `toa_2fa_source` and
+`toa_2fa_at`, so a sensitive route can require a *fresh* second factor rather than a cached one.
+
 ## Storage
 
-Both optional features need somewhere to put a user. Add `Toamaisutaa.EntityFrameworkCore` and one of
+The optional features need somewhere to put a user. Add `Toamaisutaa.EntityFrameworkCore` and one of
 the four migration packages, or implement the store interfaces yourself.
 
 ## Documentation
