@@ -84,7 +84,8 @@ public class TwoFactorTests
         var exception = await Assert.ThrowsAsync<TwoFactorEnrolmentException>(
             async () => await harness.TwoFactor.ConfirmEnrolmentAsync(user.Id, harness.CurrentCode(firstSecret)));
 
-        await Assert.That(exception.Message).Contains("earlier QR code");
+        await Assert.That(exception).IsNotNull();
+        await Assert.That(exception!.Message).Contains("earlier QR code");
     }
 
     [Test]

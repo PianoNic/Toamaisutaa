@@ -70,6 +70,16 @@ Log the user id and what happened. That is enough to diagnose anything worth dia
 They were the same directory once, and building the docs site quietly deleted the analysis. Keep
 proposals and rationale in `design/`; keep anything a consumer reads in `docs/`.
 
+## Check warnings with `--no-incremental`
+
+"0 warnings, 0 errors" is only true if the compiler actually recompiled. A plain `dotnet build`
+after a test run reports zero warnings for every project MSBuild considers up to date, including
+ones that would warn if touched. The final gate is:
+
+```
+dotnet build Toamaisutaa.slnx -c Release --no-incremental
+```
+
 ## Layering (enforced)
 
 - `Abstractions` has **zero** package references. Interfaces, options, DTOs, entities.
