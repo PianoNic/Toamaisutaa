@@ -14,6 +14,7 @@ namespace Toamaisutaa.OpenIdConnect;
 internal sealed class ConfigureToamaisutaaJwtBearerOptions(
     IOptions<ToamaisutaaOidcOptions> oidcOptions,
     IOptions<ToamaisutaaAuthorizationOptions> authorizationOptions,
+    IOptions<ToamaisutaaLocalLoginOptions> localLoginOptions,
     UserInfoClaimsEnricher enricher) : IConfigureNamedOptions<JwtBearerOptions>
 {
     public void Configure(string? name, JwtBearerOptions options)
@@ -50,7 +51,9 @@ internal sealed class ConfigureToamaisutaaJwtBearerOptions(
         options.TokenValidationParameters.ValidateIssuer = settings.ValidateIssuer;
         options.TokenValidationParameters.ValidIssuer = publicAuthority;
         options.TokenValidationParameters.ValidateAudience = settings.ValidateAudience;
-        options.TokenValidationParameters.ValidAudiences = ValidAudiences(settings);
+        options.TokenValidationParameters.ValidAudiences = ValidAudiences(settings, localLoginOptions.Value);
+
+        ConfigureLocallyIssuedTokens(options, settings);
 
         options.Events = new JwtBearerEvents
         {
@@ -60,12 +63,48 @@ internal sealed class ConfigureToamaisutaaJwtBearerOptions(
         };
     }
 
-    internal static IReadOnlyList<string> ValidAudiences(ToamaisutaaOidcOptions settings)
+    internal static IReadOnlyList<string> ValidAudiences(ToamaisutaaOidcOptions settings, ToamaisutaaLocalLoginOptions local)
     {
-        if (settings.ValidAudiences.Count > 0)
-            return [.. settings.ValidAudiences];
+        var audiences = settings.ValidAudiences.Count > 0
+            ? [.. settings.ValidAudiences]
+            : NullIfBlank(settings.ClientId) is { } clientId ? new List<string> { clientId } : [];
 
-        return NullIfBlank(settings.ClientId) is { } clientId ? [clientId] : [];
+        // A local audience that differs from the client id would otherwise be rejected by the same
+        // process that issued it.
+        if (NullIfBlank(local.Audience) is { } localAudience && !audiences.Contains(localAudience, StringComparer.Ordinal))
+            audiences.Add(localAudience);
+
+        return audiences;
+    }
+
+    /// <summary>
+    /// Teaches the one handler to accept tokens this package issued, alongside the identity
+    /// provider's. The handler merges its discovery document's issuer and keys into whatever is set
+    /// here, so both shapes validate in a single pass and nothing downstream can tell them apart.
+    /// </summary>
+    /// <remarks>
+    /// The key resolver is the part that matters. With both key sets in one flat collection, the
+    /// validator falls back to trying every key when the key id does not match - so a token
+    /// claiming our issuer but signed with the identity provider's key would validate, and its
+    /// subject is a local user id. Binding each issuer to its own key closes that.
+    /// </remarks>
+    private void ConfigureLocallyIssuedTokens(JwtBearerOptions options, ToamaisutaaOidcOptions settings)
+    {
+        var local = localLoginOptions.Value;
+        var localKey = LocalSigningKey.Create(local);
+
+        // No key means password login was never registered. Leave the handler exactly as it was.
+        if (localKey is null)
+            return;
+
+        options.TokenValidationParameters.ValidIssuers = [local.Issuer];
+        options.TokenValidationParameters.IssuerSigningKeys = [localKey];
+
+        options.TokenValidationParameters.IssuerSigningKeyResolver = (_, securityToken, _, parameters) =>
+            string.Equals(securityToken?.Issuer, local.Issuer, StringComparison.Ordinal)
+                ? [localKey]
+                : parameters.IssuerSigningKeys?.Where(key =>
+                    !string.Equals(key.KeyId, ToamaisutaaDefaults.LocalSigningKeyId, StringComparison.Ordinal)) ?? [];
     }
 
     /// <summary>

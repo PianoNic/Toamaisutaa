@@ -18,6 +18,17 @@ internal sealed class EntityFrameworkStore<TContext>(TContext context, TimeProvi
     public async Task<ToamaisutaaUser?> FindByIdAsync(Guid id, CancellationToken cancellationToken = default) =>
         await context.Set<ToamaisutaaUser>().FirstOrDefaultAsync(user => user.Id == id, cancellationToken);
 
+    public async Task<ToamaisutaaUser?> FindByEmailAsync(string email, CancellationToken cancellationToken = default)
+    {
+        // Upper-cased on both sides rather than trusting the database's collation, and unindexed by
+        // design: the column is not unique, so this can match several rows and is only ever used to
+        // decide what to write in a log line.
+        var normalized = email.Trim().ToUpperInvariant();
+
+        return await context.Set<ToamaisutaaUser>()
+            .FirstOrDefaultAsync(user => user.Email != null && user.Email.ToUpper() == normalized, cancellationToken);
+    }
+
     public async Task<ToamaisutaaUser> CreateAsync(ExternalUserProfile profile, CancellationToken cancellationToken = default)
     {
         var now = timeProvider.GetUtcNow();
@@ -39,6 +50,32 @@ internal sealed class EntityFrameworkStore<TContext>(TContext context, TimeProvi
 
         _createdHere.Add(user.Id);
         return user;
+    }
+
+    public async Task<ToamaisutaaUser> CreateAsync(ToamaisutaaUser user, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(user);
+
+        var now = timeProvider.GetUtcNow();
+
+        user.Id = Guid.CreateVersion7(now);
+        user.CreatedAt = now;
+        user.UpdatedAt = now;
+
+        context.Set<ToamaisutaaUser>().Add(user);
+        await context.SaveChangesAsync(cancellationToken);
+
+        _createdHere.Add(user.Id);
+        return user;
+    }
+
+    public async Task DeleteAsync(Guid userId, CancellationToken cancellationToken = default)
+    {
+        _createdHere.Remove(userId);
+
+        await context.Set<ToamaisutaaUser>()
+            .Where(user => user.Id == userId)
+            .ExecuteDeleteAsync(cancellationToken);
     }
 
     public async Task UpdateProfileAsync(ToamaisutaaUser user, ExternalUserProfile profile, CancellationToken cancellationToken = default)

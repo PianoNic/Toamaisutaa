@@ -53,7 +53,14 @@ public static class ToamaisutaaBearerExtensions
         services.AddMemoryCache();
         services.AddHttpClient(ToamaisutaaDefaults.UserInfoHttpClientName);
 
+        services.TryAddSingleton(TimeProvider.System);
         services.TryAddSingleton<UserInfoClaimsEnricher>();
+        services.AddOptions<ToamaisutaaLocalLoginOptions>();
+        services.AddOptions<ToamaisutaaProvisioningOptions>();
+
+        // Registered here because signing a token needs a JWT library and Core carries none. It
+        // does nothing until password login configures a signing key.
+        services.TryAddSingleton<IAccessTokenIssuer, LocalAccessTokenIssuer>();
         services.TryAddEnumerable(
             ServiceDescriptor.Singleton<IConfigureOptions<JwtBearerOptions>, ConfigureToamaisutaaJwtBearerOptions>());
 

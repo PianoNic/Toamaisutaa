@@ -32,9 +32,41 @@ dotnet run
 | `GET /api/app` | the runtime configuration a SPA reads before sign-in |
 | `GET /api/me` | provisioning: the local row is created on the first call and read afterwards |
 | `GET /api/admin` | the `Toamaisutaa.Admin` policy from `Oidc:AdminRole` |
+| `POST /auth/*` | local password login - see `MinimalApiSample.http` |
 
 Call `/api/me` twice and watch the SQL: the second call reads and writes nothing, because
 `ProfileSyncMode` defaults to `OnChange`.
+
+## Local login
+
+`MinimalApiSample.http` walks the whole thing: register, log in, use the token on the same endpoints
+an identity provider's token works on, rotate a refresh token, present a rotated one and watch the
+family get revoked, change a password, and add a password to an account that arrived through the
+identity provider.
+
+Things worth watching in the log rather than the response, because the responses deliberately do not
+say:
+
+- `Sign-in refused: no local credential matches` versus `wrong password` versus `locked out`. All
+  three answer the same 401 with the same body.
+- `Refresh token reuse detected ... revoking the whole family`.
+- `Password reset requested for user ..., which has no local credential - an identity provider owns
+  it`. That is the case where someone waits for an email that is never coming.
+
+Self-registration is on here because it makes the sample usable. It is off by default in the
+package.
+
+## No identity provider at all
+
+The whole point of local login is a deployment that cannot run one. Clear the authority and it still
+works:
+
+```sh
+Oidc__Authority= dotnet run
+```
+
+Register and log in as usual. `/api/me` accepts the locally issued token; a token from the mock
+issuer is now rejected, because with no discovery document there are no external keys to trust.
 
 ## Pointing it at a real issuer
 

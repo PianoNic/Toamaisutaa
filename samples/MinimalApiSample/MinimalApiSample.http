@@ -7,21 +7,94 @@ GET {{host}}/api/public
 ### What the SPA reads before anyone has signed in.
 GET {{host}}/api/app
 
-### Mint a token from the mock issuer. Copy access_token into @token below.
+# ───────────────────────── local password login ─────────────────────────
+
+### Register. Only mapped because LocalLogin:AllowSelfRegistration is true.
+POST {{host}}/auth/register
+Content-Type: application/json
+
+{ "userName": "pianonic", "email": "nic@example.com", "password": "correct horse battery" }
+
+### Log in. The identifier is a user name or an email address.
+POST {{host}}/auth/login
+Content-Type: application/json
+
+{ "identifier": "nic@example.com", "password": "correct horse battery" }
+
+@token = paste-the-accessToken-here
+@refresh = paste-the-refreshToken-here
+
+### The locally issued token works on the same endpoints an identity provider's token does.
+GET {{host}}/api/me
+Authorization: Bearer {{token}}
+
+### Wrong password, unknown user and a locked account are one answer. Try all three.
+POST {{host}}/auth/login
+Content-Type: application/json
+
+{ "identifier": "nobody-at-all", "password": "correct horse battery" }
+
+### Rotate. The presented token is dead afterwards.
+POST {{host}}/auth/refresh
+Content-Type: application/json
+
+{ "refreshToken": "{{refresh}}" }
+
+### Present the OLD refresh token again: reuse, and the whole family is revoked. Watch the log.
+POST {{host}}/auth/refresh
+Content-Type: application/json
+
+{ "refreshToken": "{{refresh}}" }
+
+### Change the password. Ends every other session.
+POST {{host}}/auth/password
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+{ "currentPassword": "correct horse battery", "newPassword": "a whole new password" }
+
+### Add a password to an account that arrived through the identity provider: no current password.
+POST {{host}}/auth/password
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+{ "currentPassword": null, "newPassword": "a whole new password" }
+
+### Always 204, whether the address is known, unknown, or belongs to an SSO-only account.
+POST {{host}}/auth/password/forgot
+Content-Type: application/json
+
+{ "email": "nic@example.com" }
+
+### The token is written to the log by the sample's notifier. Paste it here.
+POST {{host}}/auth/password/reset
+Content-Type: application/json
+
+{ "token": "paste-the-token-from-the-log", "newPassword": "a whole new password" }
+
+### Revokes the family.
+POST {{host}}/auth/logout
+Content-Type: application/json
+
+{ "refreshToken": "{{refresh}}" }
+
+# ───────────────────────── identity provider ─────────────────────────
+
+### Mint a token from the mock issuer. Copy access_token into @idpToken below.
 POST {{issuer}}/token
 Content-Type: application/x-www-form-urlencoded
 
 grant_type=client_credentials&client_id=toamaisutaa-sample&client_secret=whatever&scope=openid profile email roles
 
-@token = paste-the-access-token-here
+@idpToken = paste-the-access-token-here
 
-### Provisions the local user on the first call, reads it on every one after.
+### Same endpoint, same pipeline, different issuer.
 GET {{host}}/api/me
-Authorization: Bearer {{token}}
+Authorization: Bearer {{idpToken}}
 
-### Requires the role named by Oidc:AdminRole.
+### Requires the role named by Oidc:AdminRole. The IdP token carries it; a local token does not.
 GET {{host}}/api/admin
-Authorization: Bearer {{token}}
+Authorization: Bearer {{idpToken}}
 
 ### Without a token: 401.
 GET {{host}}/api/me

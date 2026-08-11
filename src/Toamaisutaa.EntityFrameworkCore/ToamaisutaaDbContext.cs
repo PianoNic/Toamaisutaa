@@ -14,6 +14,12 @@ public class ToamaisutaaDbContext(DbContextOptions<ToamaisutaaDbContext> options
 
     public DbSet<ToamaisutaaExternalLogin> ExternalLogins => Set<ToamaisutaaExternalLogin>();
 
+    public DbSet<ToamaisutaaPasswordCredential> PasswordCredentials => Set<ToamaisutaaPasswordCredential>();
+
+    public DbSet<ToamaisutaaRefreshToken> RefreshTokens => Set<ToamaisutaaRefreshToken>();
+
+    public DbSet<ToamaisutaaPasswordResetToken> PasswordResetTokens => Set<ToamaisutaaPasswordResetToken>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);

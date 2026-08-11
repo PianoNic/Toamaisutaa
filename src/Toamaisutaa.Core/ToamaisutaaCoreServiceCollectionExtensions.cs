@@ -38,4 +38,20 @@ public static class ToamaisutaaCoreServiceCollectionExtensions
 
         return services;
     }
+
+    /// <summary>
+    /// Runs a periodic sweep of expired refresh and password-reset rows. Opt-in: without it those
+    /// tables only grow, and with it this package writes to the database on a timer, which is not
+    /// something to switch on for someone.
+    /// </summary>
+    public static IServiceCollection AddToamaisutaaTokenCleanup(this IServiceCollection services)
+    {
+        ArgumentNullException.ThrowIfNull(services);
+
+        services.TryAddSingleton(TimeProvider.System);
+        services.AddOptions<ToamaisutaaLocalLoginOptions>();
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IHostedService, TokenCleanupService>());
+
+        return services;
+    }
 }
