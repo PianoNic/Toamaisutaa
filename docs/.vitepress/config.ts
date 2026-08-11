@@ -10,10 +10,14 @@ export default defineConfig({
   // README-style links elsewhere point at "docs/*.md"; inside the site links resolve fine, but keep
   // the build from failing on the odd absolute/anchor link.
   ignoreDeadLinks: true,
+  // Absolute, because a link preview is rendered by a crawler that has no page to resolve a
+  // relative path against.
   head: [
     ['link', { rel: 'icon', href: '/favicon.svg' }],
-    ['meta', { property: 'og:image', content: '/wordmark.png' }],
+    ['meta', { property: 'og:image', content: 'https://docs.toamaisutaa.pianonic.ch/wordmark.png' }],
+    ['meta', { property: 'og:url', content: 'https://docs.toamaisutaa.pianonic.ch/' }],
   ],
+  sitemap: { hostname: 'https://docs.toamaisutaa.pianonic.ch' },
   themeConfig: {
     nav: [
       { text: 'Intro', link: '/intro' },
