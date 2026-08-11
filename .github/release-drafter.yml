@@ -71,6 +71,11 @@ version-resolver:
       - 'enhancement'
   default: patch
 
+# ONLY ON THE VERY FIRST RELEASE: there is no previous tag, so $PREVIOUS_TAG expands to nothing and
+# the changelog line renders as `compare/...v0.1.0`, which is a broken link. Edit that one line in
+# the draft before publishing - https://github.com/$OWNER/$REPOSITORY/commits/vX.Y.Z is the sensible
+# replacement. Every release after the first resolves it correctly and needs no intervention. Worth
+# knowing if this config is ever copied to bootstrap another repository.
 template: |
   ## What's Changed
 
