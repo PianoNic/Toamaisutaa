@@ -12,6 +12,18 @@ namespace Toamaisutaa.EntityFrameworkCore.Migrations.Sqlite.Migrations
     /// Hand-edited. The scaffolded version dropped the old column first and lost every stamp; the
     /// order here is add, copy, then drop. SQLite has no UPDATE ... FROM before 3.33, so the copy
     /// is a correlated subquery, which works on every version.
+    /// <para>
+    /// Applying this logs "the migration operation 'PRAGMA foreign_keys = 0;' cannot be executed in
+    /// a transaction". That is inherent to dropping a column on SQLite - the provider implements it
+    /// as a table rebuild, which cannot be transactional - and not a fault in this migration.
+    /// Nothing to investigate.
+    /// </para>
+    /// <para>
+    /// The warning's advice still applies: an interruption leaves this partially applied and needs
+    /// reverting by hand before a retry, because the three AddColumn calls would run a second time.
+    /// What it does not risk is data. The drop is last, so any interruption leaves the source column
+    /// still populated and the stamps recoverable.
+    /// </para>
     /// </remarks>
     public partial class MoveSecurityStampToUser : Migration
     {
