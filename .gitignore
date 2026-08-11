@@ -435,3 +435,8 @@ FodyWeavers.xsd
 
 # Pack output
 artifacts/
+
+# Node / VitePress docs
+node_modules/
+docs/.vitepress/dist/
+docs/.vitepress/cache/
