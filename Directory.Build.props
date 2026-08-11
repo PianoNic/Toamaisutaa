@@ -8,12 +8,15 @@
   </PropertyGroup>
 
   <PropertyGroup>
-    <!-- The declared version. A release tag must match it exactly (release.yml refuses to publish
-         otherwise), and CI passes it back in as -p:Version so the tag is what gets stamped into
-         both the package and the assemblies. Locally it is what a plain `dotnet pack` produces, so
-         a local package and a CI one of the same version are the same thing.
+    <!-- A LOCAL FALLBACK ONLY. It is not the released version and does not need to track one.
+         Releases take their version from the git tag: release.yml passes -p:Version to build and
+         pack, so the tag is what gets stamped into both the packages and the assemblies. Nothing
+         here has to be bumped before a release, deliberately - publishing a draft creates the tag
+         and starts the pipeline in one click, so any step that had to happen first is a step that
+         eventually gets forgotten.
 
-         To release: bump this, merge it, then publish the drafted release with the matching tag. -->
+         This value only decides what a local `dotnet pack` produces. Leave it alone unless a local
+         package needs a particular number. -->
     <Version>0.1.0</Version>
     <Authors>Pianonic</Authors>
     <Company>Pianonic</Company>

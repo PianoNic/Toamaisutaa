@@ -48,9 +48,13 @@ jobs:
         with:
           dotnet-version: '10.0.x'
 
-      # FIRST, before anything is built, because the version it settles is then fed to every step
-      # below - and because a version published to nuget.org can never be deleted or reused, only
-      # unlisted. Everything else here is repeatable; the push is not.
+      # FIRST, before anything is built, because the version it settles feeds every step below - and
+      # because a version published to nuget.org can never be deleted or reused, only unlisted.
+      # Everything else here is repeatable; the push is not.
+      #
+      # The tag is the only source of the version. Nothing in the repository has to be bumped to
+      # match it, so there is no commit to forget before publishing - which matters because
+      # publishing a draft creates the tag and starts this pipeline in a single click.
       - name: Guard the release version
         id: version
         env:
@@ -59,26 +63,56 @@ jobs:
           set -euo pipefail
 
           VERSION="${TAG_NAME#v}"
-          CORE="${VERSION%%-*}"                # 0.2.0-preview.1 -> 0.2.0
-          DECLARED="$(grep -oP '(?<=<Version>)[^<]+' Directory.Build.props | head -n1)"
-
-          echo "Release tag:                 $TAG_NAME"
-          echo "Version to publish:          $VERSION"
-          echo "Directory.Build.props says:  $DECLARED"
+          echo "Release tag:        $TAG_NAME"
+          echo "Version to publish: $VERSION"
 
           if ! printf '%s' "$VERSION" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$'; then
             echo "::error::'$TAG_NAME' does not name a semantic version. Tag releases as vMAJOR.MINOR.PATCH."
             exit 1
           fi
 
-          # The whole version, not just the major. A tag of v0.2.0 against a declared 0.1.0 is
-          # exactly the mistake worth catching: it would publish packages nobody can correct, since
-          # a version on nuget.org cannot be reused. A prerelease suffix on the tag is allowed to
-          # differ, so v0.2.0-preview.1 ships from a declared 0.2.0 without a second edit.
-          if [ "$CORE" != "$DECLARED" ]; then
-            echo "::error::Refusing to publish $VERSION while Directory.Build.props declares $DECLARED."
-            echo "::error::Bump <Version> in Directory.Build.props to $CORE, merge it, then re-run this release. Nothing has been packed or pushed."
-            echo "::error::If crossing to 1.0, also move 'breaking' and 'major' into a major bucket in .github/release-drafter.yml."
+          # Crossing to 1.0 has to be a deliberate edit here, not something a draft title can do on
+          # its own. To release 1.0.0: drop this check and move 'breaking' and 'major' into a major
+          # bucket in .github/release-drafter.yml.
+          if [ "${VERSION%%.*}" != "0" ]; then
+            echo "::error::Refusing to publish $VERSION. This library is pre-1.0; releasing a 1.x version is a decision to make in the repository, not in a release title."
+            exit 1
+          fi
+
+          # What actually protects the release: nuget.org versions are immutable. Re-publishing one
+          # that already exists cannot be undone, and going backwards produces a package that no
+          # ordinary restore will ever pick. Ask nuget.org rather than trusting a file in the repo
+          # to be in step. Package ids come from the same glob the pack step uses, so a package
+          # added later is covered without editing this.
+          PUBLISHED=""
+          for project in src/Toamaisutaa.*/Toamaisutaa.*.csproj; do
+            case "$project" in *Tests*) continue ;; esac
+            id="$(basename "$project" .csproj | tr '[:upper:]' '[:lower:]')"
+            if body="$(curl -fsSL "https://api.nuget.org/v3-flatcontainer/$id/index.json" 2>/dev/null)"; then
+              PUBLISHED="$PUBLISHED$(printf '%s' "$body" | jq -r '.versions[]')"$'\n'
+            else
+              echo "  $id: never published"
+            fi
+          done
+
+          PUBLISHED="$(printf '%s' "$PUBLISHED" | grep -v '^$' | sort -Vu || true)"
+
+          if [ -z "$PUBLISHED" ]; then
+            echo "Nothing is published yet; $VERSION is the first release."
+            echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "Already on nuget.org: $(printf '%s' "$PUBLISHED" | tr '\n' ' ')"
+
+          if printf '%s\n' "$PUBLISHED" | grep -qxF "$VERSION"; then
+            echo "::error::$VERSION is already published on nuget.org. Versions there cannot be deleted or reused, only unlisted. Tag a new version."
+            exit 1
+          fi
+
+          HIGHEST="$(printf '%s\n' "$PUBLISHED" | tail -n1)"
+          if [ "$(printf '%s\n%s\n' "$HIGHEST" "$VERSION" | sort -V | tail -n1)" != "$VERSION" ]; then
+            echo "::error::$VERSION is not greater than $HIGHEST, which is already on nuget.org. A package that sorts below the latest is one no ordinary restore will resolve."
             exit 1
           fi
 

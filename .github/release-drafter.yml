@@ -2,10 +2,15 @@
 #
 #   1. This drafts a release on every push to main and names it from the labels on the merged pull
 #      requests.
-#   2. Bump <Version> in Directory.Build.props to match that name, and merge it.
-#   3. Publish the draft. release.yml refuses to publish unless the two agree exactly, so step 2 is
-#      not optional - but it fails before anything reaches nuget.org, where a version can never be
-#      reused.
+#   2. Publish the draft. That is the whole procedure - nothing in the repository has to be bumped
+#      first. The tag is the only source of the version; release.yml passes it to build and pack,
+#      and refuses to publish a version that is already on nuget.org or that goes backwards.
+#
+# One thing worth knowing about drafts: this stores target_commitish as refs/heads/main, a BRANCH,
+# not a pinned commit. GitHub resolves it when you publish, so the tag lands on whatever main's tip
+# is at that moment - anything merged between the draft appearing and you publishing it is included
+# in the release, whether or not it is mentioned in the notes. That is usually what you want, and it
+# surprises people who assume a draft is a snapshot.
 
 name-template: 'v$RESOLVED_VERSION'
 
