@@ -80,6 +80,20 @@ ones that would warn if touched. The final gate is:
 dotnet build Toamaisutaa.slnx -c Release --no-incremental
 ```
 
+## A new claim is not done until `RefreshAsync` answers for it
+
+Any claim added to an access token must be answered for the refresh path **in the same change**,
+which in practice means carrying it on `ToamaisutaaRefreshToken` rather than recomputing it.
+
+This has now been the bug three phases running - `amr`, then `toa_2fa_source` and `toa_2fa_at`. It
+hides well: sign-in is correct, every endpoint test passes, and the token only goes wrong after one
+`AccessTokenLifetime`, by which point it reads as a policy failure rather than a refresh failure.
+Both times it surfaced from writing the refresh path and asking "what does this token carry now",
+never from a test.
+
+Ask it of every new claim: **recomputed, carried, or deliberately dropped?** All three are valid
+answers. Not having asked is not.
+
 ## Layering (enforced)
 
 - `Abstractions` has **zero** package references. Interfaces, options, DTOs, entities.

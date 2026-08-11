@@ -42,6 +42,19 @@ public sealed record AccessTokenRequest
     /// endpoints reachable while everything else demands the policy.
     /// </summary>
     public bool TwoFactorEnrolmentRequired { get; init; }
+
+    /// <summary>
+    /// How the second factor was satisfied, written to <c>toa_2fa_source</c>. One of
+    /// <see cref="TwoFactorSource"/>, or null when no second factor was involved.
+    /// </summary>
+    public string? TwoFactorSource { get; init; }
+
+    /// <summary>
+    /// When a second factor was last actually presented, written to <c>toa_2fa_at</c> as Unix
+    /// seconds. For a device-trusted sign-in this is the original live challenge, not now, which is
+    /// what lets an application require a <i>fresh</i> factor rather than merely a cached one.
+    /// </summary>
+    public DateTimeOffset? SecondFactorAt { get; init; }
 }
 
 public sealed record AccessToken(string Value, DateTimeOffset ExpiresAt);

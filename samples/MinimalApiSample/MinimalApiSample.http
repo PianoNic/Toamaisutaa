@@ -21,8 +21,8 @@ Content-Type: application/json
 
 { "identifier": "nic@example.com", "password": "correct horse battery" }
 
-@token = paste-the-accessToken-here
-@refresh = paste-the-refreshToken-here
+@token = paste-the-access_token-here
+@refresh = paste-the-refresh_token-here
 
 ### The locally issued token works on the same endpoints an identity provider's token does.
 GET {{host}}/api/me
@@ -118,7 +118,7 @@ Content-Type: application/json
 
 { "challenge": "{{challenge}}", "code": "000000" }
 
-@mfaToken = paste-the-new-accessToken-here
+@mfaToken = paste-the-new-access_token-here
 
 ### That token carries amr ["pwd","otp","mfa"], so the policy lets it through.
 GET {{host}}/api/sensitive
@@ -143,6 +143,58 @@ Content-Type: application/json
 Authorization: Bearer {{mfaToken}}
 
 { "proof": "000000" }
+
+# ───────────────────────── trusted devices ─────────────────────────
+
+### Complete a challenge asking to be remembered. The response carries a device_token, once.
+POST {{host}}/auth/2fa/verify
+Content-Type: application/json
+
+{ "challenge": "{{challenge}}", "code": "000000", "rememberDevice": true, "deviceLabel": "my laptop" }
+
+@device = paste-the-device_token-here
+
+### Now log in with it: tokens straight away, no challenge - and a ROTATED device_token.
+### Store the new one. The one you just sent is dead.
+POST {{host}}/auth/login
+Content-Type: application/json
+
+{ "identifier": "nic@example.com", "password": "correct horse battery", "deviceToken": "{{device}}" }
+
+### The device token is not a bearer token. 401, and no configuration makes it otherwise.
+GET {{host}}/api/me
+Authorization: Bearer {{device}}
+
+### The token it did issue still opens the two-factor route: mfa holds, it was just cached.
+### Check amr - it has "mfa" and no "otp" - and toa_2fa_at, which is the ORIGINAL live challenge.
+GET {{host}}/api/sensitive
+Authorization: Bearer {{mfaToken}}
+
+### Present the old, already-rotated device token: reuse. The whole family dies. Watch the log.
+POST {{host}}/auth/login
+Content-Type: application/json
+
+{ "identifier": "nic@example.com", "password": "correct horse battery", "deviceToken": "{{device}}" }
+
+### The device list. Send your own token to get isCurrent on the matching row.
+GET {{host}}/auth/devices
+Authorization: Bearer {{mfaToken}}
+X-Toamaisutaa-Device: {{device}}
+
+### Revoke one, by the id from the list.
+DELETE {{host}}/auth/devices/00000000-0000-0000-0000-000000000000
+Authorization: Bearer {{mfaToken}}
+
+### Or all of them.
+DELETE {{host}}/auth/devices
+Authorization: Bearer {{mfaToken}}
+
+### A password change takes every trusted device with it. After this, the login above is challenged.
+POST {{host}}/auth/password
+Content-Type: application/json
+Authorization: Bearer {{mfaToken}}
+
+{ "currentPassword": "correct horse battery", "newPassword": "a whole new password" }
 
 # ───────────────────────── identity provider ─────────────────────────
 

@@ -43,6 +43,17 @@ public class ToamaisutaaRefreshToken
     /// </summary>
     public string AuthenticationMethods { get; set; } = string.Empty;
 
+    /// <summary>
+    /// How the second factor was satisfied when this chain was established, replayed into
+    /// <c>toa_2fa_source</c>. Carried for the same reason as the methods: a rotation that recomputed
+    /// it would report the wrong answer, and one that dropped it would break a step-up policy one
+    /// access-token lifetime after a successful sign-in.
+    /// </summary>
+    public string? TwoFactorSource { get; set; }
+
+    /// <summary>The last live second factor on this chain, replayed into <c>toa_2fa_at</c>.</summary>
+    public DateTimeOffset? SecondFactorAt { get; set; }
+
     /// <summary>Set when this token was exchanged. A token that arrives with this already set has
     /// been presented twice, which is the reuse signal.</summary>
     public DateTimeOffset? RotatedAt { get; set; }

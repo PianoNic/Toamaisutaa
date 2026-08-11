@@ -83,7 +83,7 @@ public class PasswordAccountServiceTests
 
         await Assert.That(result.Succeeded).IsTrue();
 
-        var signIn = await harness.SignIn.SignInAsync("ssouser", Password);
+        var signIn = await harness.SignInAsync("ssouser", Password);
         await Assert.That(signIn.Outcome).IsEqualTo(SignInOutcome.Succeeded);
     }
 
@@ -117,17 +117,17 @@ public class PasswordAccountServiceTests
         var harness = PasswordHarness.Create();
         var user = await harness.RegisterAsync();
 
-        var tokens = (await harness.SignIn.SignInAsync("pianonic", Password)).Tokens!;
+        var tokens = (await harness.SignInAsync("pianonic", Password)).Tokens!;
 
         await harness.Accounts.SetPasswordAsync(user.Id, Password, "a whole new password");
 
         var refreshed = await harness.SignIn.RefreshAsync(tokens.RefreshToken);
         await Assert.That(refreshed.Outcome).IsEqualTo(SignInOutcome.RefreshTokenRevoked);
 
-        var oldPassword = await harness.SignIn.SignInAsync("pianonic", Password);
+        var oldPassword = await harness.SignInAsync("pianonic", Password);
         await Assert.That(oldPassword.Outcome).IsEqualTo(SignInOutcome.InvalidPassword);
 
-        var newPassword = await harness.SignIn.SignInAsync("pianonic", "a whole new password");
+        var newPassword = await harness.SignInAsync("pianonic", "a whole new password");
         await Assert.That(newPassword.Outcome).IsEqualTo(SignInOutcome.Succeeded);
     }
 
@@ -186,7 +186,7 @@ public class PasswordAccountServiceTests
         var result = await harness.Accounts.ResetPasswordAsync(token, "a whole new password");
 
         await Assert.That(result.Succeeded).IsTrue();
-        await Assert.That((await harness.SignIn.SignInAsync("pianonic", "a whole new password")).Outcome)
+        await Assert.That((await harness.SignInAsync("pianonic", "a whole new password")).Outcome)
             .IsEqualTo(SignInOutcome.Succeeded);
     }
 
@@ -241,7 +241,7 @@ public class PasswordAccountServiceTests
         var harness = PasswordHarness.Create();
         await harness.RegisterAsync();
 
-        var tokens = (await harness.SignIn.SignInAsync("pianonic", Password)).Tokens!;
+        var tokens = (await harness.SignInAsync("pianonic", Password)).Tokens!;
         await harness.Accounts.RequestPasswordResetAsync("nic@example.com");
         await harness.Accounts.ResetPasswordAsync(harness.Notifier.Sent.Single().Token, "a whole new password");
 
@@ -285,12 +285,12 @@ public class PasswordAccountServiceTests
         await harness.RegisterAsync();
 
         for (var attempt = 0; attempt < 5; attempt++)
-            await harness.SignIn.SignInAsync("pianonic", "wrong");
+            await harness.SignInAsync("pianonic", "wrong");
 
         await harness.Accounts.RequestPasswordResetAsync("nic@example.com");
         await harness.Accounts.ResetPasswordAsync(harness.Notifier.Sent.Single().Token, "a whole new password");
 
-        var result = await harness.SignIn.SignInAsync("pianonic", "a whole new password");
+        var result = await harness.SignInAsync("pianonic", "a whole new password");
 
         await Assert.That(result.Outcome).IsEqualTo(SignInOutcome.Succeeded);
     }

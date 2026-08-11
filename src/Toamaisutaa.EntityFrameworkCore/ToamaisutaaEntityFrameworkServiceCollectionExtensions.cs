@@ -35,6 +35,8 @@ public static class ToamaisutaaEntityFrameworkServiceCollectionExtensions
         services.TryAddScoped<IRecoveryCodeStore>(provider => provider.GetRequiredService<EntityFrameworkTwoFactorStore<TContext>>());
         services.TryAddScoped<ITwoFactorChallengeStore>(provider => provider.GetRequiredService<EntityFrameworkTwoFactorStore<TContext>>());
 
+        services.TryAddScoped<ITrustedDeviceStore, EntityFrameworkTrustedDeviceStore<TContext>>();
+
         return services;
     }
 

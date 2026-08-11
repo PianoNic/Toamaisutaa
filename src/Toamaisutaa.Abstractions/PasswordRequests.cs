@@ -1,7 +1,10 @@
 namespace Toamaisutaa.Abstractions;
 
-/// <summary><see cref="Identifier"/> is a user name or an email address.</summary>
-public sealed record LoginRequest(string Identifier, string Password);
+/// <summary>
+/// <see cref="Identifier"/> is a user name or an email address. <see cref="DeviceToken"/> is
+/// optional: send one from a previously trusted device to skip the two-factor challenge.
+/// </summary>
+public sealed record LoginRequest(string Identifier, string Password, string? DeviceToken = null);
 
 public sealed record RefreshRequest(string RefreshToken);
 

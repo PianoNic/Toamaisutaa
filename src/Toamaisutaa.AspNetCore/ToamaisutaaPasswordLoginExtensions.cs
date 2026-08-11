@@ -64,6 +64,11 @@ public static class ToamaisutaaPasswordLoginExtensions
         services.AddOptions<ToamaisutaaTwoFactorOptions>();
         services.TryAddScoped<TwoFactorGate>();
 
+        // Same shape: the sign-in path always asks whether a device token stands in for a second
+        // factor, and the gate answers no from the absence of the store rather than its own.
+        services.AddOptions<ToamaisutaaTrustedDeviceOptions>();
+        services.TryAddScoped<TrustedDeviceGate>();
+
         services.TryAddScoped<IPasswordSignInService, PasswordSignInService>();
         services.TryAddScoped<IPasswordAccountService, PasswordAccountService>();
 
