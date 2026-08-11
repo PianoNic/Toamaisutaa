@@ -41,9 +41,9 @@ internal sealed class ConfigureToamaisutaaJwtBearerOptions(
 
         options.RequireHttpsMetadata = settings.RequireHttpsMetadata;
 
-        // Not configurable. Remapping claim types to WS-Federation URIs while every other setting
-        // names raw JWT claims is how two of the four codebases this replaces ended up with a
-        // NameClaimType that matched nothing.
+        // Not configurable. Remapping claim types to WS-Federation URIs while NameClaim and
+        // RoleClaim below name raw JWT claims means both settings point at claims the principal no
+        // longer has, and a role check silently matches nothing. One set of names, the issuer's.
         options.MapInboundClaims = false;
 
         options.TokenValidationParameters.NameClaimType = settings.NameClaim;

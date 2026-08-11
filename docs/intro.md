@@ -19,7 +19,8 @@ membership out of the access token, and hands you a local user if you want one.
 
 **Local username and password login** is the fallback, for deployments that cannot run an identity
 provider. Turning it on means becoming the identity provider, with everything that implies - so it
-is off unless you ask for it, and built to be conservative rather than convenient.
+is off unless you ask for it, and built to be conservative rather than convenient. It can be paired
+with [TOTP two-factor authentication](/two-factor), also off by default.
 
 Use OIDC if you can.
 
@@ -36,7 +37,7 @@ Use OIDC if you can.
 | Package | Contains |
 |---|---|
 | `Toamaisutaa.Abstractions` | Interfaces, options and DTOs. No dependencies at all |
-| `Toamaisutaa.Core` | Claims mapping, provisioning decisions, password hashing and lockout. No ASP.NET, no EF |
+| `Toamaisutaa.Core` | Claims mapping, provisioning decisions, password hashing, lockout, TOTP. No ASP.NET, no EF |
 | `Toamaisutaa.OpenIdConnect` | `AddToamaisutaaBearer`, JWT validation, userinfo enrichment, local token issuance |
 | `Toamaisutaa.AspNetCore` | Authorization, `ICurrentUser`, the SPA configuration endpoint, the sign-in endpoints |
 | `Toamaisutaa.EntityFrameworkCore` | Entities, configurations, stores, `ToamaisutaaDbContext` |
@@ -50,9 +51,9 @@ project can depend on `ICurrentUser` without dragging a web stack behind it.
 
 ## Status
 
-Version 0.1.0. The shape is settled enough to use and not yet settled enough to promise - expect
-breaking changes in the public interfaces before 1.0, particularly in the store interfaces as
-two-factor authentication lands.
+Pre-1.0. The shape is settled enough to use and not yet settled enough to promise - expect breaking
+changes in the public interfaces before 1.0, the store interfaces most of all. Every one is listed
+in the release notes.
 
 Licensed under **PolyForm Noncommercial 1.0.0**: free for noncommercial use, and commercial use
 needs a separate licence from the author. It is not an OSI-approved open-source licence, so read

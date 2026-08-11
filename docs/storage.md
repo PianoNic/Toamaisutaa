@@ -1,8 +1,7 @@
 # Storage and migrations
 
-Provisioning is opt-in. The package is fully usable with no local user table at all - which is what
-three of the four applications it was extracted from actually do, letting the identity provider own
-every user.
+Provisioning is opt-in. The package is fully usable with no local user table at all, letting the
+identity provider own every user.
 
 Add it when you want a row of your own to hang data off.
 
@@ -30,7 +29,7 @@ builder.Services.AddToamaisutaaEntityFrameworkStores<YourDbContext>();
 ```
 
 The entity configurations are public, so you can also apply them individually and call `.ToTable()`
-afterwards to rename anything. Generate the migration in your own project - the two migration
+afterwards to rename anything. Generate the migration in your own project - the shipped migration
 packages only cover `ToamaisutaaDbContext`.
 
 ## Why migrations ship as separate packages
@@ -80,6 +79,9 @@ package and a regenerated migration - nothing in the schema changes.
 | `ToamaisutaaPasswordCredentials` | The local credential, one per user at most |
 | `ToamaisutaaRefreshTokens` | Issued refresh tokens, hashed, grouped into families |
 | `ToamaisutaaPasswordResetTokens` | Single-use reset tokens, hashed |
+| `ToamaisutaaUserTwoFactors` | One TOTP enrolment per user, its secret encrypted at rest |
+| `ToamaisutaaRecoveryCodes` | Hashed single-use recovery codes |
+| `ToamaisutaaTwoFactorChallenges` | Half-finished sign-ins waiting on a second factor |
 
 Credentials live in their own table rather than as columns on the user, and the reason is worth
 knowing: `ToamaisutaaUsers.Email` is a profile field that OIDC provisioning rewrites whenever the
@@ -98,7 +100,7 @@ person with accounts at two identity providers is two rows, legitimately sharing
 | Mode | Behaviour |
 |---|---|
 | `Never` | Write the profile once, at creation |
-| `FirstSignInOnly` | The same, kept distinct so the intent reads correctly |
+| `FirstSignInOnly` | The same, for when "only at creation" is the intent rather than the side effect |
 | `OnChange` | **Default.** Write only when a mapped claim actually differs |
 | `EveryRequest` | Write on every request |
 

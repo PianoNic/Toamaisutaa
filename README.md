@@ -17,7 +17,7 @@
 ---
 
 > **Heads up:** Toamaisutaa is in early development. Expect breaking changes in the public interfaces
-> before 1.0, particularly in the store interfaces as two-factor authentication lands.
+> before 1.0, the store interfaces most of all. Every one is listed in the release notes.
 > **PolyForm Noncommercial 1.0.0** - free for noncommercial use; commercial use needs a separate
 > licence. Not an OSI-approved open-source licence.
 
