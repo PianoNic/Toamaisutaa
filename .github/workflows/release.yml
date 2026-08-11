@@ -17,9 +17,17 @@
 
 name: Release
 
+# Triggered by PUBLISHING a release, not by pushing a tag - the same shape the other repositories
+# use. Release Drafter keeps a draft up to date on every push to main; publishing that draft in the
+# UI is the deliberate act that runs this. Two consequences worth knowing:
+#
+#   * Nothing here creates a release. The draft already exists, with its notes and its tag, so this
+#     workflow attaches to it. Only one workflow ever owns the release object.
+#   * Pushing a tag on its own does nothing at all now.
+
 on:
-  push:
-    tags: ['v*']
+  release:
+    types: [published]
 
 permissions:
   contents: read
@@ -30,7 +38,7 @@ jobs:
 
     permissions:
       id-token: write   # request the OIDC token nuget.org exchanges for a short-lived key
-      contents: write   # create the GitHub release
+      contents: write   # attach the packages to the release that triggered this
 
     steps:
       - uses: actions/checkout@v4
@@ -53,8 +61,10 @@ jobs:
       # Per-project rather than per-solution: pack on a solution warns for every project that is
       # deliberately not packable, and that warning carries no code, so it cannot be suppressed.
       - name: Pack
+        env:
+          TAG_NAME: ${{ github.event.release.tag_name }}
         run: |
-          VERSION="${GITHUB_REF_NAME#v}"
+          VERSION="${TAG_NAME#v}"
           echo "Packing $VERSION"
           for project in src/Toamaisutaa.*/Toamaisutaa.*.csproj; do
             case "$project" in *Tests*) continue ;; esac
@@ -77,12 +87,15 @@ jobs:
           --source https://api.nuget.org/v3/index.json
           --skip-duplicate
 
-      - name: Create GitHub release
+      # Attaches to the release that triggered this run. Not `gh release create`: the release
+      # already exists, Release Drafter wrote its notes, and creating one here would either fail on
+      # the duplicate tag or replace notes somebody reviewed before publishing.
+      - name: Attach packages to the release
         env:
           GH_TOKEN: ${{ github.token }}
+          TAG_NAME: ${{ github.event.release.tag_name }}
         run: >
-          gh release create "$GITHUB_REF_NAME"
+          gh release upload "$TAG_NAME"
           --repo "$GITHUB_REPOSITORY"
-          --title "$GITHUB_REF_NAME"
-          --generate-notes
+          --clobber
           artifacts/*.nupkg
