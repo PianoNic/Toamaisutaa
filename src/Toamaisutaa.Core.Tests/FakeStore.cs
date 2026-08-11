@@ -22,6 +22,32 @@ internal sealed class FakeStore(TimeProvider timeProvider) : IUserStore, IExtern
     public Task<ToamaisutaaUser?> FindByIdAsync(Guid id, CancellationToken cancellationToken = default) =>
         Task.FromResult(Users.FirstOrDefault(user => user.Id == id));
 
+    public Task<ToamaisutaaUser?> FindByEmailAsync(string email, CancellationToken cancellationToken = default)
+    {
+        var normalized = email.Trim().ToUpperInvariant();
+
+        return Task.FromResult(Users.FirstOrDefault(
+            user => user.Email is not null && string.Equals(user.Email.ToUpperInvariant(), normalized, StringComparison.Ordinal)));
+    }
+
+    public Task<ToamaisutaaUser> CreateAsync(ToamaisutaaUser user, CancellationToken cancellationToken = default)
+    {
+        var now = timeProvider.GetUtcNow();
+
+        user.Id = Guid.CreateVersion7(now);
+        user.CreatedAt = now;
+        user.UpdatedAt = now;
+
+        Users.Add(user);
+        return Task.FromResult(user);
+    }
+
+    public Task DeleteAsync(Guid userId, CancellationToken cancellationToken = default)
+    {
+        Users.RemoveAll(user => user.Id == userId);
+        return Task.CompletedTask;
+    }
+
     public Task<ToamaisutaaUser> CreateAsync(ExternalUserProfile profile, CancellationToken cancellationToken = default)
     {
         var now = timeProvider.GetUtcNow();

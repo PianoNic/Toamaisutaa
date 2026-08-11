@@ -21,6 +21,7 @@ public class ExternalLoginProvisionerTests
             store,
             store,
             options,
+            Options.Create(new ToamaisutaaLocalLoginOptions()),
             clock,
             NullLogger<ExternalLoginProvisioner>.Instance);
 

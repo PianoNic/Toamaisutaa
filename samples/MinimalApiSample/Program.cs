@@ -6,15 +6,13 @@ var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddOpenApi();
 
-// Validate access tokens against the issuer in the "Oidc" section. The authorization-code flow with
-// PKCE belongs to the client; this is the resource-server half of it.
+// Validate access tokens. Both the identity provider's and the ones this application issues itself:
+// one handler, one scheme, and nothing downstream can tell which kind it is holding.
 builder.Services.AddToamaisutaaBearer(builder.Configuration);
 
 // Authenticated by default, plus the "Toamaisutaa.Admin" policy because Oidc:AdminRole is set.
 builder.Services.AddToamaisutaaAuthorization(builder.Configuration);
 
-// Everything below is optional: without it the API still authenticates, it just has no local user
-// row. Three of the four applications this package was extracted from stop at the two calls above.
 builder.Services.AddToamaisutaaProvisioning();
 builder.Services.AddToamaisutaaDbContext(db => db.UseSqlite(
     builder.Configuration.GetConnectionString("Toamaisutaa") ?? "Data Source=toamaisutaa-sample.db",
@@ -22,6 +20,15 @@ builder.Services.AddToamaisutaaDbContext(db => db.UseSqlite(
     // guessed. Swap in the Postgres one and nothing else changes.
     sqlite => sqlite.MigrationsAssembly("Toamaisutaa.EntityFrameworkCore.Migrations.Sqlite")));
 builder.Services.AddToamaisutaaCurrentUser();
+
+// Local username and password sign-in. OIDC is the recommended path; this is the fallback for a
+// deployment that cannot run an identity provider.
+builder.Services.AddToamaisutaaPasswordLogin(builder.Configuration);
+builder.Services.AddToamaisutaaTokenCleanup();
+
+// Required, and deliberately not shipped: sending mail is not an authentication library's job. This
+// one writes the link to the log, which is all a sample needs.
+builder.Services.AddSingleton<IPasswordResetNotifier, LoggingPasswordResetNotifier>();
 
 var app = builder.Build();
 
@@ -33,9 +40,16 @@ await using (var scope = app.Services.CreateAsyncScope())
 app.UseAuthentication();
 app.UseAuthorization();
 
+// Without this the rate limiting on the anonymous endpoints is inert metadata.
+app.UseRateLimiter();
+
 // What the SPA reads at startup to configure its OIDC client. Anonymous, since it is needed before
 // anyone has signed in.
 app.MapToamaisutaaConfiguration();
+
+// POST /auth/login, /auth/refresh, /auth/logout, /auth/register, /auth/password,
+// /auth/password/forgot, /auth/password/reset.
+app.MapToamaisutaaPasswordEndpoints();
 
 if (app.Environment.IsDevelopment())
     app.MapOpenApi().AllowAnonymous();
@@ -44,25 +58,34 @@ app.MapGet("/api/public", () => "No token needed here.")
     .AllowAnonymous()
     .WithName("Public");
 
-// The fallback policy covers this: no token, no answer.
+// The fallback policy covers this: no token, no answer. It does not care whether the token came
+// from the identity provider or from /auth/login.
 app.MapGet("/api/me", async (ICurrentUser currentUser, CancellationToken cancellationToken) =>
 {
-    // First call for this subject creates the user row and its external login. Later calls read it,
-    // and write nothing unless a claim actually changed.
     var user = await currentUser.GetOrProvisionAsync(cancellationToken);
 
     return Results.Ok(new
     {
-        Local = new { user.Id, user.UserName, user.DisplayName, user.Email, user.PictureUrl, user.CreatedAt, user.UpdatedAt },
+        Local = new { user.Id, user.UserName, user.DisplayName, user.Email, user.CreatedAt, user.UpdatedAt },
         FromToken = new { currentUser.Subject, Actor = currentUser.Name },
     });
 })
 .WithName("Me");
 
-// Named policy from Oidc:AdminRole. A token without that role gets a 403 whose log line says which
-// claim was read and what the token carried there.
+// Named policy from Oidc:AdminRole. Local accounts carry no roles until an IUserRoleProvider says
+// otherwise, so a locally issued token gets a 403 here - by design, and documented.
 app.MapGet("/api/admin", () => "You carry the admin role.")
     .RequireAuthorization("Toamaisutaa.Admin")
     .WithName("Admin");
 
 app.Run();
+
+/// <summary>Stands in for whatever the application already uses to send mail.</summary>
+internal sealed class LoggingPasswordResetNotifier(ILogger<LoggingPasswordResetNotifier> logger) : IPasswordResetNotifier
+{
+    public Task SendAsync(ToamaisutaaUser user, string resetToken, CancellationToken cancellationToken = default)
+    {
+        logger.LogWarning("PASSWORD RESET for {Email}: token {Token}", user.Email, resetToken);
+        return Task.CompletedTask;
+    }
+}

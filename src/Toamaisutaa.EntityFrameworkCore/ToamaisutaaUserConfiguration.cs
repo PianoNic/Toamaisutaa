@@ -25,7 +25,16 @@ public sealed class ToamaisutaaUserConfiguration : IEntityTypeConfiguration<Toam
         builder.Property(user => user.DisplayName).HasMaxLength(256);
         builder.Property(user => user.PictureUrl).HasMaxLength(2048);
 
-        // Not unique: an email is a lookup key here, never an identity. Linking is by subject.
+        // NOT UNIQUE, permanently, and not an oversight to be tidied up later.
+        //
+        // This model is multi-provider: one person with accounts at two identity providers is two
+        // rows, legitimately sharing an address, and plenty of providers do not enforce uniqueness
+        // in the first place. Email here is a profile field that OIDC provisioning rewrites whenever
+        // the token's claim changes - making it unique would mean an administrator editing a
+        // directory could collide two rows and throw out of an unrelated request.
+        //
+        // Local login does need a unique email, and it has one: ToamaisutaaPasswordCredentials owns
+        // that constraint, scoped to accounts that actually sign in with a password.
         builder.HasIndex(user => user.Email);
     }
 }

@@ -12,11 +12,22 @@ internal sealed class ExternalLoginProvisioner(
     IUserStore userStore,
     IExternalLoginStore externalLoginStore,
     IOptions<ToamaisutaaProvisioningOptions> options,
+    IOptions<ToamaisutaaLocalLoginOptions> localLoginOptions,
     TimeProvider timeProvider,
     ILogger<ExternalLoginProvisioner> logger) : IExternalLoginProvisioner
 {
     public async Task<ToamaisutaaUser> ProvisionAsync(ClaimsPrincipal principal, CancellationToken cancellationToken = default)
     {
+        // A token this package issued names a local user directly and has no external login behind
+        // it. Left to the normal path, its subject would look like one nobody has ever seen and
+        // every request would provision another duplicate user.
+        if (TryGetLocallyIssuedUserId(principal, out var localUserId))
+        {
+            return await userStore.FindByIdAsync(localUserId, cancellationToken)
+                ?? throw new InvalidOperationException(
+                    $"A locally issued token names user {localUserId}, which no longer exists.");
+        }
+
         var profile = mapper.Map(principal);
 
         try
@@ -36,6 +47,30 @@ internal sealed class ExternalLoginProvisioner(
 
             return await RunAsync(profile, cancellationToken);
         }
+    }
+
+    /// <summary>
+    /// Decided by the issuer, not by a claim an identity provider could also emit. The bearer layer
+    /// binds the local signing key to the local issuer, so a token can only carry that issuer if we
+    /// signed it.
+    /// </summary>
+    private bool TryGetLocallyIssuedUserId(ClaimsPrincipal principal, out Guid userId)
+    {
+        userId = Guid.Empty;
+
+        var local = localLoginOptions.Value;
+
+        // No signing key means password login was never registered, so no token is ours.
+        if (string.IsNullOrWhiteSpace(local.SigningKey))
+            return false;
+
+        var issuer = principal.FindFirst("iss")?.Value;
+        if (!string.Equals(issuer, local.Issuer, StringComparison.Ordinal))
+            return false;
+
+        var subject = principal.FindFirst("sub")?.Value ?? principal.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+
+        return Guid.TryParse(subject, out userId);
     }
 
     private async Task<ToamaisutaaUser> RunAsync(ExternalUserProfile profile, CancellationToken cancellationToken)
