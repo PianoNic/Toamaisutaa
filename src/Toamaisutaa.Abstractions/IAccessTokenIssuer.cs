@@ -10,7 +10,15 @@ public interface IAccessTokenIssuer
     /// The resulting token must be indistinguishable downstream from one the identity provider
     /// issued: same claim shape, validated by the same pipeline, understood by the same policies.
     /// </summary>
-    AccessToken Issue(ToamaisutaaUser user, IReadOnlyList<string> roles);
+    /// <remarks>
+    /// Asynchronous even though the shipped implementation signs in memory and never waits for
+    /// anything. Signing is exactly the operation that later moves to a key management service or an
+    /// HSM, and by then this is a published interface that cannot change shape.
+    /// </remarks>
+    Task<AccessToken> IssueAsync(
+        ToamaisutaaUser user,
+        IReadOnlyList<string> roles,
+        CancellationToken cancellationToken = default);
 }
 
 public sealed record AccessToken(string Value, DateTimeOffset ExpiresAt);

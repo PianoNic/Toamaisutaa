@@ -6,6 +6,12 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\Toamaisutaa.Core\Toamaisutaa.Core.csproj" />
+    <!-- Intrinsic, not incidental. Local password login mints access tokens that only the bearer
+         pipeline can validate, which is the whole point of there being one handler for both token
+         shapes - so nobody can use this package's sign-in endpoints without also calling
+         AddToamaisutaaBearer. Referencing it makes that requirement visible to the package graph
+         instead of surfacing as a startup error naming an API the consumer has not installed. -->
+    <ProjectReference Include="..\Toamaisutaa.OpenIdConnect\Toamaisutaa.OpenIdConnect.csproj" />
   </ItemGroup>
   <ItemGroup>
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
