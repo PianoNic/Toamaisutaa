@@ -169,9 +169,9 @@ public static class TwoFactorSource
 }
 
 /// <summary>
-/// The pair a successful sign-in returns. Serialised camelCase like everything else this package
-/// emits - <c>accessToken</c>, not the OAuth <c>access_token</c> - so one convention covers the
-/// whole API.
+/// The pair a successful sign-in returns. The endpoints serialise it under the RFC 6749 names -
+/// <c>access_token</c>, <c>refresh_token</c>, <c>expires_in</c>, <c>token_type</c> - so a client
+/// that already speaks OAuth token endpoints reads it without a mapping.
 /// </summary>
 public sealed record TokenPair
 {

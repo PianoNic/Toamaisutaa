@@ -357,11 +357,21 @@ Both endpoints now share one `SignInSucceeded` helper.
 
 Found while fixing the above. `/auth/login` returned `accessToken` from `TokenPair`;
 `/auth/2fa/verify` returned `access_token` from a hand-written anonymous object added in Phase 4. A
-client had to parse both. Now both are camelCase, matching every other endpoint in the package.
-`TokenPair`'s XML doc claimed it was "OAuth-shaped", which was never true of its serialisation;
-corrected rather than the shape changed.
+client had to parse both.
 
-**This breaks `/auth/2fa/verify` clients from 0.2.0**, which shipped hours ago.
+I first unified on camelCase, for internal consistency with the rest of the package. That was the
+weaker call and it was corrected before merge: **every sign-in response now uses the RFC 6749 names**
+- `access_token`, `refresh_token`, `expires_in`, `token_type` - because a token endpoint is a place
+where a standard already exists and anyone integrating expects it. Consistency with our own earlier
+mistake is not worth preserving.
+
+The line: **token responses are OAuth-shaped, everything else is camelCase.** `/auth/2fa` and
+`/auth/devices` return this package's own shapes, which no standard names, so they stay camelCase.
+Requests bind to our records and stay camelCase too - `deviceToken`, `rememberDevice`. Documented,
+because the asymmetry is otherwise something a consumer discovers.
+
+**This breaks `/auth/login`, `/auth/refresh` and `/auth/register` from 0.1.0, and
+`/auth/2fa/verify` from 0.2.0.** Cheap now, and steadily less so.
 
 ### 3. `ToamaisutaaRefreshToken` gained two more columns
 

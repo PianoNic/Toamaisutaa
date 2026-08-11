@@ -20,11 +20,19 @@ follows from that.
 ## How it flows
 
 1. `/auth/login` with a password → a challenge, as usual.
-2. `/auth/2fa/verify` with `rememberDevice: true` → tokens **and** a `deviceToken`.
-3. `/auth/login` with `identifier`, `password` and that `deviceToken` → tokens, no challenge.
+2. `/auth/2fa/verify` with `"rememberDevice": true` → tokens **and** a `device_token`.
+3. `/auth/login` with `identifier`, `password` and `"deviceToken": "…"` → tokens, no challenge.
 
-The device token rotates on every use, so the response to step 3 contains a **new** one. Store it and
-discard the old.
+The device token rotates on every use, so the response to step 3 contains a **new** `device_token`.
+Store it and discard the old one - presenting a spent token is the theft signal, and it revokes the
+device.
+
+::: tip Request fields are camelCase, token responses are not
+Requests bind to this package's own records, so they are camelCase: `deviceToken`, `rememberDevice`.
+Sign-in *responses* use the RFC 6749 names - `access_token`, `refresh_token`, `expires_in`,
+`token_type`, and alongside them `device_token` and `device_expires_in` - so a client that already
+speaks OAuth token endpoints needs no mapping.
+:::
 
 ## Storing it is the whole security of this feature
 
@@ -71,20 +79,29 @@ A cached second factor is not a one-time password, and the token says so:
 `mfa` still holds - a second factor was performed, just not now - so a `Toamaisutaa.TwoFactor` policy
 keeps working. What changes is `toa_2fa_at`, which reports when the factor was actually presented.
 
-That is what makes freshness expressible. A route protecting something genuinely sensitive can ask
-for a second factor performed in the last five minutes:
+### Step-up is something you can express, not something this package does
+
+**Toamaisutaa ships the claims, not the enforcement.** There is no step-up API here: nothing will
+interrupt a request to ask for a fresh code, and nothing re-challenges a user mid-session. What the
+token gives you is enough information to write the policy yourself, out of parts you already have:
 
 ```csharp
-policy.RequireAssertion(context =>
-{
-    var at = context.User.FindFirst("toa_2fa_at")?.Value;
-    return long.TryParse(at, out var seconds)
-        && DateTimeOffset.UtcNow.ToUnixTimeSeconds() - seconds < 300;
-});
+options.AddPolicy("FreshSecondFactor", policy => policy
+    .RequireAuthenticatedUser()
+    .RequireAssertion(context =>
+    {
+        var at = context.User.FindFirst("toa_2fa_at")?.Value;
+        return long.TryParse(at, out var seconds)
+            && DateTimeOffset.UtcNow.ToUnixTimeSeconds() - seconds < 300;
+    }));
 ```
 
-Without it, "fresh" could only mean "not cached", which would wrongly accept a live code entered
-twenty minutes ago.
+A request failing that gets a 403. Sending the user back through a live challenge, and getting them
+where they were going afterwards, is your application's flow to build - this package has no view on
+what that should look like.
+
+`toa_2fa_at` exists because without it "fresh" could only mean "not cached", which would wrongly
+accept a live code entered twenty minutes ago.
 
 ## Lifetime is absolute
 
