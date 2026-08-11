@@ -61,6 +61,15 @@ single-use challenge instead of tokens and the sign-in finishes at `/auth/2fa/ve
 tokens carry `amr` per RFC 8176, and a `Toamaisutaa.TwoFactor` policy is registered for routes that
 should require a second factor.
 
+## Why not ASP.NET Core Identity?
+
+Because Identity assumes it owns the users, and this assumes your identity provider does. Identity
+has no built-in OIDC support, its endpoints issue proprietary tokens rather than JWTs, and a local
+user table is mandatory. Here all three are the other way round. Use Identity for a self-contained
+application that owns its users - it ships with the framework and is better tested than this.
+
+[The longer answer, with the comparison table](https://docs.toamaisutaa.pianonic.ch/intro#why-not-asp-net-core-identity).
+
 ## Storage
 
 Both optional features need somewhere to put a user. Add `Toamaisutaa.EntityFrameworkCore` and one of

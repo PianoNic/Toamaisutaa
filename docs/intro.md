@@ -26,20 +26,15 @@ Use OIDC if you can.
 
 ## What it is
 
-- **A resource server's token validation.** Every endpoint comes from the issuer's discovery
-  document, so swapping Keycloak for Entra is a configuration change, and every 403 says which claim
-  it read and what the token actually carried there.
-- **A bridge from claims to a user row.** Turns a `ClaimsPrincipal` into a record you own - created
-  on first sight of a subject, rewritten only when a claim actually changed, and safe when two first
-  requests race.
-- **A local identity provider, when you have none to point at.** Password sign-in with PBKDF2,
-  rotating refresh tokens with reuse detection, lockout, reset tokens, and TOTP two-factor
-  authentication. All of it off until you ask.
-- **Storage, on your terms.** Migrations for PostgreSQL, SQLite, SQL Server and MySQL, or the entity
-  configurations applied to a `DbContext` you already have. Or no database at all.
-- **Seams rather than assumptions.** Hashing, claims mapping, provisioning decisions, role lookup and
-  secret protection are each one interface, registered with `TryAdd`, so supplying your own replaces
-  the default without forking anything.
+- **Bearer token validation.** Every endpoint comes from the issuer's discovery document, so swapping
+  Keycloak for Entra is configuration rather than code.
+- **A bridge from claims to a user row.** Optional, written only when a claim actually changed, and
+  safe when two first requests race.
+- **A local login, for when you have no provider.** PBKDF2, rotating refresh tokens, lockout, reset
+  tokens and TOTP. Off until you ask.
+- **Storage on your terms.** Four databases' migrations, your own `DbContext`, or no database at all.
+- **Seams, not assumptions.** Hashing, claims mapping, provisioning, roles and secret protection are
+  each one interface you can replace.
 
 ## What it is not
 
@@ -48,6 +43,38 @@ Use OIDC if you can.
 - **Not a roles system.** There is no roles table. Roles come from your identity provider's token, or
   from an `IUserRoleProvider` you supply.
 - **Not a user manager.** There is no admin UI, no user list, no invitation flow.
+
+## Why not ASP.NET Core Identity?
+
+Identity is the closest thing in the box, and the overlap is real: local login, two-factor, EF Core
+migrations, and `MapIdentityApi` for register, login and refresh endpoints. If that is all you need,
+use it. It ships with the framework and it is far better tested than this.
+
+The difference is who owns the users. **Identity assumes it does** - it is a membership system, and
+an application pointed entirely at an external provider leaves most of it, user database included,
+with nothing to do. **Toamaisutaa assumes the identity provider does**, and starts from a validated
+bearer token.
+
+| | ASP.NET Core Identity | Toamaisutaa |
+|---|---|---|
+| OIDC / external provider | Not built in | The primary path |
+| Its endpoints' tokens | Proprietary, [not JWTs](https://learn.microsoft.com/en-us/aspnet/core/security/authentication/identity-api-authorization) | Standard JWTs, validated by the same pipeline as your provider's |
+| Local user table | Required | Optional |
+| Roles | Its own tables | From the token, or an interface you supply |
+| UI | Scaffoldable Razor pages | None |
+
+The token format is the one that catches people. Microsoft is explicit that the Identity API's
+tokens "aren't standard JSON Web Tokens" and that it "isn't intended to be a full-featured identity
+service provider or token server". If a gateway or another service downstream needs to read a claim,
+that is a problem you inherit.
+
+**Use Identity** for a self-contained application that owns its users. **Use Toamaisutaa** when
+something else already does, or will.
+
+If you need to *be* the identity provider, you want neither - look at
+[OpenIddict](https://github.com/openiddict/openiddict-core) or
+[Duende IdentityServer](https://duendesoftware.com/products/identityserver), and note that Duende
+requires a commercial licence above a revenue threshold.
 
 ## The packages
 

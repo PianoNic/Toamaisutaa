@@ -76,6 +76,15 @@ out, and no database at all.
 - **No ASP.NET where it does not belong** - `Abstractions` and `Core` carry no web stack, so a domain
   project can depend on `ICurrentUser` without one.
 
+## Why not ASP.NET Core Identity?
+
+Because Identity assumes it owns the users, and this assumes your identity provider does. Identity
+has no built-in OIDC support, its endpoints issue proprietary tokens rather than JWTs, and a local
+user table is mandatory. Here all three are the other way round. Use Identity for a self-contained
+application that owns its users - it ships with the framework and is better tested than this.
+
+[The longer answer, with the comparison table](https://docs.toamaisutaa.pianonic.ch/intro#why-not-asp-net-core-identity).
+
 ## What revoking a session actually does
 
 Disabling a second factor, changing a password and resetting one all move the user's security stamp
