@@ -24,6 +24,23 @@ with [TOTP two-factor authentication](/two-factor), also off by default.
 
 Use OIDC if you can.
 
+## What it is
+
+- **A resource server's token validation.** Every endpoint comes from the issuer's discovery
+  document, so swapping Keycloak for Entra is a configuration change, and every 403 says which claim
+  it read and what the token actually carried there.
+- **A bridge from claims to a user row.** Turns a `ClaimsPrincipal` into a record you own - created
+  on first sight of a subject, rewritten only when a claim actually changed, and safe when two first
+  requests race.
+- **A local identity provider, when you have none to point at.** Password sign-in with PBKDF2,
+  rotating refresh tokens with reuse detection, lockout, reset tokens, and TOTP two-factor
+  authentication. All of it off until you ask.
+- **Storage, on your terms.** Migrations for PostgreSQL, SQLite, SQL Server and MySQL, or the entity
+  configurations applied to a `DbContext` you already have. Or no database at all.
+- **Seams rather than assumptions.** Hashing, claims mapping, provisioning decisions, role lookup and
+  secret protection are each one interface, registered with `TryAdd`, so supplying your own replaces
+  the default without forking anything.
+
 ## What it is not
 
 - **Not an identity provider.** It does not implement the authorization-code flow, a consent screen,
