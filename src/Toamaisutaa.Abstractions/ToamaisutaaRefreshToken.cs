@@ -28,6 +28,21 @@ public class ToamaisutaaRefreshToken
     /// the absolute lifetime by being used often.</summary>
     public DateTimeOffset FamilyStartedAt { get; set; }
 
+    /// <summary>
+    /// The user's <see cref="ToamaisutaaUser.SecurityStamp"/> as it stood when this chain was
+    /// minted. Compared on every refresh, and a mismatch revokes the family - which is what makes a
+    /// password change or a disabled second factor end sessions that were established before it.
+    /// </summary>
+    public string SecurityStamp { get; set; } = default!;
+
+    /// <summary>
+    /// The RFC 8176 methods that established this chain, space-separated, replayed into the
+    /// <c>amr</c> claim of every token rotated out of it. Carried rather than recomputed so that a
+    /// refresh cannot quietly downgrade a session that presented a second factor into one that only
+    /// ever proved a password.
+    /// </summary>
+    public string AuthenticationMethods { get; set; } = string.Empty;
+
     /// <summary>Set when this token was exchanged. A token that arrives with this already set has
     /// been presented twice, which is the reuse signal.</summary>
     public DateTimeOffset? RotatedAt { get; set; }

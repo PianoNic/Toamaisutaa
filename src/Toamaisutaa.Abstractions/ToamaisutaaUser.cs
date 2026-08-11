@@ -18,7 +18,30 @@ public class ToamaisutaaUser
 
     public string? PictureUrl { get; set; }
 
+    /// <summary>
+    /// Changes whenever a credential changes: a password set, change or reset, and enabling,
+    /// disabling or regenerating a second factor. Issued access tokens carry it, and it is compared
+    /// on refresh and wherever <c>ICurrentUser</c> resolves a user, so a stale one ends the session.
+    /// </summary>
+    /// <remarks>
+    /// On the user rather than the password credential, because a second factor belongs to the
+    /// person and not to one way of proving they are them - a user provisioned by an identity
+    /// provider has no credential row to hang it off.
+    /// <para>
+    /// It is not compared on every bearer request. Doing so costs a database read per request
+    /// forever, and the window it closes is bounded by <c>AccessTokenLifetime</c> anyway.
+    /// </para>
+    /// </remarks>
+    public string SecurityStamp { get; set; } = default!;
+
     public DateTimeOffset CreatedAt { get; set; }
 
     public DateTimeOffset UpdatedAt { get; set; }
 }
+
+/// <summary>
+/// Thrown when a token's <c>toa_stamp</c> no longer matches the user's. The credential it was
+/// issued against has changed, so the token is stale even though its signature and expiry are both
+/// still good.
+/// </summary>
+public sealed class SecurityStampChangedException(string message) : Exception(message);

@@ -36,6 +36,7 @@ internal sealed class PasswordAccountService(
                 UserName = request.UserName.Trim(),
                 Email = string.IsNullOrWhiteSpace(request.Email) ? null : request.Email.Trim(),
                 DisplayName = request.UserName.Trim(),
+                SecurityStamp = SecureTokens.Create(),
             },
             cancellationToken);
 
@@ -120,6 +121,7 @@ internal sealed class PasswordAccountService(
 
         // A password change ends the other sessions. It is the one moment the account holder is
         // most likely to be reacting to someone else having access.
+        await users.UpdateSecurityStampAsync(userId, SecureTokens.Create(), cancellationToken);
         await refreshTokens.RevokeAllForUserAsync(userId, "password-changed", now, cancellationToken);
         await resetTokens.InvalidateAllForUserAsync(userId, now, cancellationToken);
 
@@ -216,6 +218,7 @@ internal sealed class PasswordAccountService(
 
         // Nothing on the external side is touched: the external logins stay linked, and a token the
         // identity provider issued keeps working until it expires, because we cannot revoke it.
+        await users.UpdateSecurityStampAsync(stored.UserId, SecureTokens.Create(), cancellationToken);
         await refreshTokens.RevokeAllForUserAsync(stored.UserId, "password-reset", now, cancellationToken);
 
         logger.LogInformation("Password reset completed for user {UserId}; all local sessions revoked.", stored.UserId);
@@ -231,7 +234,6 @@ internal sealed class PasswordAccountService(
             Email = string.IsNullOrWhiteSpace(email) ? null : email.Trim(),
             NormalizedEmail = Normalizer.NormalizeOptional(email),
             PasswordHash = hasher.Hash(password),
-            SecurityStamp = SecureTokens.Create(),
             CreatedAt = now,
             UpdatedAt = now,
         };
@@ -239,7 +241,6 @@ internal sealed class PasswordAccountService(
     private void ApplyNewPassword(ToamaisutaaPasswordCredential credential, string newPassword, DateTimeOffset now)
     {
         credential.PasswordHash = hasher.Hash(newPassword);
-        credential.SecurityStamp = SecureTokens.Create();
         credential.UpdatedAt = now;
 
         // Whoever just proved they own the account should not still be locked out of it.

@@ -12,7 +12,6 @@ public class LockoutPolicyTests
         UserName = "pianonic",
         NormalizedUserName = "PIANONIC",
         PasswordHash = "irrelevant",
-        SecurityStamp = "irrelevant",
     };
 
     private static ToamaisutaaLocalLoginOptions Options() => new()

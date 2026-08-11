@@ -15,6 +15,8 @@ internal sealed class FakeStore(TimeProvider timeProvider) : IUserStore, IExtern
 
     internal int LinkAttempts { get; private set; }
 
+    internal int SecurityStampWrites { get; private set; }
+
     /// <summary>When set, the next link attempt loses: another request's row appears and the unique
     /// index rejects ours.</summary>
     internal ToamaisutaaUser? WinnerOfTheNextRace { get; set; }
@@ -38,6 +40,9 @@ internal sealed class FakeStore(TimeProvider timeProvider) : IUserStore, IExtern
         user.CreatedAt = now;
         user.UpdatedAt = now;
 
+        if (string.IsNullOrEmpty(user.SecurityStamp))
+            user.SecurityStamp = Guid.NewGuid().ToString("N");
+
         Users.Add(user);
         return Task.FromResult(user);
     }
@@ -45,6 +50,20 @@ internal sealed class FakeStore(TimeProvider timeProvider) : IUserStore, IExtern
     public Task DeleteAsync(Guid userId, CancellationToken cancellationToken = default)
     {
         Users.RemoveAll(user => user.Id == userId);
+        return Task.CompletedTask;
+    }
+
+    public Task UpdateSecurityStampAsync(Guid userId, string securityStamp, CancellationToken cancellationToken = default)
+    {
+        var user = Users.FirstOrDefault(entry => entry.Id == userId);
+
+        if (user is not null)
+        {
+            user.SecurityStamp = securityStamp;
+            user.UpdatedAt = timeProvider.GetUtcNow();
+            SecurityStampWrites++;
+        }
+
         return Task.CompletedTask;
     }
 
@@ -59,6 +78,7 @@ internal sealed class FakeStore(TimeProvider timeProvider) : IUserStore, IExtern
             Email = profile.Email,
             DisplayName = profile.DisplayName,
             PictureUrl = profile.PictureUrl,
+            SecurityStamp = Guid.NewGuid().ToString("N"),
             CreatedAt = now,
             UpdatedAt = now,
         };

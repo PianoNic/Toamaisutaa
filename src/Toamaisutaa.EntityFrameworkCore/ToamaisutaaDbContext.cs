@@ -36,6 +36,12 @@ public class ToamaisutaaDbContext : DbContext
 
     public DbSet<ToamaisutaaPasswordResetToken> PasswordResetTokens => Set<ToamaisutaaPasswordResetToken>();
 
+    public DbSet<ToamaisutaaUserTwoFactor> UserTwoFactors => Set<ToamaisutaaUserTwoFactor>();
+
+    public DbSet<ToamaisutaaRecoveryCode> RecoveryCodes => Set<ToamaisutaaRecoveryCode>();
+
+    public DbSet<ToamaisutaaTwoFactorChallenge> TwoFactorChallenges => Set<ToamaisutaaTwoFactorChallenge>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);

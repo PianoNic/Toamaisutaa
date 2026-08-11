@@ -58,6 +58,12 @@ public static class ToamaisutaaPasswordLoginExtensions
         services.TryAddSingleton<IUserRoleProvider, EmptyUserRoleProvider>();
         services.TryAddSingleton<DummyPasswordHash>();
 
+        // The sign-in path always asks whether a second factor applies. Bound and registered even
+        // when AddToamaisutaaTwoFactor was never called, because the gate answers "no" from the
+        // absence of the stores rather than from its own absence - which would be a crash.
+        services.AddOptions<ToamaisutaaTwoFactorOptions>();
+        services.TryAddScoped<TwoFactorGate>();
+
         services.TryAddScoped<IPasswordSignInService, PasswordSignInService>();
         services.TryAddScoped<IPasswordAccountService, PasswordAccountService>();
 

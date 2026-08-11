@@ -24,6 +24,7 @@ export default defineConfig({
       { text: 'Getting started', link: '/getting-started' },
       { text: 'OIDC', link: '/oidc' },
       { text: 'Password login', link: '/password-login' },
+      { text: 'Two-factor', link: '/two-factor' },
       { text: 'Development', link: '/dev-setup' },
     ],
     sidebar: [
@@ -42,6 +43,7 @@ export default defineConfig({
         items: [
           { text: 'OIDC bearer validation', link: '/oidc' },
           { text: 'Local password login', link: '/password-login' },
+          { text: 'Two-factor authentication', link: '/two-factor' },
         ],
       },
       {

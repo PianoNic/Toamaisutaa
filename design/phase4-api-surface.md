@@ -462,3 +462,137 @@ The brief's list, plus what I would want anyway:
 4. Whether `AddToamaisutaaTwoFactor` implies `AddToamaisutaaPasswordLogin`. It does not have to - 2FA
    on top of OIDC-only is a supported shape - but the challenge flow is meaningless without local
    login, so the startup check should probably require one of the two rather than both.
+
+---
+
+## Sign-off
+
+All four resolved.
+
+1. **Opaque challenge.** The regression test is kept anyway - not because the design needs it, but so
+   that someone who later "simplifies" the challenge into a JWT trips a test named for the bypass.
+2. **Refresh and `ICurrentUser` only**, with the window stated plainly in the README rather than
+   implied.
+3. **Configurable, with the XML doc doing the work.** Removing a knob to prevent misuse is the kind of
+   paternalism that ends in someone vendoring the source.
+4. **One of the two, not both.** And the startup check names the combination the consumer actually
+   has: "two-factor registered without password login or the claims transformation" is a feature
+   registered that will never fire, which is a confusing enough state to deserve maximum specificity
+   and no voice at all.
+
+### The enrolment response is the one secret this package hands out
+
+`TwoFactorEnrolmentStarted.Secret` is base32 plaintext and `Uri` contains the same bytes. Both are the
+credential itself, in a response body. Enrolment cannot work any other way, but it makes
+`/auth/2fa/begin` the single endpoint in the package that returns a long-lived secret. Three rules
+follow:
+
+- **Never log that response.** Written into `CLAUDE.md` beside the personality rule, because a
+  well-meaning debug log of an enrolment response writes permanent TOTP secrets into log aggregation,
+  where they outlive every rotation anyone will remember to perform.
+- **`/auth/2fa/begin` is rate-limited.** Not against brute force - there is nothing to guess - but
+  because each call generates and stores a fresh unconfirmed secret, so an unbounded loop is write
+  amplification.
+- **Calling `begin` twice overwrites the first secret**, which is correct and also means a user who
+  scans a QR code and then reloads the page is holding a dead secret. We cannot tell a wrong code from
+  a stale one - the old secret is gone, so there is nothing left to check it against - but we can tell
+  that *a* secret was superseded, because an unconfirmed row that has been rewritten has
+  `UpdatedAt > CreatedAt`. When that is true, the confirm failure adds "if you scanned an earlier QR
+  code, scan the current one". No column, no stored superseded secret, and it is honest about being a
+  hint rather than a diagnosis.
+
+### Disabling while a challenge is outstanding
+
+Disabling requires proof, so an attacker cannot do it mid-challenge - but a user can, from a second
+device, while a challenge sits unconsumed on the first. The row survives and still points at a real
+user. **Verification checks that the enrolment still exists**, not merely that the challenge is
+unconsumed and unexpired, so a challenge cannot outlive the thing it was challenging.
+
+---
+
+## What changed while implementing this
+
+Six deviations from the signed-off surface. Four are things the proposal simply did not think about;
+two are shapes that turned out to be wrong once there was code on the other side of them.
+
+### 1. `IAccessTokenIssuer.IssueAsync` takes a record now
+
+Proposed: unchanged. Actual: `IssueAsync(AccessTokenRequest, CancellationToken)`.
+
+A token has to carry `amr`, `toa_stamp` and `toa_2fa_required`, none of which the old
+`(user, roles)` signature had room for. Widening it would have been the second breaking change to
+this interface in two releases, and the next thing a token needs to carry would be the third. A
+record makes every future addition a property rather than a break.
+
+### 2. `ToamaisutaaRefreshToken` gained two columns
+
+Proposed: three new tables, plus the stamp moving. Actual: also `SecurityStamp` and
+`AuthenticationMethods` on `ToamaisutaaRefreshTokens`.
+
+Both fell out of writing the refresh path:
+
+- **`SecurityStamp`** - "refuse a chain whose stamp is stale" needs the stamp as it stood when the
+  chain was minted. There is nothing to compare against without it.
+- **`AuthenticationMethods`** - without it, a token rotated out of a second-factor session comes back
+  carrying `["pwd"]`, and any policy requiring `mfa` starts failing fifteen minutes after a
+  successful sign-in. Carried on the family so that a refresh cannot quietly downgrade what a session
+  proved.
+
+Both are in `MoveSecurityStampToUser` and are backfilled, so live sessions survive the upgrade.
+
+### 3. Two seam methods the proposal missed
+
+`ITotpProvider.Encode` and `IRecoveryCodeProvider.LooksLikeRecoveryCode`. The first is needed because
+`BeginEnrolmentAsync` returns base32 for manual entry and nothing else could produce it; the second
+because one input field accepting either kind of code has to decide which it is holding, and that
+decision belongs to whatever generates the codes.
+
+`ISecretProtector.NeedsRewrap` likewise: lazy rotation needs to ask.
+
+### 4. `TwoFactorGate`, and why it resolves through the provider
+
+`PasswordSignInService` has to ask "does this user need a second factor" on every sign-in - but
+password login works perfectly well with no second factor registered at all. A constructor
+dependency would turn "did not call `AddToamaisutaaTwoFactor`" into an unresolvable-service crash at
+the first login rather than a supported configuration.
+
+So `TwoFactorGate` is registered by password login and looks its collaborators up through
+`IServiceProvider`. Absent, every method answers "no". It is the one place in the package that
+resolves a service at call time, and the alternative was worse.
+
+### 5. `TwoFactorEnrolmentException` lives in `Abstractions`, not `Core`
+
+It is thrown across a published interface and caught by the endpoints, so it belongs beside
+`ITwoFactorService` rather than beside its thrower.
+
+### 6. The confirm-failure hint is free
+
+The sign-off asked whether we could distinguish "wrong code" from "you scanned an older secret". We
+cannot - the superseded secret is gone. But an unconfirmed row that has been rewritten has
+`UpdatedAt > CreatedAt`, which is already stored, so the hint costs nothing: no column, no retained
+secret, and it is phrased as a possibility rather than a diagnosis.
+
+### Verification performed
+
+- **169 tests green**, including the RFC 6238 published vectors at all six timestamps, drift,
+  replay, single-use challenges and recovery codes, key rotation, and fail-closed decryption.
+- **All four providers migrated against a populated database.** Seeded a user with a credential and
+  one without, applied both migrations, and confirmed the stamp survived on the first, that the
+  second got a fresh one rather than an empty string, that the live refresh token's stamp matched and
+  its methods were backfilled, that the old column was gone and that all eight tables were present.
+  Postgres 18.3, SQLite, SQL Server 2022 and MySQL 8.4.
+- **End to end against the sample over HTTP**: enrolment, a two-step login, `amr` coming back as
+  `["pwd","otp","mfa"]` for a code and `["pwd","mfa"]` for a recovery code, a policy-protected
+  endpoint going 403 → 200, a spent challenge and a spent recovery code both refused, disablement,
+  and the old refresh chain dying because the stamp moved.
+- **The challenge token presented as a bearer token to `/api/me` returned 401**, as it structurally
+  must.
+- **The sample's log contains no trace** of the secret, the URI, or any recovery code.
+
+### One thing worth knowing
+
+EF Core's SQLite provider implements `DropColumn` as a table rebuild, which cannot run inside a
+transaction, so applying `MoveSecurityStampToUser` on SQLite logs a warning that an interrupted
+migration would need reverting by hand. That is inherent to dropping a column on SQLite rather than
+anything about this migration, and the data copy runs before the drop, so an interruption loses
+nothing that was not already copied.

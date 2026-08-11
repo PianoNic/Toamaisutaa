@@ -23,4 +23,25 @@ public static class ToamaisutaaDefaults
     /// the identity provider's keys and refuse to validate one issuer's tokens with the other's
     /// key.</summary>
     public const string LocalSigningKeyId = "toamaisutaa-local";
+
+    /// <summary>Configuration section two-factor authentication binds from.</summary>
+    public const string TwoFactorConfigurationSection = "TwoFactor";
+
+    /// <summary>
+    /// RFC 8176 authentication method references. Standard, not invented, so a policy or a gateway
+    /// that already understands <c>amr</c> keeps working against locally issued tokens.
+    /// </summary>
+    public const string AuthenticationMethodClaim = "amr";
+
+    /// <summary>The value in <c>amr</c> that means a second factor was actually presented.</summary>
+    public const string MultiFactorMethod = "mfa";
+
+    /// <summary>Carries <see cref="ToamaisutaaUser.SecurityStamp"/> on a locally issued token.</summary>
+    public const string SecurityStampClaim = "toa_stamp";
+
+    /// <summary>
+    /// Set on a token for a user who has not enrolled while enforcement demands it. Non-standard
+    /// because nothing standard says it, and prefixed so it cannot collide with a provider's own.
+    /// </summary>
+    public const string TwoFactorRequiredClaim = "toa_2fa_required";
 }

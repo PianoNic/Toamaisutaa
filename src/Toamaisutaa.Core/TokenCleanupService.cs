@@ -48,7 +48,18 @@ internal sealed class TokenCleanupService(
         var removedRefresh = await refreshTokens.DeleteExpiredAsync(now, cancellationToken);
         var removedReset = await resetTokens.DeleteExpiredAsync(now, cancellationToken);
 
-        if (removedRefresh + removedReset > 0)
-            logger.LogInformation("Removed {RefreshTokens} expired refresh token(s) and {ResetTokens} expired reset token(s).", removedRefresh, removedReset);
+        // Optional, because two-factor is. Challenges expire in five minutes and every sign-in that
+        // stops for one writes a row, so this is the fastest-growing of the three when it is on.
+        var challenges = scope.ServiceProvider.GetService<ITwoFactorChallengeStore>();
+        var removedChallenges = challenges is null ? 0 : await challenges.DeleteExpiredAsync(now, cancellationToken);
+
+        if (removedRefresh + removedReset + removedChallenges > 0)
+        {
+            logger.LogInformation(
+                "Removed {RefreshTokens} expired refresh token(s), {ResetTokens} expired reset token(s) and {Challenges} expired two-factor challenge(s).",
+                removedRefresh,
+                removedReset,
+                removedChallenges);
+        }
     }
 }

@@ -28,6 +28,12 @@ public interface IUserStore
     Task UpdateProfileAsync(ToamaisutaaUser user, ExternalUserProfile profile, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Rewrites the stamp that invalidates outstanding sessions. Bumped by every credential change:
+    /// a password set, change or reset, and enabling, disabling or regenerating a second factor.
+    /// </summary>
+    Task UpdateSecurityStampAsync(Guid userId, string securityStamp, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Removes a user and everything that hangs off it. Used to take back a row created moments ago
     /// for a registration that then lost a race on the credential's unique index, so a failed
     /// attempt does not leave an account behind that nobody can sign in to.

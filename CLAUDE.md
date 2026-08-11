@@ -43,6 +43,33 @@ most useful thing in this package. It stays plain.
 
 The temptation recurs. The rule is the whole defence.
 
+## Never log the enrolment response
+
+`POST /auth/2fa/begin` returns a TOTP secret in plaintext - as base32 in `Secret`, and again inside
+`Uri`. It has to: an authenticator cannot be enrolled without being handed the secret. That makes it
+the one response in this package that is itself a long-lived credential.
+
+**Nothing logs it. Not the value, not the URI, not a truncated prefix, not at Debug.** A log line
+added while chasing a bug ships to whatever aggregates logs, where it outlives every key rotation
+anyone will remember to perform, is searchable by people who were never meant to have it, and cannot
+be recalled. The secret cannot be rotated quietly either: putting it right means every affected user
+enrolling again.
+
+The same goes for recovery codes, which `/auth/2fa/confirm` and `/auth/2fa/recovery-codes` return
+once and never again.
+
+Log the user id and what happened. That is enough to diagnose anything worth diagnosing.
+
+## `docs/` is the published site, `design/` is the record
+
+- **`docs/`** is the VitePress site at [docs.toamaisutaa.pianonic.ch](https://docs.toamaisutaa.pianonic.ch).
+  Everything in it is written for a consumer of the package and is deployed on merge.
+- **`design/`** is the working record: analyses, proposed API surfaces, the arguments behind
+  decisions and what changed while implementing them. Never published, never deleted.
+
+They were the same directory once, and building the docs site quietly deleted the analysis. Keep
+proposals and rationale in `design/`; keep anything a consumer reads in `docs/`.
+
 ## Layering (enforced)
 
 - `Abstractions` has **zero** package references. Interfaces, options, DTOs, entities.

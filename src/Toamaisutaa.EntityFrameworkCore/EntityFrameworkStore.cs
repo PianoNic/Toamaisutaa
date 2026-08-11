@@ -41,6 +41,7 @@ internal sealed class EntityFrameworkStore<TContext>(TContext context, TimeProvi
             Email = profile.Email,
             DisplayName = profile.DisplayName,
             PictureUrl = profile.PictureUrl,
+            SecurityStamp = NewSecurityStamp(),
             CreatedAt = now,
             UpdatedAt = now,
         };
@@ -61,6 +62,9 @@ internal sealed class EntityFrameworkStore<TContext>(TContext context, TimeProvi
         user.Id = Guid.CreateVersion7(now);
         user.CreatedAt = now;
         user.UpdatedAt = now;
+
+        if (string.IsNullOrEmpty(user.SecurityStamp))
+            user.SecurityStamp = NewSecurityStamp();
 
         context.Set<ToamaisutaaUser>().Add(user);
         await context.SaveChangesAsync(cancellationToken);
@@ -92,6 +96,31 @@ internal sealed class EntityFrameworkStore<TContext>(TContext context, TimeProvi
         context.Set<ToamaisutaaUser>().Update(user);
         await context.SaveChangesAsync(cancellationToken);
     }
+
+    public async Task UpdateSecurityStampAsync(Guid userId, string securityStamp, CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(securityStamp);
+
+        await context.Set<ToamaisutaaUser>()
+            .Where(user => user.Id == userId)
+            .ExecuteUpdateAsync(
+                setters => setters
+                    .SetProperty(user => user.SecurityStamp, securityStamp)
+                    .SetProperty(user => user.UpdatedAt, timeProvider.GetUtcNow()),
+                cancellationToken);
+    }
+
+    /// <summary>
+    /// Every user gets one from the moment the row exists, including one provisioned from an
+    /// identity provider that will never have a password. A null stamp compares equal to nothing
+    /// and would make the refresh check either always pass or always fail, depending on which side
+    /// was missing.
+    /// </summary>
+    private static string NewSecurityStamp() =>
+        Convert.ToBase64String(System.Security.Cryptography.RandomNumberGenerator.GetBytes(32))
+            .TrimEnd('=')
+            .Replace('+', '-')
+            .Replace('/', '_');
 
     public async Task<ToamaisutaaExternalLogin?> FindAsync(
         string providerKey,

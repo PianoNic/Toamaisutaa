@@ -117,15 +117,12 @@ internal sealed class FakePasswordStore
 
 internal sealed class FakeAccessTokenIssuer(TimeProvider timeProvider) : IAccessTokenIssuer
 {
-    internal List<(Guid UserId, IReadOnlyList<string> Roles)> Issued { get; } = [];
+    internal List<AccessTokenRequest> Issued { get; } = [];
 
-    public Task<AccessToken> IssueAsync(
-        ToamaisutaaUser user,
-        IReadOnlyList<string> roles,
-        CancellationToken cancellationToken = default)
+    public Task<AccessToken> IssueAsync(AccessTokenRequest request, CancellationToken cancellationToken = default)
     {
-        Issued.Add((user.Id, roles));
-        return Task.FromResult(new AccessToken($"access-token-for-{user.Id}", timeProvider.GetUtcNow().AddMinutes(15)));
+        Issued.Add(request);
+        return Task.FromResult(new AccessToken($"access-token-for-{request.User.Id}", timeProvider.GetUtcNow().AddMinutes(15)));
     }
 }
 

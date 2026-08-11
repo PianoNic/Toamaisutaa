@@ -24,6 +24,7 @@ public sealed class ToamaisutaaUserConfiguration : IEntityTypeConfiguration<Toam
         builder.Property(user => user.Email).HasMaxLength(256);
         builder.Property(user => user.DisplayName).HasMaxLength(256);
         builder.Property(user => user.PictureUrl).HasMaxLength(2048);
+        builder.Property(user => user.SecurityStamp).HasMaxLength(128).IsRequired();
 
         builder.Property(user => user.CreatedAt).HasConversion(InstantConverters.Instant);
         builder.Property(user => user.UpdatedAt).HasConversion(InstantConverters.Instant);
