@@ -60,6 +60,36 @@ jobs:
       # The tag is the version. v0.1.0 packs 0.1.0, so the tag and the package can never disagree.
       # Per-project rather than per-solution: pack on a solution warns for every project that is
       # deliberately not packable, and that warning carries no code, so it cannot be suppressed.
+      # Runs before anything is packed or pushed, because a version published to nuget.org can never
+      # be deleted or reused - only unlisted. Everything else in this workflow is repeatable; this is
+      # the one step that is not, so the tag has to prove itself first.
+      - name: Guard the release version
+        env:
+          TAG_NAME: ${{ github.event.release.tag_name }}
+        run: |
+          set -euo pipefail
+
+          VERSION="${TAG_NAME#v}"
+          DECLARED="$(grep -oP '(?<=<Version>)[^<]+' Directory.Build.props | head -n1)"
+
+          echo "Release tag:                 $TAG_NAME"
+          echo "Version to publish:          $VERSION"
+          echo "Directory.Build.props says:  $DECLARED"
+
+          if ! printf '%s' "$VERSION" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$'; then
+            echo "::error::'$TAG_NAME' does not name a semantic version. Tag releases as vMAJOR.MINOR.PATCH."
+            exit 1
+          fi
+
+          # Crossing a major version has to be a deliberate edit to the repository, not something a
+          # draft title can do on its own. Release Drafter proposes the tag; this decides whether it
+          # is allowed to become seven immutable packages.
+          if [ "${VERSION%%.*}" != "${DECLARED%%.*}" ]; then
+            echo "::error::Refusing to publish $VERSION while Directory.Build.props declares $DECLARED."
+            echo "::error::The major versions differ. If this is intentional, bump <Version> in Directory.Build.props first (and move 'breaking' back to the major bucket in .github/release-drafter.yml). If it is not, delete this release and the tag - nothing has been pushed."
+            exit 1
+          fi
+
       - name: Pack
         env:
           TAG_NAME: ${{ github.event.release.tag_name }}

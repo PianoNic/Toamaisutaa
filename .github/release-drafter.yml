@@ -32,13 +32,23 @@ change-template: '- $TITLE @$AUTHOR (#$NUMBER)'
 
 no-changes-template: 'No changes in this release.'
 
+# PRE-1.0. `breaking` and `major` resolve to MINOR here, and there is deliberately no major bucket.
+#
+# This is not a workaround. Semver gives 0.x no compatibility guarantee at all, so a breaking change
+# before 1.0 is a minor bump by the spec rather than in spite of it. It also removes a trap: with
+# `breaking` mapped to major, one labelled pull request makes the drafter title the draft v1.0.0,
+# and publishing that draft without reading the title carefully packs and pushes seven packages as
+# 1.0.0. Versions on nuget.org can never be deleted or reused, only unlisted, so that mistake cannot
+# be taken back.
+#
+# AT 1.0.0: move `breaking` and `major` out of `minor` and into their own `major:` bucket. The guard
+# in release.yml refuses to publish a 1.x tag until Directory.Build.props is bumped, which is the
+# moment to do this.
 version-resolver:
-  major:
-    labels:
-      - 'major'
-      - 'breaking'
   minor:
     labels:
+      - 'breaking'
+      - 'major'
       - 'feature'
   patch:
     labels:
