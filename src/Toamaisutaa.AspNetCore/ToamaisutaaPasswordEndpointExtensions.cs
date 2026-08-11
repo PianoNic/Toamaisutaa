@@ -83,6 +83,19 @@ public static class ToamaisutaaPasswordEndpointExtensions
 
         var result = await signIn.SignInAsync(request.Identifier, request.Password, cancellationToken);
 
+        // A second shape on the success path, not a new status code: the password was right, and
+        // what comes back is what to do next rather than an error. Clients that assumed tokens do
+        // have to change, which is why this is a breaking release.
+        if (result.Outcome == SignInOutcome.TwoFactorRequired && result.Challenge is { } challenge)
+        {
+            return Results.Ok(new
+            {
+                two_factor_required = true,
+                challenge = challenge.Token,
+                expires_in = challenge.ExpiresIn,
+            });
+        }
+
         return result.Succeeded ? Results.Ok(result.Tokens) : SignInFailed();
     }
 

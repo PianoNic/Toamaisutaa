@@ -11,7 +11,6 @@
   <a href="https://www.nuget.org/packages/Toamaisutaa.AspNetCore"><img src="https://img.shields.io/nuget/dt/Toamaisutaa.AspNetCore?color=0d1117&label=downloads" alt="downloads" /></a>
   <a href="https://docs.toamaisutaa.pianonic.ch/getting-started"><img src="https://img.shields.io/badge/Getting--Started-Instructions-0d1117.svg" alt="Getting started" /></a>
   <img src="https://img.shields.io/badge/.NET-10-0d1117.svg" alt=".NET 10" />
-  <img src="https://img.shields.io/badge/Auth-OIDC-0d1117.svg" alt="OIDC" />
   <img src="https://img.shields.io/badge/License-PolyForm%20Noncommercial-0d1117.svg" alt="PolyForm Noncommercial" />
 </p>
 
@@ -69,10 +68,28 @@ out, and no database at all.
 - **Local password login** - for deployments that cannot run an identity provider: PBKDF2 hashing
   with an optional pepper, rotating refresh tokens with reuse detection, lockout, and reset tokens.
   Off unless you ask for it.
+- **Two-factor authentication** - TOTP, no library and no new dependency, with recovery codes, an
+  opaque single-use challenge that cannot be presented as a bearer token, and secrets encrypted at
+  rest under a key of their own.
 - **Its own migrations** - Postgres, SQLite, SQL Server and MySQL, shipped, or apply the entity
   configurations to a `DbContext` you already have.
 - **No ASP.NET where it does not belong** - `Abstractions` and `Core` carry no web stack, so a domain
   project can depend on `ICurrentUser` without one.
+
+## What revoking a session actually does
+
+Disabling a second factor, changing a password and resetting one all move the user's security stamp
+and revoke every refresh chain. That ends the session at the next refresh - **it does not kill access
+tokens that are already out there.**
+
+An access token issued a minute before a password change keeps working until it expires. The stamp is
+compared on refresh and wherever `ICurrentUser` resolves a user, both of which already read the
+database; it is deliberately **not** compared on every bearer request, because that is a database
+read per request forever.
+
+**The maximum window is `LocalLogin:AccessTokenLifetime`, fifteen minutes by default.** If your
+threat model needs revocation to be immediate, shorten that value and accept the extra refresh
+traffic - there is no third option that does not cost a read per request.
 
 ## Packages
 
@@ -96,6 +113,7 @@ out, and no database at all.
 - [Getting started](https://docs.toamaisutaa.pianonic.ch/getting-started)
 - [OIDC bearer validation](https://docs.toamaisutaa.pianonic.ch/oidc)
 - [Local password login](https://docs.toamaisutaa.pianonic.ch/password-login)
+- [Two-factor authentication](https://docs.toamaisutaa.pianonic.ch/two-factor)
 - [Storage and migrations](https://docs.toamaisutaa.pianonic.ch/storage)
 - [Developer setup](https://docs.toamaisutaa.pianonic.ch/dev-setup)
 

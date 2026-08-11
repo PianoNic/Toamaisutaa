@@ -32,13 +32,11 @@ internal sealed class LocalAccessTokenIssuer(
 
     private readonly JsonWebTokenHandler _handler = new();
 
-    public Task<AccessToken> IssueAsync(
-        ToamaisutaaUser user,
-        IReadOnlyList<string> roles,
-        CancellationToken cancellationToken = default)
+    public Task<AccessToken> IssueAsync(AccessTokenRequest request, CancellationToken cancellationToken = default)
     {
-        ArgumentNullException.ThrowIfNull(user);
+        ArgumentNullException.ThrowIfNull(request);
 
+        var user = request.User;
         var local = localOptions.Value;
         var names = provisioningOptions.Value.ClaimNames;
 
@@ -55,8 +53,20 @@ internal sealed class LocalAccessTokenIssuer(
         Add(claims, names.DisplayName, user.DisplayName);
         Add(claims, names.Picture, user.PictureUrl);
 
-        foreach (var role in roles)
+        foreach (var role in request.Roles)
             Add(claims, oidcOptions.Value.RoleClaim, role);
+
+        // The stamp travels with the token so the two places that do enforce it - refresh, and
+        // ICurrentUser - have something to compare without a second lookup.
+        Add(claims, ToamaisutaaDefaults.SecurityStampClaim, user.SecurityStamp);
+
+        // RFC 8176. One claim per method, which is how a JWT carries a string array, and how
+        // anything that already reads amr expects to find it.
+        foreach (var method in request.AuthenticationMethods)
+            Add(claims, ToamaisutaaDefaults.AuthenticationMethodClaim, method);
+
+        if (request.TwoFactorEnrolmentRequired)
+            Add(claims, ToamaisutaaDefaults.TwoFactorRequiredClaim, "true");
 
         var descriptor = new SecurityTokenDescriptor
         {

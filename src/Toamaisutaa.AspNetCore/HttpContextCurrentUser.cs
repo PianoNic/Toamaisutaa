@@ -47,7 +47,20 @@ internal sealed class HttpContextCurrentUser(
                 + "Call AddToamaisutaaProvisioning() together with a store registration, or use "
                 + "ICurrentUser.Subject and ICurrentUser.Name instead.");
 
-        return _provisioned = await provisioner.ProvisionAsync(principal, cancellationToken);
+        var user = await provisioner.ProvisionAsync(principal, cancellationToken);
+
+        // The second of the two places the stamp is enforced, and again only because the read has
+        // already happened. The claim is only on locally issued tokens; a token from an identity
+        // provider carries no stamp, and there is nothing to check.
+        var presented = Find(ToamaisutaaDefaults.SecurityStampClaim);
+
+        if (presented is not null && !string.Equals(presented, user.SecurityStamp, StringComparison.Ordinal))
+        {
+            throw new SecurityStampChangedException(
+                "This token was issued before a credential on the account changed. Refresh, or sign in again.");
+        }
+
+        return _provisioned = user;
     }
 
     private string? Find(string claimType)

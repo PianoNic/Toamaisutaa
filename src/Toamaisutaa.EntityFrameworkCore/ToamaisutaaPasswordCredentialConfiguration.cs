@@ -22,7 +22,6 @@ public sealed class ToamaisutaaPasswordCredentialConfiguration : IEntityTypeConf
         builder.Property(credential => credential.Email).HasMaxLength(256);
         builder.Property(credential => credential.NormalizedEmail).HasMaxLength(256);
         builder.Property(credential => credential.PasswordHash).HasMaxLength(512).IsRequired();
-        builder.Property(credential => credential.SecurityStamp).HasMaxLength(128).IsRequired();
 
         builder.Property(credential => credential.CreatedAt).HasConversion(InstantConverters.Instant);
         builder.Property(credential => credential.UpdatedAt).HasConversion(InstantConverters.Instant);

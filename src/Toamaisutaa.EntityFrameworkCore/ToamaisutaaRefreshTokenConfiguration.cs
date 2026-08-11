@@ -19,6 +19,11 @@ public sealed class ToamaisutaaRefreshTokenConfiguration : IEntityTypeConfigurat
         // the raw token is never stored.
         builder.Property(token => token.TokenHash).HasMaxLength(64).IsRequired();
         builder.Property(token => token.RevokedReason).HasMaxLength(64);
+        builder.Property(token => token.SecurityStamp).HasMaxLength(128).IsRequired();
+
+        // "pwd otp mfa" is the longest shape this package produces. Sized well past it so a
+        // consumer adding their own RFC 8176 method does not hit a column limit.
+        builder.Property(token => token.AuthenticationMethods).HasMaxLength(128).IsRequired();
 
         // Expiry is range-queried by the cleanup sweep, which is exactly the comparison SQLite
         // cannot translate on a timestamp column.

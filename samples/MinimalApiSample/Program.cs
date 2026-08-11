@@ -24,6 +24,11 @@ builder.Services.AddToamaisutaaCurrentUser();
 // Local username and password sign-in. OIDC is the recommended path; this is the fallback for a
 // deployment that cannot run an identity provider.
 builder.Services.AddToamaisutaaPasswordLogin(builder.Configuration);
+
+// TOTP. Enrolment is per user and entirely opt-in here, because TwoFactor:Enforcement is Optional -
+// but anyone who does enrol is challenged on every local sign-in from then on.
+builder.Services.AddToamaisutaaTwoFactor(builder.Configuration);
+
 builder.Services.AddToamaisutaaTokenCleanup();
 
 // Required, and deliberately not shipped: sending mail is not an authentication library's job. This
@@ -47,6 +52,10 @@ app.MapToamaisutaaConfiguration();
 // POST /auth/login, /auth/refresh, /auth/logout, /auth/register, /auth/password,
 // /auth/password/forgot, /auth/password/reset.
 app.MapToamaisutaaPasswordEndpoints();
+
+// GET /auth/2fa, POST /auth/2fa/begin, /auth/2fa/confirm, /auth/2fa/disable,
+// /auth/2fa/recovery-codes, /auth/2fa/verify.
+app.MapToamaisutaaTwoFactorEndpoints();
 
 if (app.Environment.IsDevelopment())
     app.MapOpenApi().AllowAnonymous();
@@ -74,6 +83,12 @@ app.MapGet("/api/me", async (ICurrentUser currentUser, CancellationToken cancell
 app.MapGet("/api/admin", () => "The gate master knows you. Come through.")
     .RequireAuthorization("Toamaisutaa.Admin")
     .WithName("Admin");
+
+// Requires amr to contain mfa, so a password-only token gets a 403 here and a token from a completed
+// challenge does not. This is what enforcement looks like in an application: a policy on a route.
+app.MapGet("/api/sensitive", () => "Two locks, both opened. This is the inner room.")
+    .RequireAuthorization("Toamaisutaa.TwoFactor")
+    .WithName("Sensitive");
 
 app.Run();
 

@@ -20,7 +20,7 @@ and all three are checked at startup rather than at the first request.
 
 | Method | Route | Answers |
 |---|---|---|
-| POST | `/auth/login` | 200 with a token pair, or 401 |
+| POST | `/auth/login` | 200 with a token pair, 200 with a two-factor challenge, or 401 |
 | POST | `/auth/refresh` | 200 with a rotated pair, or 401 |
 | POST | `/auth/logout` | 204 |
 | POST | `/auth/register` | 201, 400, or 409. Only mapped when `AllowSelfRegistration` is true |
@@ -34,6 +34,9 @@ provisioning cannot tell the two apart.
 
 A user may have a password, external logins, or both. Adding a password to an account that arrived
 through OIDC is supported and touches nothing on the external side.
+
+Once a user enrols in [two-factor authentication](/two-factor), `/auth/login` returns a challenge
+instead of tokens and the sign-in finishes at `/auth/2fa/verify`.
 
 ## Things to know before switching it on
 

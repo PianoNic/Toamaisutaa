@@ -12,6 +12,7 @@ internal sealed class PasswordSignInService(
     IAccessTokenIssuer accessTokens,
     IUserRoleProvider roles,
     DummyPasswordHash dummy,
+    TwoFactorGate twoFactor,
     IOptions<ToamaisutaaLocalLoginOptions> options,
     TimeProvider timeProvider,
     ILogger<PasswordSignInService> logger) : IPasswordSignInService
@@ -74,8 +75,52 @@ internal sealed class PasswordSignInService(
         var user = await users.FindByIdAsync(credential.UserId, cancellationToken)
             ?? throw new InvalidOperationException($"Credential for user {credential.UserId} has no user row.");
 
+        // The password was right, which is the first factor and, for an enrolled account, not the
+        // last. Nothing is issued until the second one arrives.
+        if (await twoFactor.RequiresChallengeAsync(user.Id, cancellationToken))
+        {
+            var challenge = await twoFactor.IssueChallengeAsync(user.Id, now, cancellationToken);
+            logger.LogInformation("Password accepted for user {UserId}; a second factor is required.", user.Id);
+
+            return new SignInResult { Outcome = SignInOutcome.TwoFactorRequired, Challenge = challenge };
+        }
+
         logger.LogInformation("Sign-in succeeded for user {UserId}.", user.Id);
-        return await IssueAsync(user, familyId: null, familyStartedAt: null, now, cancellationToken);
+
+        return await IssueAsync(
+            user,
+            familyId: null,
+            familyStartedAt: null,
+            methods: ["pwd"],
+            recoveryCodesRunningLow: false,
+            now,
+            cancellationToken);
+    }
+
+    public async Task<SignInResult> VerifyTwoFactorAsync(string challengeToken, string code, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(challengeToken);
+        ArgumentNullException.ThrowIfNull(code);
+
+        var now = timeProvider.GetUtcNow();
+        var redemption = await twoFactor.RedeemChallengeAsync(challengeToken, code, now, cancellationToken);
+
+        if (redemption.Outcome != SignInOutcome.Succeeded)
+            return Failed(redemption.Outcome);
+
+        var user = await users.FindByIdAsync(redemption.UserId, cancellationToken)
+            ?? throw new InvalidOperationException($"Challenge points at user {redemption.UserId}, which does not exist.");
+
+        logger.LogInformation("Sign-in completed for user {UserId} with a second factor.", user.Id);
+
+        return await IssueAsync(
+            user,
+            familyId: null,
+            familyStartedAt: null,
+            methods: redemption.UsedRecoveryCode ? ["pwd", "mfa"] : ["pwd", "otp", "mfa"],
+            redemption.RecoveryCodesRunningLow,
+            now,
+            cancellationToken);
     }
 
     public async Task<SignInResult> RefreshAsync(string refreshToken, CancellationToken cancellationToken = default)
@@ -123,12 +168,34 @@ internal sealed class PasswordSignInService(
             return Failed(SignInOutcome.RefreshTokenExpired);
         }
 
-        await refreshTokens.MarkRotatedAsync(stored.Id, now, cancellationToken);
-
         var user = await users.FindByIdAsync(stored.UserId, cancellationToken)
             ?? throw new InvalidOperationException($"Refresh token {stored.Id} points at user {stored.UserId}, which does not exist.");
 
-        return await IssueAsync(user, stored.FamilyId, stored.FamilyStartedAt, now, cancellationToken);
+        // This is one of the two places the security stamp is enforced, and the reason it is
+        // enforced here is that the read already happened. A password change or a disabled second
+        // factor revokes the families outright, so a stale stamp on a live family means the two
+        // writes disagree - which is exactly when refusing is the right answer.
+        if (!string.Equals(stored.SecurityStamp, user.SecurityStamp, StringComparison.Ordinal))
+        {
+            logger.LogWarning(
+                "Refresh refused for user {UserId}: family {FamilyId} was minted before a credential changed.",
+                stored.UserId,
+                stored.FamilyId);
+
+            await refreshTokens.RevokeFamilyAsync(stored.FamilyId, "security-stamp-changed", now, cancellationToken);
+            return Failed(SignInOutcome.SecurityStampChanged);
+        }
+
+        await refreshTokens.MarkRotatedAsync(stored.Id, now, cancellationToken);
+
+        return await IssueAsync(
+            user,
+            stored.FamilyId,
+            stored.FamilyStartedAt,
+            stored.AuthenticationMethods.Length == 0 ? ["pwd"] : stored.AuthenticationMethods.Split(' '),
+            recoveryCodesRunningLow: false,
+            now,
+            cancellationToken);
     }
 
     public async Task SignOutAsync(string refreshToken, CancellationToken cancellationToken = default)
@@ -149,11 +216,22 @@ internal sealed class PasswordSignInService(
         ToamaisutaaUser user,
         Guid? familyId,
         DateTimeOffset? familyStartedAt,
+        IReadOnlyList<string> methods,
+        bool recoveryCodesRunningLow,
         DateTimeOffset now,
         CancellationToken cancellationToken)
     {
         var userRoles = await roles.GetRolesAsync(user, cancellationToken);
-        var access = await accessTokens.IssueAsync(user, userRoles, cancellationToken);
+
+        var access = await accessTokens.IssueAsync(
+            new AccessTokenRequest
+            {
+                User = user,
+                Roles = userRoles,
+                AuthenticationMethods = methods,
+                TwoFactorEnrolmentRequired = await twoFactor.MustEnrolAsync(user.Id, cancellationToken),
+            },
+            cancellationToken);
 
         var raw = SecureTokens.Create();
 
@@ -167,12 +245,18 @@ internal sealed class PasswordSignInService(
                 CreatedAt = now,
                 ExpiresAt = now + options.Value.RefreshTokenLifetime,
                 FamilyStartedAt = familyStartedAt ?? now,
+                SecurityStamp = user.SecurityStamp,
+
+                // Carried on the family so a rotation does not quietly downgrade a session that was
+                // established with a second factor into one that only ever proved a password.
+                AuthenticationMethods = string.Join(' ', methods),
             },
             cancellationToken);
 
         return new SignInResult
         {
             Outcome = SignInOutcome.Succeeded,
+            RecoveryCodesRunningLow = recoveryCodesRunningLow,
             Tokens = new TokenPair
             {
                 AccessToken = access.Value,

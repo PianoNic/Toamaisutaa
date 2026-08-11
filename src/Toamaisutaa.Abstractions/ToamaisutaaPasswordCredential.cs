@@ -32,10 +32,6 @@ public class ToamaisutaaPasswordCredential
     /// either is a rehash on next login rather than a schema change.</summary>
     public string PasswordHash { get; set; } = default!;
 
-    /// <summary>Changes on every password change and reset. Written but not yet read: two-factor
-    /// enrolment and sign-out-everywhere both need it, and adding a column later is a migration.</summary>
-    public string SecurityStamp { get; set; } = default!;
-
     public int FailedAttemptCount { get; set; }
 
     public DateTimeOffset? FirstFailedAttemptAt { get; set; }

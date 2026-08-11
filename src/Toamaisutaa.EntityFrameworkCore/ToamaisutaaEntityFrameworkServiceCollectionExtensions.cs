@@ -30,6 +30,11 @@ public static class ToamaisutaaEntityFrameworkServiceCollectionExtensions
         services.TryAddScoped<IRefreshTokenStore>(provider => provider.GetRequiredService<EntityFrameworkPasswordStore<TContext>>());
         services.TryAddScoped<IPasswordResetTokenStore>(provider => provider.GetRequiredService<EntityFrameworkPasswordStore<TContext>>());
 
+        services.TryAddScoped<EntityFrameworkTwoFactorStore<TContext>>();
+        services.TryAddScoped<ITwoFactorStore>(provider => provider.GetRequiredService<EntityFrameworkTwoFactorStore<TContext>>());
+        services.TryAddScoped<IRecoveryCodeStore>(provider => provider.GetRequiredService<EntityFrameworkTwoFactorStore<TContext>>());
+        services.TryAddScoped<ITwoFactorChallengeStore>(provider => provider.GetRequiredService<EntityFrameworkTwoFactorStore<TContext>>());
+
         return services;
     }
 
