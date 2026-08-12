@@ -1,6 +1,7 @@
 <Solution>
 	<Project Path="src/Toamaisutaa.Abstractions/Toamaisutaa.Abstractions.csproj" />
 	<Project Path="src/Toamaisutaa.AspNetCore/Toamaisutaa.AspNetCore.csproj" />
+	<Project Path="src/Toamaisutaa.AspNetCore.Tests/Toamaisutaa.AspNetCore.Tests.csproj" />
 	<Project Path="src/Toamaisutaa.Core.Tests/Toamaisutaa.Core.Tests.csproj" />
 	<Project Path="src/Toamaisutaa.Core/Toamaisutaa.Core.csproj" />
 	<Project Path="src/Toamaisutaa.EntityFrameworkCore/Toamaisutaa.EntityFrameworkCore.csproj" />

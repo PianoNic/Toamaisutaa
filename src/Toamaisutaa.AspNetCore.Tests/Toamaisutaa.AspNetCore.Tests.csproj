@@ -1,0 +1,33 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <OutputType>Exe</OutputType>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="TUnit" />
+    <!-- Runs the real pipeline in-process: routing, authentication, authorization, endpoint
+         filters. A stub over the handlers would have passed for all three bugs this suite exists
+         to catch, because every one of them was correct until it reached the wire. -->
+    <PackageReference Include="Microsoft.AspNetCore.TestHost" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" />
+    <!-- Same reason as the SQLite migrations package: Microsoft.EntityFrameworkCore.Sqlite pulls in
+         SQLitePCLRaw.lib.e_sqlite3 2.1.11, which carries GHSA-2m69-gcr7-jv3q. Named here to force
+         the patched version rather than build with a known advisory. -->
+    <PackageReference Include="SQLitePCLRaw.lib.e_sqlite3" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Toamaisutaa.AspNetCore\Toamaisutaa.AspNetCore.csproj" />
+    <ProjectReference Include="..\Toamaisutaa.OpenIdConnect\Toamaisutaa.OpenIdConnect.csproj" />
+    <ProjectReference Include="..\Toamaisutaa.EntityFrameworkCore\Toamaisutaa.EntityFrameworkCore.csproj" />
+  </ItemGroup>
+
+</Project>
