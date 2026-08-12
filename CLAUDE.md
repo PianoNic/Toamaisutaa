@@ -157,6 +157,26 @@ not the ceremony.
 Watch what fails, too, not just that something did. If deleting one filter reddens a test that names
 a different component, one of the two is lying about what it covers.
 
+### An edit made in order to test something has to be verified to have applied
+
+**A programmatic edit that silently matched nothing looks exactly like the thing you were hoping
+for.** This has now happened twice, and both times an empty verification was one step from being
+written down as fact:
+
+- A string replacement into the sample did not match, so the app under test had no second route
+  group. "The host started" proved nothing about the endpoint-name collision it was meant to prove.
+- A mutation whose pattern spanned lines did not match across CRLF endings, so nothing was mutated
+  and the run reported zero failures. That nearly went into the record as a coverage gap.
+
+Both are the same shape: a green result that means "the change never happened" is indistinguishable
+from one that means "the change is fine". So before trusting what an edit tells you, **assert that
+it changed something** - check the pattern was found, grep the file for the new text, read the
+result back. `Edit` fails loudly when its target is missing, which is why it is the better tool for
+this than a scripted find-and-replace.
+
+The rule above says watch a test fail. This one is a level above it: make sure there was something
+to fail against.
+
 ## Before you claim it works
 
 - `dotnet build Toamaisutaa.slnx` is 0 warnings, 0 errors.
