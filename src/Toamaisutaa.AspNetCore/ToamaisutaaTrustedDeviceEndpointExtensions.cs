@@ -34,22 +34,42 @@ public static class ToamaisutaaTrustedDeviceEndpointExtensions
         var options = endpoints.ServiceProvider.GetRequiredService<IOptions<ToamaisutaaTrustedDeviceOptions>>().Value;
         var localLogin = endpoints.ServiceProvider.GetRequiredService<IOptions<ToamaisutaaLocalLoginOptions>>().Value;
 
-        var group = endpoints.MapGroup(localLogin.EndpointPrefix + options.EndpointPrefix);
+        var group = endpoints.MapGroup(localLogin.EndpointPrefix + options.EndpointPrefix).WithTags("Trusted devices");
 
         group.MapGet("/", ListAsync)
             .RequireAuthorization()
             .AddEndpointFilter<PasswordRateLimitFilter>()
-            .WithName($"{endpointNamePrefix}ToamaisutaaTrustedDevices");
+            .WithName($"{endpointNamePrefix}ToamaisutaaTrustedDevices")
+            .WithSummary("Lists the devices this user has trusted.")
+            .WithDescription(
+                "Send the device token you are holding in an `X-Toamaisutaa-Device` header and the "
+                + "matching row comes back with `isCurrent` true, so a list can say \"this device\" "
+                + "rather than inviting somebody to revoke the one they are sitting at.")
+            .Produces<IReadOnlyList<TrustedDeviceSummary>>()
+            .Produces(StatusCodes.Status401Unauthorized)
+            .Produces(StatusCodes.Status429TooManyRequests);
 
         group.MapDelete("/{id:guid}", RevokeAsync)
             .RequireAuthorization()
             .AddEndpointFilter<PasswordRateLimitFilter>()
-            .WithName($"{endpointNamePrefix}ToamaisutaaRevokeTrustedDevice");
+            .WithName($"{endpointNamePrefix}ToamaisutaaRevokeTrustedDevice")
+            .WithSummary("Revokes one device by its id.")
+            .WithDescription(
+                "404 covers both a device that does not exist and one belonging to someone else, so "
+                + "this cannot be used to discover another account's device ids.")
+            .Produces(StatusCodes.Status204NoContent)
+            .Produces(StatusCodes.Status401Unauthorized)
+            .Produces(StatusCodes.Status404NotFound)
+            .Produces(StatusCodes.Status429TooManyRequests);
 
         group.MapDelete("/", RevokeAllAsync)
             .RequireAuthorization()
             .AddEndpointFilter<PasswordRateLimitFilter>()
-            .WithName($"{endpointNamePrefix}ToamaisutaaRevokeAllTrustedDevices");
+            .WithName($"{endpointNamePrefix}ToamaisutaaRevokeAllTrustedDevices")
+            .WithSummary("Revokes every device this user has trusted.")
+            .Produces(StatusCodes.Status204NoContent)
+            .Produces(StatusCodes.Status401Unauthorized)
+            .Produces(StatusCodes.Status429TooManyRequests);
 
         return group;
     }

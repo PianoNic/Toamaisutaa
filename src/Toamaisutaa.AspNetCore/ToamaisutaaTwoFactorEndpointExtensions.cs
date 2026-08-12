@@ -31,33 +31,72 @@ public static class ToamaisutaaTwoFactorEndpointExtensions
 
         var options = endpoints.ServiceProvider.GetRequiredService<IOptions<ToamaisutaaLocalLoginOptions>>().Value;
 
-        var group = endpoints.MapGroup(options.EndpointPrefix + "/2fa");
+        var group = endpoints.MapGroup(options.EndpointPrefix + "/2fa").WithTags("Two-factor authentication");
 
         group.MapGet("/", StatusAsync)
             .RequireAuthorization()
-            .WithName($"{endpointNamePrefix}ToamaisutaaTwoFactorStatus");
+            .WithName($"{endpointNamePrefix}ToamaisutaaTwoFactorStatus")
+            .WithSummary("Whether the caller has enrolled, and how many recovery codes remain.")
+            .Produces<TwoFactorStatus>()
+            .Produces(StatusCodes.Status401Unauthorized);
 
         group.MapPost("/begin", BeginAsync)
             .RequireAuthorization()
             .AddEndpointFilter<PasswordRateLimitFilter>()
-            .WithName($"{endpointNamePrefix}ToamaisutaaTwoFactorBegin");
+            .WithName($"{endpointNamePrefix}ToamaisutaaTwoFactorBegin")
+            .WithSummary("Generates a secret and stores it unconfirmed. Enables nothing.")
+            .WithDescription(
+                "The response carries the TOTP secret in plaintext, twice - as base32 and inside "
+                + "the URI - because an authenticator cannot be enrolled without it. It is the one "
+                + "response here that is itself a long-lived credential. Never log it, and keep it "
+                + "out of any generic request or response logging you have.")
+            .Produces<TwoFactorEnrolmentStarted>()
+            .Produces<ValidationErrorResponse>(StatusCodes.Status400BadRequest)
+            .Produces(StatusCodes.Status401Unauthorized)
+            .Produces(StatusCodes.Status429TooManyRequests);
 
         group.MapPost("/confirm", ConfirmAsync)
             .RequireAuthorization()
-            .WithName($"{endpointNamePrefix}ToamaisutaaTwoFactorConfirm");
+            .WithName($"{endpointNamePrefix}ToamaisutaaTwoFactorConfirm")
+            .WithSummary("Proves the authenticator holds the secret, and turns the second factor on.")
+            .WithDescription(
+                "Returns the recovery codes, shown exactly once. Confirming also moves the user's "
+                + "security stamp, which invalidates the access token used to call this - refresh "
+                + "before the next request.")
+            .Produces<TwoFactorEnrolmentCompleted>()
+            .Produces<ValidationErrorResponse>(StatusCodes.Status400BadRequest)
+            .Produces(StatusCodes.Status401Unauthorized);
 
         group.MapPost("/disable", DisableAsync)
             .RequireAuthorization()
-            .WithName($"{endpointNamePrefix}ToamaisutaaTwoFactorDisable");
+            .WithName($"{endpointNamePrefix}ToamaisutaaTwoFactorDisable")
+            .WithSummary("Turns the second factor off. Requires a current code as proof.")
+            .WithDescription("An authenticated session is not enough: a stolen access token must not be able to do this.")
+            .Produces(StatusCodes.Status204NoContent)
+            .Produces<ValidationErrorResponse>(StatusCodes.Status400BadRequest)
+            .Produces(StatusCodes.Status401Unauthorized);
 
         group.MapPost("/recovery-codes", RegenerateAsync)
             .RequireAuthorization()
-            .WithName($"{endpointNamePrefix}ToamaisutaaTwoFactorRecoveryCodes");
+            .WithName($"{endpointNamePrefix}ToamaisutaaTwoFactorRecoveryCodes")
+            .WithSummary("Issues a fresh set of recovery codes and invalidates every previous one.")
+            .WithDescription("Shown exactly once, and never logged. Same proof requirement as disabling.")
+            .Produces<TwoFactorEnrolmentCompleted>()
+            .Produces<ValidationErrorResponse>(StatusCodes.Status400BadRequest)
+            .Produces(StatusCodes.Status401Unauthorized);
 
         group.MapPost("/verify", VerifyAsync)
             .AllowAnonymous()
             .AddEndpointFilter<PasswordRateLimitFilter>()
-            .WithName($"{endpointNamePrefix}ToamaisutaaTwoFactorVerify");
+            .WithName($"{endpointNamePrefix}ToamaisutaaTwoFactorVerify")
+            .WithSummary("Finishes a sign-in that stopped for a second factor.")
+            .WithDescription(
+                "Anonymous, because the caller holds no token yet - the challenge is the credential. "
+                + "`code` takes a TOTP code or a recovery code. Set `rememberDevice` to receive a "
+                + "`device_token` alongside the tokens.")
+            .Produces<TokenResponse>()
+            .Produces<ErrorResponse>(StatusCodes.Status401Unauthorized)
+            .Produces(StatusCodes.Status429TooManyRequests);
 
         return group;
     }

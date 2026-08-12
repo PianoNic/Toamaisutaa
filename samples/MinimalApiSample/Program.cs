@@ -1,10 +1,46 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.OpenApi;
 using Toamaisutaa.Abstractions;
 using Toamaisutaa.EntityFrameworkCore;
 
 var builder = WebApplication.CreateBuilder(args);
 
-builder.Services.AddOpenApi();
+// The package describes its own endpoints - every response type, every status code - but a security
+// scheme is a document-level declaration, so it belongs to whoever owns the document. Without it
+// nothing marks which endpoints need a token and an API explorer offers no Authorize box, which is
+// how most people first meet an API. Copy this into your own application.
+builder.Services.AddOpenApi(options => options.AddDocumentTransformer((document, _, _) =>
+{
+    document.Components ??= new OpenApiComponents();
+    document.Components.SecuritySchemes ??= new Dictionary<string, IOpenApiSecurityScheme>();
+    document.Components.SecuritySchemes["Bearer"] = new OpenApiSecurityScheme
+    {
+        Type = SecuritySchemeType.Http,
+        Scheme = "bearer",
+        BearerFormat = "JWT",
+        Description = "Paste the access_token from /auth/login or /auth/2fa/verify.",
+    };
+
+    document.Security =
+    [
+        new OpenApiSecurityRequirement
+        {
+            [new OpenApiSecuritySchemeReference("Bearer", document)] = [],
+        },
+    ];
+
+    return Task.CompletedTask;
+}).AddOperationTransformer((operation, context, _) =>
+{
+    // The document-level requirement above would otherwise put a padlock on /auth/login too, which
+    // is exactly backwards: it is the endpoint you call because you have no token yet. An empty
+    // requirement list on an operation overrides the document's.
+    if (context.Description.ActionDescriptor.EndpointMetadata.OfType<IAllowAnonymous>().Any())
+        operation.Security = [];
+
+    return Task.CompletedTask;
+}));
 
 // Validate access tokens. Both the identity provider's and the ones this application issues itself:
 // one handler, one scheme, and nothing downstream can tell which kind it is holding.
