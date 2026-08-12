@@ -11,6 +11,9 @@ builder.Services.AddSingleton<IPasswordResetNotifier, YourEmailSender>();
 app.MapToamaisutaaPasswordEndpoints();
 ```
 
+Writing the browser side of this? [Using this from a SPA](/spa) covers the whole flow in one place -
+the sign-in branch, refresh on 401, and where the tokens should live.
+
 It needs `AddToamaisutaaBearer` as well - the tokens it issues are validated by the same pipeline
 that validates your identity provider's, which is why `Toamaisutaa.AspNetCore` depends on
 `Toamaisutaa.OpenIdConnect`. A store registration and an `IPasswordResetNotifier` are also required,
