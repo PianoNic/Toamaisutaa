@@ -171,6 +171,227 @@ internal sealed class PasswordSignInService(
             cancellationToken);
     }
 
+    public async Task<StepUpChallengeResult> BeginStepUpAsync(StepUpRequest request, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        var now = timeProvider.GetUtcNow();
+        var guard = await GuardStepUpAsync(request.UserId, request.SessionId, now, cancellationToken);
+
+        if (guard.Outcome != SignInOutcome.Succeeded)
+            return new StepUpChallengeResult { Outcome = guard.Outcome };
+
+        var challenge = await twoFactor.IssueChallengeAsync(
+            request.UserId,
+            now,
+            cancellationToken,
+            TwoFactorChallengePurpose.StepUp,
+            request.SessionId);
+
+        logger.LogInformation("Step-up challenge issued for user {UserId} on session {SessionId}.", request.UserId, request.SessionId);
+
+        return new StepUpChallengeResult { Outcome = SignInOutcome.Succeeded, Challenge = challenge };
+    }
+
+    public async Task<StepUpResult> CompleteStepUpAsync(StepUpVerificationRequest request, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        var now = timeProvider.GetUtcNow();
+        var guard = await GuardStepUpAsync(request.UserId, request.SessionId, now, cancellationToken);
+
+        if (guard.Outcome != SignInOutcome.Succeeded)
+            return new StepUpResult { Outcome = guard.Outcome };
+
+        var live = guard.Live!;
+        var credential = guard.Credential!;
+
+        var redemption = await twoFactor.RedeemChallengeAsync(
+            request.ChallengeToken,
+            request.Code,
+            now,
+            cancellationToken,
+            TwoFactorChallengePurpose.StepUp,
+            request.SessionId);
+
+        if (redemption.Outcome != SignInOutcome.Succeeded)
+        {
+            // A wrong code here counts exactly as a wrong password does. It means somebody holding
+            // a stolen access token can lock the owner out of step-up, and that is the right trade:
+            // the alternative is an unthrottled six-digit oracle handed to that same person.
+            if (redemption.Outcome == SignInOutcome.InvalidTwoFactorCode)
+            {
+                LockoutPolicy.RegisterFailure(credential, options.Value, now);
+                credential.UpdatedAt = now;
+                await credentials.UpdateAsync(credential, cancellationToken);
+
+                logger.LogWarning(
+                    "Step-up refused for user {UserId}: wrong code. {FailedAttempts} failed attempt(s) in the current window{Locked}.",
+                    request.UserId,
+                    credential.FailedAttemptCount,
+                    credential.LockedOutUntil is { } until ? $"; locked out until {until:O}" : string.Empty);
+            }
+
+            return new StepUpResult { Outcome = redemption.Outcome };
+        }
+
+        LockoutPolicy.RegisterSuccess(credential);
+        credential.UpdatedAt = now;
+        await credentials.UpdateAsync(credential, cancellationToken);
+
+        // A recovery code means the authenticator is gone, and that inference does not change based
+        // on which endpoint it was typed into. Same revocation as at sign-in.
+        if (redemption.UsedRecoveryCode)
+            await trustedDevices.RevokeAllAsync(request.UserId, "recovery-code-redeemed", now, cancellationToken);
+
+        var user = await users.FindByIdAsync(request.UserId, cancellationToken)
+            ?? throw new InvalidOperationException($"Step-up names user {request.UserId}, which does not exist.");
+
+        var source = redemption.UsedRecoveryCode ? TwoFactorSource.Recovery : TwoFactorSource.Otp;
+        var methods = StepUpMethods(live.AuthenticationMethods, redemption.UsedRecoveryCode);
+
+        // The refresh row FIRST, then the token. If the update lands and the issue fails, the user
+        // is told step-up failed and keeps freshness they did in fact earn - wasteful, not wrong.
+        // The other order hands them a token claiming freshness the row will contradict at the next
+        // refresh, which is the whole failure this path exists to prevent.
+        if (!await refreshTokens.UpdateSecondFactorAsync(request.SessionId, string.Join(' ', methods), source, now, cancellationToken))
+        {
+            logger.LogWarning(
+                "Step-up refused for user {UserId}: session {SessionId} stopped being live between the guard and the update.",
+                request.UserId,
+                request.SessionId);
+
+            return new StepUpResult { Outcome = SignInOutcome.SessionEnded };
+        }
+
+        var access = await accessTokens.IssueAsync(
+            new AccessTokenRequest
+            {
+                User = user,
+                Roles = await roles.GetRolesAsync(user, cancellationToken),
+                AuthenticationMethods = methods,
+                TwoFactorEnrolmentRequired = await twoFactor.MustEnrolAsync(user.Id, cancellationToken),
+                TwoFactorSource = source,
+                SecondFactorAt = now,
+                SessionId = request.SessionId,
+            },
+            cancellationToken);
+
+        logger.LogInformation(
+            "Step-up completed for user {UserId} on session {SessionId} with {Source}.",
+            request.UserId,
+            request.SessionId,
+            source);
+
+        return new StepUpResult
+        {
+            Outcome = SignInOutcome.Succeeded,
+            AccessToken = access.Value,
+            ExpiresIn = (int)Math.Max(0, (access.ExpiresAt - now).TotalSeconds),
+            RecoveryCodesRunningLow = redemption.RecoveryCodesRunningLow,
+        };
+    }
+
+    /// <summary>
+    /// Everything both step-up endpoints check before they do anything, in the order they check it.
+    /// </summary>
+    private async Task<StepUpGuard> GuardStepUpAsync(
+        Guid userId,
+        Guid sessionId,
+        DateTimeOffset now,
+        CancellationToken cancellationToken)
+    {
+        // The session, not just the user. A signed-out family still has a valid access token in
+        // circulation for up to one AccessTokenLifetime, and elevating it would resurrect something
+        // the user deliberately ended.
+        var live = await refreshTokens.FindLiveByFamilyAsync(sessionId, cancellationToken);
+
+        if (live is null || live.UserId != userId)
+        {
+            logger.LogInformation("Step-up refused for user {UserId}: session {SessionId} is no longer live.", userId, sessionId);
+            return StepUpGuard.Failed(SignInOutcome.SessionEnded);
+        }
+
+        if (!await twoFactor.RequiresChallengeAsync(userId, cancellationToken))
+            return StepUpGuard.Failed(SignInOutcome.TwoFactorNotEnrolled);
+
+        // Fails closed rather than assuming. A locally issued token implies a password credential
+        // today, because local sign-in cannot happen without one - but that is construction, and
+        // construction changes. With no row there is nothing to count lockout against, and an
+        // unthrottled code endpoint is not something to leave open on an assumption.
+        var credential = await credentials.FindByUserIdAsync(userId, cancellationToken);
+
+        if (credential is null)
+        {
+            logger.LogWarning(
+                "Step-up refused for user {UserId}: the session is locally issued but has no password credential, "
+                + "so lockout cannot be enforced against it.",
+                userId);
+
+            return StepUpGuard.Failed(SignInOutcome.NotALocalSession);
+        }
+
+        if (LockoutPolicy.IsLockedOut(credential, now))
+        {
+            logger.LogWarning(
+                "Step-up refused for user {UserId}: locked out until {LockedOutUntil}.",
+                userId,
+                credential.LockedOutUntil);
+
+            return StepUpGuard.Failed(SignInOutcome.LockedOut);
+        }
+
+        return new StepUpGuard { Outcome = SignInOutcome.Succeeded, Live = live, Credential = credential };
+    }
+
+    /// <summary>
+    /// The session's methods plus what this step-up proved, never minus anything.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Monotonic, so no policy that passed before a step-up can start failing after one. Without
+    /// this, a device-trusted session carrying <c>["pwd","mfa"]</c> would still fail
+    /// <c>RequireClaim("amr","otp")</c> immediately after completing a live TOTP challenge - the one
+    /// user who did the most work failing the policy that asked for it.
+    /// </para>
+    /// <para>
+    /// A recovery code adds <c>mfa</c> and nothing else, matching what a recovery <i>sign-in</i>
+    /// records. There is no <c>recovery</c> value in RFC 8176 and this package does not invent
+    /// claims values; which factor it actually was lives in <c>toa_2fa_source</c>, which is the
+    /// claim that exists to answer exactly that.
+    /// </para>
+    /// </remarks>
+    private static IReadOnlyList<string> StepUpMethods(string existing, bool usedRecoveryCode)
+    {
+        var methods = existing.Length == 0
+            ? new List<string> { "pwd" }
+            : [.. existing.Split(' ', StringSplitOptions.RemoveEmptyEntries)];
+
+        Add(ToamaisutaaDefaults.MultiFactorMethod);
+
+        if (!usedRecoveryCode)
+            Add("otp");
+
+        return methods;
+
+        void Add(string method)
+        {
+            if (!methods.Contains(method, StringComparer.Ordinal))
+                methods.Add(method);
+        }
+    }
+
+    private readonly record struct StepUpGuard
+    {
+        internal SignInOutcome Outcome { get; init; }
+
+        internal ToamaisutaaRefreshToken? Live { get; init; }
+
+        internal ToamaisutaaPasswordCredential? Credential { get; init; }
+
+        internal static StepUpGuard Failed(SignInOutcome outcome) => new() { Outcome = outcome };
+    }
+
     public async Task<SignInResult> RefreshAsync(string refreshToken, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(refreshToken);
@@ -287,6 +508,11 @@ internal sealed class PasswordSignInService(
     {
         var userRoles = await roles.GetRolesAsync(user, cancellationToken);
 
+        // Computed before the token rather than inside the row, because both have to carry the same
+        // value: toa_sid is how step-up finds the row this token belongs to, and a token naming a
+        // family that does not exist can elevate nothing.
+        var family = familyId ?? Guid.CreateVersion7(now);
+
         var access = await accessTokens.IssueAsync(
             new AccessTokenRequest
             {
@@ -296,6 +522,7 @@ internal sealed class PasswordSignInService(
                 TwoFactorEnrolmentRequired = await twoFactor.MustEnrolAsync(user.Id, cancellationToken),
                 TwoFactorSource = twoFactorSource,
                 SecondFactorAt = secondFactorAt,
+                SessionId = family,
             },
             cancellationToken);
 
@@ -306,7 +533,7 @@ internal sealed class PasswordSignInService(
             {
                 Id = Guid.CreateVersion7(now),
                 UserId = user.Id,
-                FamilyId = familyId ?? Guid.CreateVersion7(now),
+                FamilyId = family,
                 TokenHash = SecureTokens.HashToken(raw),
                 CreatedAt = now,
                 ExpiresAt = now + options.Value.RefreshTokenLifetime,

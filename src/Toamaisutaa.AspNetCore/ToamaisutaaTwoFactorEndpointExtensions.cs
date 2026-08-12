@@ -89,6 +89,35 @@ public static class ToamaisutaaTwoFactorEndpointExtensions
             .Produces<ValidationErrorResponse>(StatusCodes.Status400BadRequest)
             .Produces<ErrorResponse>(StatusCodes.Status401Unauthorized);
 
+        group.MapPost("/step-up", BeginStepUpAsync)
+            .RequireAuthorization()
+            .AddEndpointFilter<PasswordRateLimitFilter>()
+            .WithName($"{endpointNamePrefix}ToamaisutaaStepUp")
+            .WithSummary("Asks for a second factor from a session that is already signed in.")
+            .WithDescription(
+                "For satisfying a freshness policy without signing out. Takes no body: who you are "
+                + "and which session you are on both come from your token. Present the challenge "
+                + "with a code to `/auth/2fa/step-up/verify`.")
+            .Produces<StepUpChallengeResponse>()
+            .Produces<ValidationErrorResponse>(StatusCodes.Status400BadRequest)
+            .Produces<ErrorResponse>(StatusCodes.Status401Unauthorized)
+            .Produces(StatusCodes.Status429TooManyRequests);
+
+        group.MapPost("/step-up/verify", CompleteStepUpAsync)
+            .RequireAuthorization()
+            .AddEndpointFilter<PasswordRateLimitFilter>()
+            .WithName($"{endpointNamePrefix}ToamaisutaaStepUpVerify")
+            .WithSummary("Completes a step-up and returns a new access token for the same session.")
+            .WithDescription(
+                "**No refresh token comes back and none is needed** - your existing one keeps "
+                + "working. Replace only the access token. A wrong code counts toward lockout, and "
+                + "a recovery code works here and un-trusts every device, exactly as it does at "
+                + "sign-in.")
+            .Produces<StepUpResponse>()
+            .Produces<ValidationErrorResponse>(StatusCodes.Status400BadRequest)
+            .Produces<ErrorResponse>(StatusCodes.Status401Unauthorized)
+            .Produces(StatusCodes.Status429TooManyRequests);
+
         group.MapPost("/verify", VerifyAsync)
             .AllowAnonymous()
             .AddEndpointFilter<PasswordRateLimitFilter>()
@@ -226,6 +255,97 @@ public static class ToamaisutaaTwoFactorEndpointExtensions
             ? ToamaisutaaPasswordEndpointExtensions.SignInSucceeded(result)
             : Unauthorized();
     }
+
+    private static async Task<IResult> BeginStepUpAsync(
+        HttpContext context,
+        ICurrentUser currentUser,
+        IPasswordSignInService signIn,
+        CancellationToken cancellationToken)
+    {
+        if (!TryReadSession(context, out var sessionId))
+            return NotALocalSession();
+
+        var user = await currentUser.GetOrProvisionAsync(cancellationToken);
+
+        var result = await signIn.BeginStepUpAsync(
+            new StepUpRequest { UserId = user.Id, SessionId = sessionId },
+            cancellationToken);
+
+        return result.Succeeded
+            ? Results.Ok(new StepUpChallengeResponse
+            {
+                Challenge = result.Challenge!.Token,
+                ExpiresIn = result.Challenge.ExpiresIn,
+            })
+            : StepUpFailed(result.Outcome);
+    }
+
+    private static async Task<IResult> CompleteStepUpAsync(
+        StepUpVerifyRequest request,
+        HttpContext context,
+        ICurrentUser currentUser,
+        IPasswordSignInService signIn,
+        CancellationToken cancellationToken)
+    {
+        if (request is null || string.IsNullOrWhiteSpace(request.Challenge) || string.IsNullOrWhiteSpace(request.Code))
+            return Unauthorized();
+
+        if (!TryReadSession(context, out var sessionId))
+            return NotALocalSession();
+
+        var user = await currentUser.GetOrProvisionAsync(cancellationToken);
+
+        var result = await signIn.CompleteStepUpAsync(
+            new StepUpVerificationRequest
+            {
+                UserId = user.Id,
+                SessionId = sessionId,
+                ChallengeToken = request.Challenge,
+                Code = request.Code,
+            },
+            cancellationToken);
+
+        return result.Succeeded
+            ? Results.Ok(new StepUpResponse
+            {
+                AccessToken = result.AccessToken!,
+                ExpiresIn = result.ExpiresIn,
+                RecoveryCodesRunningLow = result.RecoveryCodesRunningLow ? true : null,
+            })
+            : StepUpFailed(result.Outcome);
+    }
+
+    /// <summary>
+    /// Reads <c>toa_sid</c>. Absent means the caller holds a token this package did not issue - an
+    /// identity provider's, most likely - and there is no local session to elevate.
+    /// </summary>
+    private static bool TryReadSession(HttpContext context, out Guid sessionId) =>
+        Guid.TryParse(context.User.FindFirst(ToamaisutaaDefaults.SessionIdClaim)?.Value, out sessionId);
+
+    /// <summary>
+    /// 400 rather than 401, deliberately. The token is fine and the caller is authenticated; what is
+    /// missing is a local session, and answering 401 would send them to refresh a token that is not
+    /// the problem.
+    /// </summary>
+    private static IResult NotALocalSession() =>
+        Results.BadRequest(new ValidationErrorResponse
+        {
+            Errors = ["Step-up needs a session this application signed in. A token from an identity provider cannot be elevated here."],
+        });
+
+    private static IResult StepUpFailed(SignInOutcome outcome) => outcome switch
+    {
+        SignInOutcome.NotALocalSession => NotALocalSession(),
+
+        SignInOutcome.TwoFactorNotEnrolled => Results.BadRequest(new ValidationErrorResponse
+        {
+            Errors = ["There is no confirmed second factor on this account to present."],
+        }),
+
+        // Everything else is one answer. Whether the session ended, the account is locked, or the
+        // code was simply wrong is not something to confirm to whoever is holding the token.
+        _ => Unauthorized(),
+    };
 
     /// <summary>
     /// One body for a wrong code, an expired challenge, a spent one and an unknown one. They are the

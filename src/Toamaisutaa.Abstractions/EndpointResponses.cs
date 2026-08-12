@@ -81,6 +81,51 @@ public sealed record TwoFactorChallengeResponse
 }
 
 /// <summary>
+/// What <c>/auth/2fa/step-up</c> returns: a challenge for a session that is already signed in.
+/// </summary>
+/// <remarks>
+/// Not <see cref="TwoFactorChallengeResponse"/>, close as the shape is. That one carries
+/// <c>two_factor_required: true</c>, which would be a lie here - nothing is required, the caller
+/// asked.
+/// </remarks>
+public sealed record StepUpChallengeResponse
+{
+    [JsonPropertyName("challenge")]
+    public required string Challenge { get; init; }
+
+    /// <summary>Seconds until the challenge expires.</summary>
+    [JsonPropertyName("expires_in")]
+    public required int ExpiresIn { get; init; }
+}
+
+/// <summary>
+/// What <c>/auth/2fa/step-up/verify</c> returns: a new access token for the same session.
+/// </summary>
+/// <remarks>
+/// Not <see cref="TokenResponse"/>, because there is no refresh token. Sharing that type would put
+/// <c>refresh_token: null</c> on every step-up, and a client that stored what came back would blank
+/// the credential it needs to stay signed in.
+/// </remarks>
+public sealed record StepUpResponse
+{
+    [JsonPropertyName("access_token")]
+    public required string AccessToken { get; init; }
+
+    [JsonPropertyName("expires_in")]
+    public required int ExpiresIn { get; init; }
+
+    [JsonPropertyName("token_type")]
+    public string TokenType { get; init; } = "Bearer";
+
+    /// <summary>
+    /// True or absent, never false - the same shape as the field on <see cref="TokenResponse"/>,
+    /// because a recovery code can be spent here too.
+    /// </summary>
+    [JsonPropertyName("recovery_codes_running_low")]
+    public bool? RecoveryCodesRunningLow { get; init; }
+}
+
+/// <summary>
 /// A credential that was not accepted. RFC 6749 section 5.2 names these fields, so anything that
 /// already reads OAuth error bodies reads this one.
 /// </summary>

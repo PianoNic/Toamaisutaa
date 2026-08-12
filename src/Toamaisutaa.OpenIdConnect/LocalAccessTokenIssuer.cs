@@ -70,6 +70,11 @@ internal sealed class LocalAccessTokenIssuer(
 
         Add(claims, ToamaisutaaDefaults.TwoFactorSourceClaim, request.TwoFactorSource);
 
+        // The refresh family, which is what "session" means here. Step-up reads it to find the row
+        // to elevate - and to elevate that one rather than every session the user has open.
+        if (request.SessionId is { } sessionId)
+            Add(claims, ToamaisutaaDefaults.SessionIdClaim, sessionId.ToString());
+
         // Unix seconds, so a policy can subtract it from now without parsing a date format. For a
         // device-trusted sign-in this is the original live challenge, which is the whole point.
         if (request.SecondFactorAt is { } secondFactorAt)

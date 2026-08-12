@@ -55,6 +55,12 @@ public sealed record AccessTokenRequest
     /// what lets an application require a <i>fresh</i> factor rather than merely a cached one.
     /// </summary>
     public DateTimeOffset? SecondFactorAt { get; init; }
+
+    /// <summary>
+    /// The refresh family this token belongs to, written to <c>toa_sid</c>. Null for a token that
+    /// belongs to no local session, which is how a caller is told step-up has nothing to elevate.
+    /// </summary>
+    public Guid? SessionId { get; init; }
 }
 
 public sealed record AccessToken(string Value, DateTimeOffset ExpiresAt);

@@ -19,6 +19,74 @@ public interface IPasswordSignInService
     /// Finishes a sign-in that stopped at <see cref="SignInOutcome.TwoFactorRequired"/>.
     /// </summary>
     Task<SignInResult> VerifyTwoFactorAsync(TwoFactorSignInRequest request, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Asks for a second factor from a session that is already signed in, so that a policy
+    /// requiring a <i>fresh</i> one can be satisfied without signing out.
+    /// </summary>
+    Task<StepUpChallengeResult> BeginStepUpAsync(StepUpRequest request, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Completes a step-up: a new access token for the same session, and the session's stored
+    /// second-factor state moved forward so a refresh does not undo it.
+    /// </summary>
+    /// <remarks>
+    /// No refresh token comes back and the family is not rotated. Rotating here would mean a client
+    /// that ignored a new refresh token presented a spent one at its next refresh, tripping reuse
+    /// detection - so successfully proving your identity would end every session you have.
+    /// </remarks>
+    Task<StepUpResult> CompleteStepUpAsync(StepUpVerificationRequest request, CancellationToken cancellationToken = default);
+}
+
+/// <summary>
+/// Who is stepping up, and which of their sessions.
+/// </summary>
+/// <remarks>
+/// Both come from the caller's token - <c>sub</c> and <c>toa_sid</c> - and are passed in rather than
+/// read here, so <c>Core</c> still never learns what an HTTP request is.
+/// </remarks>
+public sealed record StepUpRequest
+{
+    public required Guid UserId { get; init; }
+
+    /// <summary>The refresh family from <c>toa_sid</c>. The session being elevated, and only it.</summary>
+    public required Guid SessionId { get; init; }
+}
+
+public sealed record StepUpVerificationRequest
+{
+    public required Guid UserId { get; init; }
+
+    public required Guid SessionId { get; init; }
+
+    public required string ChallengeToken { get; init; }
+
+    /// <summary>A TOTP code or a recovery code, as everywhere else.</summary>
+    public required string Code { get; init; }
+}
+
+public sealed record StepUpChallengeResult
+{
+    public required SignInOutcome Outcome { get; init; }
+
+    public TwoFactorChallenge? Challenge { get; init; }
+
+    public bool Succeeded => Outcome == SignInOutcome.Succeeded;
+}
+
+public sealed record StepUpResult
+{
+    public required SignInOutcome Outcome { get; init; }
+
+    /// <summary>A new access token for the same session. There is no new refresh token.</summary>
+    public string? AccessToken { get; init; }
+
+    public int ExpiresIn { get; init; }
+
+    /// <summary>Set when a recovery code was spent to step up and few remain.</summary>
+    public bool RecoveryCodesRunningLow { get; init; }
+
+    public bool Succeeded => Outcome == SignInOutcome.Succeeded;
 }
 
 /// <summary>
@@ -155,6 +223,22 @@ public enum SignInOutcome
     /// is what a password change or a disabled second factor is supposed to do to old sessions.
     /// </summary>
     SecurityStampChanged,
+
+    /// <summary>
+    /// The caller's token carries no <c>toa_sid</c>, so it belongs to no session this package
+    /// issued - an identity provider's token, most likely. There is nothing here to elevate.
+    /// </summary>
+    NotALocalSession,
+
+    /// <summary>Step-up was asked for by a user with no confirmed second factor to present.</summary>
+    TwoFactorNotEnrolled,
+
+    /// <summary>
+    /// The session named by <c>toa_sid</c> has no live refresh row: it was signed out or revoked
+    /// while its access token was still inside its lifetime. Elevating it would resurrect something
+    /// the user deliberately ended.
+    /// </summary>
+    SessionEnded,
 }
 
 /// <summary>How the second factor was satisfied. Written to <c>toa_2fa_source</c>.</summary>

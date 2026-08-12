@@ -220,6 +220,49 @@ Two consequences worth knowing before somebody reports them as bugs:
 A recovery code never produces a device token. Redeeming one means the authenticator is gone, so it
 revokes every trusted device instead.
 
+## Handling a 403 from a freshness policy
+
+An endpoint behind `RequireFreshSecondFactor` answers **403** when the session's last live second
+factor is too old - a user signed in on a trusted device, or one who entered a code an hour ago.
+That is not a permission failure and re-signing-in is the wrong response: ask for one code.
+
+```js
+async function withStepUp(request) {
+  let response = await request()
+  if (response.status !== 403) return response
+
+  const code = await promptForCode()        // your UI
+  if (!code) return response                // the user declined; leave the 403 as it stands
+
+  const { challenge } = await api('/auth/2fa/step-up', { method: 'POST' }).then(r => r.json())
+
+  const stepped = await api('/auth/2fa/step-up/verify', {
+    method: 'POST',
+    body: JSON.stringify({ challenge, code }),
+  })
+
+  if (!stepped.ok) return stepped
+
+  const { access_token } = await stepped.json()
+  replaceAccessToken(access_token)          // and ONLY the access token
+
+  return request()                          // now it goes through
+}
+```
+
+Three things to get right:
+
+- **Replace only the access token.** There is no `refresh_token` in that response and none is
+  needed - your existing one keeps working. A client that clears it because the field is absent
+  signs the user out for succeeding.
+- **A 403 is not always this.** A role requirement answers 403 too. Only retry through step-up where
+  you know a freshness policy is in play, or you will prompt for a code that cannot help.
+- **The code field takes a recovery code too**, and using one here un-trusts every device, exactly
+  as it does at sign-in. Say so next to the input.
+
+Not every 403 is worth a prompt: for a page the user simply cannot reach, showing the wall is
+kinder than asking for a code and then showing it anyway.
+
 ## Signing out
 
 ```js

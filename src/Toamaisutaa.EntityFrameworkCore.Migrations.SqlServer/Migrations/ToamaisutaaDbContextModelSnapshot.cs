@@ -321,6 +321,12 @@ namespace Toamaisutaa.EntityFrameworkCore.Migrations.SqlServer.Migrations
                     b.Property<long>("ExpiresAt")
                         .HasColumnType("bigint");
 
+                    b.Property<Guid?>("FamilyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("Purpose")
+                        .HasColumnType("int");
+
                     b.Property<string>("TokenHash")
                         .IsRequired()
                         .HasMaxLength(64)

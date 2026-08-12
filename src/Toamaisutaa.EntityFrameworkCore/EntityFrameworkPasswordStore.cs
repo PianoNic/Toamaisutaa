@@ -101,6 +101,36 @@ internal sealed class EntityFrameworkPasswordStore<TContext>(TContext context)
                     .SetProperty(token => token.RevokedReason, reason),
                 cancellationToken);
 
+    public async Task<ToamaisutaaRefreshToken?> FindLiveByFamilyAsync(Guid familyId, CancellationToken cancellationToken = default) =>
+        await context.Set<ToamaisutaaRefreshToken>()
+            .FirstOrDefaultAsync(
+                token => token.FamilyId == familyId && token.RotatedAt == null && token.RevokedAt == null,
+                cancellationToken);
+
+    /// <summary>
+    /// The only place this package writes over a refresh row instead of rotating it. Scoped to the
+    /// family's live row, so a client that refreshed between receiving its token and stepping up
+    /// still has the row that matters updated rather than the one it was minted alongside.
+    /// </summary>
+    public async Task<bool> UpdateSecondFactorAsync(
+        Guid familyId,
+        string authenticationMethods,
+        string twoFactorSource,
+        DateTimeOffset secondFactorAt,
+        CancellationToken cancellationToken = default)
+    {
+        var updated = await context.Set<ToamaisutaaRefreshToken>()
+            .Where(token => token.FamilyId == familyId && token.RotatedAt == null && token.RevokedAt == null)
+            .ExecuteUpdateAsync(
+                setters => setters
+                    .SetProperty(token => token.AuthenticationMethods, authenticationMethods)
+                    .SetProperty(token => token.TwoFactorSource, twoFactorSource)
+                    .SetProperty(token => token.SecondFactorAt, secondFactorAt),
+                cancellationToken);
+
+        return updated > 0;
+    }
+
     public async Task<int> DeleteExpiredAsync(DateTimeOffset expiredBefore, CancellationToken cancellationToken = default) =>
         await context.Set<ToamaisutaaRefreshToken>()
             .Where(token => token.ExpiresAt <= expiredBefore)

@@ -22,3 +22,14 @@ public sealed record VerifyTwoFactorRequest(
     string Code,
     bool RememberDevice = false,
     string? DeviceLabel = null);
+
+/// <summary>
+/// Completes a step-up. <see cref="Code"/> takes a TOTP code or a recovery code, as everywhere else.
+/// </summary>
+/// <remarks>
+/// <b>There is deliberately no device token field.</b> A trusted device is a cached second factor,
+/// and cached is exactly what step-up exists to refuse - so the way it is refused is that there is
+/// nothing to present, in the same spirit as the challenge being unable to be a bearer token. A
+/// field and a check would be a rule; an absent field is not a rule anyone can loosen.
+/// </remarks>
+public sealed record StepUpVerifyRequest(string Challenge, string Code);
