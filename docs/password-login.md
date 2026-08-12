@@ -207,6 +207,35 @@ Rotate by moving the old key into `LocalLogin:RetiredPeppers` under its version 
 new `Pepper` and `PepperVersion`; rows rewrite themselves as people log in. Lose it with no retired
 copy and every password becomes unverifiable.
 
+### The password rules are a length floor, and a seam
+
+`MinimumPasswordLength` and `MaximumPasswordLength` are the whole of the built-in policy, following
+NIST: a length floor and no composition rules, because "one uppercase, one digit, one symbol"
+reliably produces `Password1!` and nothing safer.
+
+If you need something else - a breached-password list, a zxcvbn score, your own wording on the
+message the user sees - register an `IPasswordValidator` and it replaces the default outright:
+
+```csharp
+builder.Services.AddSingleton<IPasswordValidator, YourPasswordValidator>();
+builder.Services.AddToamaisutaaPasswordLogin(builder.Configuration);
+```
+
+The strings it returns reach the caller in the `errors` array, so write them for the person typing.
+
+### What goes in the access token is a seam too
+
+`IAccessTokenIssuer` mints the locally issued token: the claims, the lifetime, the signature.
+Replace it when you need a claim this package does not add, or an asymmetric signing key so that
+something else can validate the tokens without holding the secret.
+
+```csharp
+builder.Services.AddSingleton<IAccessTokenIssuer, YourTokenIssuer>();
+```
+
+If you add a claim, read [what `RefreshAsync` has to answer for](#a-new-claim-and-the-refresh-path)
+before you ship it.
+
 ### Local accounts have no roles
 
 This package has no roles table, so a locally issued token carries no role claims and satisfies no
@@ -251,6 +280,61 @@ logged loudly - the standard mitigation for a stolen refresh token.
 
 Rotation alone would keep a session alive forever, so a chain also has an absolute lifetime
 (`RefreshTokenAbsoluteLifetime`, 90 days) measured from the sign-in that started it.
+
+### A new claim and the refresh path
+
+If you replace `IAccessTokenIssuer` and add a claim, decide in the same change what
+`RefreshAsync` does with it: **recompute it, carry it on the refresh token row, or drop it
+deliberately.** All three are defensible; not having decided is not.
+
+A refresh that silently drops a claim produces a token that is correct at sign-in and wrong exactly
+one `AccessTokenLifetime` later, which reads as a policy failure rather than a refresh failure. This
+package has made that mistake three times and never once caught it with a test.
+
+## Calling the services yourself
+
+The endpoints are a convenience, not the API. `IPasswordSignInService` and `IPasswordAccountService`
+are public, so an application that routes everything through its own handlers - a mediator, a
+different transport, a background job - can skip `MapToamaisutaaPasswordEndpoints` entirely and call
+them directly.
+
+```csharp
+public sealed class SignInHandler(IPasswordSignInService signIn)
+{
+    public async Task<YourResult> Handle(YourCommand command, CancellationToken cancellationToken)
+    {
+        var result = await signIn.SignInAsync(
+            new PasswordSignInRequest
+            {
+                Identifier = command.Identifier,
+                Password = command.Password,
+                UserAgent = command.UserAgent,     // yours to supply - Core never sees an HTTP request
+                IpAddress = command.IpAddress,
+            },
+            cancellationToken);
+
+        return result.Outcome switch
+        {
+            SignInOutcome.Succeeded => YourResult.SignedIn(result.Tokens!),
+            SignInOutcome.TwoFactorRequired => YourResult.NeedsCode(result.Challenge!),
+            _ => YourResult.Refused(),
+        };
+    }
+}
+```
+
+Two things worth knowing before you build on them:
+
+- **`SignInOutcome` tells you what really happened, and the endpoints deliberately throw that away.**
+  `UnknownUser`, `InvalidPassword` and `LockedOut` are three different values here and one 401 on the
+  wire, because telling a caller which one it was tells them which user names are real. If you shape
+  your own response, keep that collapse.
+- **Every result type is a sealed record with public `init` members**, so they compose into DTOs of
+  your own and construct in a test without reflection. `SignInResult.Succeeded` is computed from
+  `Outcome`, so set the outcome rather than looking for a setter.
+
+The implementations behind these interfaces are `internal`. Inject the interface - which is what DI
+hands you - rather than expecting to construct one.
 
 ## Configuration
 

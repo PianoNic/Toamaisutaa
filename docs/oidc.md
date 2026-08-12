@@ -76,6 +76,32 @@ To map claims differently, register your own `IClaimsProfileMapper` before
 `AddToamaisutaaProvisioning()`. `DefaultClaimsProfileMapper` is public so you can delegate to it for
 the parts you do not care about.
 
+## Deciding who gets a local row
+
+Provisioning creates a row the first time a subject is seen. Two seams sit on that path, and both
+are worth knowing before you decide you need to fork something.
+
+**`IProvisioningPolicy` answers "should this subject get an account at all, and which one".** The
+default creates one for anybody your issuer vouched for. Replace it to refuse subjects outside a
+tenant, to require a claim before an account exists, or to link an incoming external identity to a
+local user you matched some other way:
+
+```csharp
+builder.Services.AddSingleton<IProvisioningPolicy, YourProvisioningPolicy>();
+builder.Services.AddToamaisutaaProvisioning();
+```
+
+It returns a `ProvisioningDecision`, so refusing is a decision the pipeline understands rather than
+an exception you throw from inside a mapper.
+
+**`IExternalLoginProvisioner` is the whole read-or-create step**, if the policy seam is not enough
+and you want to own the sequence. Rarely the right one to reach for - most of what people want is
+`IClaimsProfileMapper` for the fields and `IProvisioningPolicy` for the decision.
+
+Linking a second identity provider to an existing user raises
+`ExternalLoginConflictException` when that (provider, subject) pair already belongs to somebody
+else, which is the case worth handling deliberately rather than letting surface as a 500.
+
 ## SignalR and WebSockets
 
 Browsers cannot set an `Authorization` header on a WebSocket handshake, so SignalR clients pass the

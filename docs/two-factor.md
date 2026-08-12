@@ -159,6 +159,25 @@ cannot be.
 Rotate the same way as the pepper - move the old key into `TwoFactor:RetiredEncryptionKeys` under its
 version marker, set a new key and version, and rows re-encrypt themselves as people sign in.
 
+### Where the secret is kept is a seam
+
+`ISecretProtector` is what turns a secret into ciphertext and back. The default is AES-256-GCM with
+the key from configuration. Replace it to put the key somewhere configuration cannot reach - a key
+management service, an HSM, your cloud provider's vault:
+
+```csharp
+builder.Services.AddSingleton<ISecretProtector, YourKeyVaultProtector>();
+builder.Services.AddToamaisutaaTwoFactor(builder.Configuration);
+```
+
+`ProtectedSecret` carries a `KeyVersion` alongside the ciphertext, so your implementation can rotate
+on the same terms the default does: decrypt anything you have a key for, re-encrypt under the current
+one as rows are touched.
+
+`ITotpProvider` and `IRecoveryCodeProvider` are seams for the same reason - generating and checking
+the codes, and generating the recovery codes - though there is rarely a reason to move off RFC 6238.
+Replace `IRecoveryCodeProvider` if you want a different code format from the `XXXXX-XXXXX` default.
+
 ::: danger Lose the key and every enrolled user must enrol again
 There is no recovery. A TOTP secret cannot be re-derived from anything, and decryption fails closed
 rather than guessing. Keep the retired keys until you are certain no row still references them.
