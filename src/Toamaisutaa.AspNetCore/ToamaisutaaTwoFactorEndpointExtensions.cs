@@ -33,12 +33,16 @@ public static class ToamaisutaaTwoFactorEndpointExtensions
 
         var group = endpoints.MapGroup(options.EndpointPrefix + "/2fa").WithTags("Two-factor authentication");
 
+        // Every endpoint here except /verify resolves the caller, and three of them move the stamp
+        // themselves - so the token that called one is stale for the next request by design.
+        group.AddEndpointFilter<StaleSecurityStampFilter>();
+
         group.MapGet("/", StatusAsync)
             .RequireAuthorization()
             .WithName($"{endpointNamePrefix}ToamaisutaaTwoFactorStatus")
             .WithSummary("Whether the caller has enrolled, and how many recovery codes remain.")
             .Produces<TwoFactorStatus>()
-            .Produces(StatusCodes.Status401Unauthorized);
+            .Produces<ErrorResponse>(StatusCodes.Status401Unauthorized);
 
         group.MapPost("/begin", BeginAsync)
             .RequireAuthorization()
@@ -52,7 +56,7 @@ public static class ToamaisutaaTwoFactorEndpointExtensions
                 + "out of any generic request or response logging you have.")
             .Produces<TwoFactorEnrolmentStarted>()
             .Produces<ValidationErrorResponse>(StatusCodes.Status400BadRequest)
-            .Produces(StatusCodes.Status401Unauthorized)
+            .Produces<ErrorResponse>(StatusCodes.Status401Unauthorized)
             .Produces(StatusCodes.Status429TooManyRequests);
 
         group.MapPost("/confirm", ConfirmAsync)
@@ -65,7 +69,7 @@ public static class ToamaisutaaTwoFactorEndpointExtensions
                 + "before the next request.")
             .Produces<TwoFactorEnrolmentCompleted>()
             .Produces<ValidationErrorResponse>(StatusCodes.Status400BadRequest)
-            .Produces(StatusCodes.Status401Unauthorized);
+            .Produces<ErrorResponse>(StatusCodes.Status401Unauthorized);
 
         group.MapPost("/disable", DisableAsync)
             .RequireAuthorization()
@@ -74,7 +78,7 @@ public static class ToamaisutaaTwoFactorEndpointExtensions
             .WithDescription("An authenticated session is not enough: a stolen access token must not be able to do this.")
             .Produces(StatusCodes.Status204NoContent)
             .Produces<ValidationErrorResponse>(StatusCodes.Status400BadRequest)
-            .Produces(StatusCodes.Status401Unauthorized);
+            .Produces<ErrorResponse>(StatusCodes.Status401Unauthorized);
 
         group.MapPost("/recovery-codes", RegenerateAsync)
             .RequireAuthorization()
@@ -83,7 +87,7 @@ public static class ToamaisutaaTwoFactorEndpointExtensions
             .WithDescription("Shown exactly once, and never logged. Same proof requirement as disabling.")
             .Produces<TwoFactorEnrolmentCompleted>()
             .Produces<ValidationErrorResponse>(StatusCodes.Status400BadRequest)
-            .Produces(StatusCodes.Status401Unauthorized);
+            .Produces<ErrorResponse>(StatusCodes.Status401Unauthorized);
 
         group.MapPost("/verify", VerifyAsync)
             .AllowAnonymous()

@@ -36,6 +36,9 @@ public static class ToamaisutaaTrustedDeviceEndpointExtensions
 
         var group = endpoints.MapGroup(localLogin.EndpointPrefix + options.EndpointPrefix).WithTags("Trusted devices");
 
+        // All three resolve the caller, so all three can meet a token whose stamp has moved.
+        group.AddEndpointFilter<StaleSecurityStampFilter>();
+
         group.MapGet("/", ListAsync)
             .RequireAuthorization()
             .AddEndpointFilter<PasswordRateLimitFilter>()
@@ -46,7 +49,7 @@ public static class ToamaisutaaTrustedDeviceEndpointExtensions
                 + "matching row comes back with `isCurrent` true, so a list can say \"this device\" "
                 + "rather than inviting somebody to revoke the one they are sitting at.")
             .Produces<IReadOnlyList<TrustedDeviceSummary>>()
-            .Produces(StatusCodes.Status401Unauthorized)
+            .Produces<ErrorResponse>(StatusCodes.Status401Unauthorized)
             .Produces(StatusCodes.Status429TooManyRequests);
 
         group.MapDelete("/{id:guid}", RevokeAsync)
@@ -58,7 +61,7 @@ public static class ToamaisutaaTrustedDeviceEndpointExtensions
                 "404 covers both a device that does not exist and one belonging to someone else, so "
                 + "this cannot be used to discover another account's device ids.")
             .Produces(StatusCodes.Status204NoContent)
-            .Produces(StatusCodes.Status401Unauthorized)
+            .Produces<ErrorResponse>(StatusCodes.Status401Unauthorized)
             .Produces(StatusCodes.Status404NotFound)
             .Produces(StatusCodes.Status429TooManyRequests);
 
@@ -68,7 +71,7 @@ public static class ToamaisutaaTrustedDeviceEndpointExtensions
             .WithName($"{endpointNamePrefix}ToamaisutaaRevokeAllTrustedDevices")
             .WithSummary("Revokes every device this user has trusted.")
             .Produces(StatusCodes.Status204NoContent)
-            .Produces(StatusCodes.Status401Unauthorized)
+            .Produces<ErrorResponse>(StatusCodes.Status401Unauthorized)
             .Produces(StatusCodes.Status429TooManyRequests);
 
         return group;

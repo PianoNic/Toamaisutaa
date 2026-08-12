@@ -115,6 +115,101 @@ app.MapGet("/api/app", (HttpContext context, IToamaisutaaClientConfigurationProv
 The redirect-URI resolution, which is the only part with real logic in it, stays in one place either
 way.
 
+## Adding these endpoints to your OpenAPI document
+
+Every endpoint this package maps describes itself: response types, status codes, summaries, and a
+tag per group. They appear in a generated document with no work from you.
+
+**One thing you have to add: the bearer security scheme.** A security scheme is a document-level
+declaration and belongs to whoever owns the document, so this package cannot add it - and nothing
+shipped here takes a dependency on OpenAPI. Without it nothing marks which endpoints need a token,
+and Scalar or Swagger UI shows no Authorize box, which is how most people first try an API.
+
+Paste this into your own application:
+
+```csharp
+builder.Services.AddOpenApi(options => options.AddDocumentTransformer((document, _, _) =>
+{
+    document.Components ??= new OpenApiComponents();
+    document.Components.SecuritySchemes ??= new Dictionary<string, IOpenApiSecurityScheme>();
+    document.Components.SecuritySchemes["Bearer"] = new OpenApiSecurityScheme
+    {
+        Type = SecuritySchemeType.Http,
+        Scheme = "bearer",
+        BearerFormat = "JWT",
+        Description = "Paste the access_token from /auth/login or /auth/2fa/verify.",
+    };
+
+    document.Security =
+    [
+        new OpenApiSecurityRequirement
+        {
+            [new OpenApiSecuritySchemeReference("Bearer", document)] = [],
+        },
+    ];
+
+    return Task.CompletedTask;
+}).AddOperationTransformer((operation, context, _) =>
+{
+    // Without this the document-level requirement puts a padlock on /auth/login too, which is
+    // backwards: it is the endpoint you call because you have no token yet.
+    if (context.Description.ActionDescriptor.EndpointMetadata.OfType<IAllowAnonymous>().Any())
+        operation.Security = [];
+
+    return Task.CompletedTask;
+}));
+```
+
+Needs `Microsoft.AspNetCore.OpenApi`, and `using Microsoft.OpenApi;`. To render it,
+`Scalar.AspNetCore` is one line:
+
+```csharp
+app.MapOpenApi().AllowAnonymous();
+app.MapScalarApiReference().AllowAnonymous();   // /scalar
+```
+
+`samples/MinimalApiSample` has both, wired exactly as above.
+
+## Endpoints of yours that resolve the current user
+
+`ICurrentUser.GetOrProvisionAsync` throws `SecurityStampChangedException` when the token was issued
+before a credential on the account changed - a password change, a two-factor enrolment. The token is
+genuinely stale even though its signature and expiry are fine, and the client only needs to refresh.
+
+Toamaisutaa's own endpoints answer 401 for this. **Endpoints you write need to as well**, or it
+surfaces as a 500 for something that is an ordinary authentication failure:
+
+```csharp
+internal sealed class StaleSecurityStampHandler : IExceptionHandler
+{
+    public async ValueTask<bool> TryHandleAsync(
+        HttpContext context,
+        Exception exception,
+        CancellationToken cancellationToken)
+    {
+        if (exception is not SecurityStampChangedException)
+            return false;
+
+        context.Response.StatusCode = StatusCodes.Status401Unauthorized;
+        context.Response.Headers.WWWAuthenticate = "Bearer error=\"invalid_token\"";
+
+        await context.Response.WriteAsJsonAsync(
+            new ErrorResponse { Error = "invalid_token", ErrorDescription = exception.Message },
+            cancellationToken);
+
+        return true;
+    }
+}
+```
+
+```csharp
+builder.Services.AddExceptionHandler<StaleSecurityStampHandler>();
+builder.Services.AddProblemDetails();
+
+var app = builder.Build();
+app.UseExceptionHandler();
+```
+
 ## The sample
 
 `samples/MinimalApiSample` in the repository runs the whole thing against a throwaway identity

@@ -34,6 +34,16 @@ render finishes.
 
 ## Signing in has two success shapes
 
+::: danger Read this one even if you skim the rest
+`POST /auth/login` returns **200 with tokens** or **200 with a challenge and no tokens**. Same status
+code, different bodies, and the second one does not exist until a user enrols in two-factor - after
+which it exists forever.
+
+A client that checks `response.ok` and reads `access_token` works perfectly until the first person
+turns on 2FA, then breaks for that person only, in production, long after this code was written.
+**Branch on `two_factor_required`.**
+:::
+
 This is the branch clients get wrong, because it does not exist until somebody enrols in two-factor
 and then it exists forever.
 
@@ -127,6 +137,14 @@ device goes with it. A dashboard that fires six requests on load will do this on
 Refreshing proactively - a timer at `expires_in` minus a minute - is also fine, and does not remove
 the need for the 401 path. A laptop that slept through the expiry wakes up with a dead token.
 
+**A 401 does not always mean expired.** Two cases reach the same handler and both are fixed by
+refreshing:
+
+| Body | Means |
+|---|---|
+| `{ "error": "invalid_token", … }` | The token was issued before a credential changed - a password change, a two-factor enrolment. Refresh. |
+| Empty | No token, or one the bearer pipeline rejected outright. Refreshing may still work; if it does not, sign in again. |
+
 ## Enrolling in two-factor
 
 Four steps, and the third one is the one people miss.
@@ -158,9 +176,10 @@ showOnceAndOfferDownload(recoveryCodes)
 Three things to design around:
 
 **Your access token dies at step 3.** Confirming moves the user's security stamp, which revokes
-every session that existed before it - including the one that just called `confirm`. Refresh
-immediately after, or the next request fails. The same is true of disabling two-factor and of
-regenerating recovery codes.
+every session that existed before it - including the one that just called `confirm`. The next
+request answers **401 with `"error": "invalid_token"`**, so the refresh-on-401 wrapper above already
+handles it and the user notices nothing. If you call these endpoints outside that wrapper, refresh
+explicitly. The same is true of disabling two-factor and of regenerating recovery codes.
 
 **Step 4 is the only time.** Recovery codes are stored hashed and cannot be shown again. A user who
 closes that dialog has to regenerate to get a new set. Make it hard to close by accident.
