@@ -37,20 +37,46 @@ public static class ToamaisutaaPasswordEndpointExtensions
 
         var options = endpoints.ServiceProvider.GetRequiredService<IOptions<ToamaisutaaLocalLoginOptions>>().Value;
 
-        var group = endpoints.MapGroup(options.EndpointPrefix);
+        var group = endpoints.MapGroup(options.EndpointPrefix).WithTags("Authentication");
 
         group.MapPost("/login", LoginAsync)
             .AllowAnonymous()
             .AddEndpointFilter<PasswordRateLimitFilter>()
-            .WithName($"{endpointNamePrefix}ToamaisutaaLogin");
+            .WithName($"{endpointNamePrefix}ToamaisutaaLogin")
+            .WithSummary("Signs in with a password, or asks for a second factor.")
+            // Two different bodies share the 200 here, and OpenAPI keys a response on its status
+            // code, so only one schema can be declared. The token pair is declared because it is
+            // the common case; the challenge is spelled out here because a client that misses the
+            // branch breaks the moment any user enrols.
+            .WithDescription(
+                "**Two success shapes, both 200.** Usually a token pair. For a user with a "
+                + "confirmed second factor it is instead a challenge and no tokens:\n\n"
+                + "```json\n{ \"two_factor_required\": true, \"challenge\": \"No1CXq9-...\", \"expires_in\": 300 }\n```\n\n"
+                + "Branch on `two_factor_required`, which is absent from the token shape. Present "
+                + "the challenge with a code to `/auth/2fa/verify` to finish signing in.")
+            .Produces<TwoFactorChallengeResponse>()
+            .Produces<TokenResponse>()
+            .Produces<ErrorResponse>(StatusCodes.Status401Unauthorized)
+            .Produces(StatusCodes.Status429TooManyRequests);
 
         group.MapPost("/refresh", RefreshAsync)
             .AllowAnonymous()
-            .WithName($"{endpointNamePrefix}ToamaisutaaRefresh");
+            .WithName($"{endpointNamePrefix}ToamaisutaaRefresh")
+            .WithSummary("Exchanges a refresh token for a new pair, rotating it.")
+            .WithDescription(
+                "Presenting a token that has already been rotated revokes the whole family, and "
+                + "every trusted device with it.")
+            .Produces<TokenResponse>()
+            .Produces<ErrorResponse>(StatusCodes.Status401Unauthorized);
 
         group.MapPost("/logout", LogoutAsync)
             .AllowAnonymous()
-            .WithName($"{endpointNamePrefix}ToamaisutaaLogout");
+            .WithName($"{endpointNamePrefix}ToamaisutaaLogout")
+            .WithSummary("Revokes the presented refresh token's family.")
+            .WithDescription(
+                "Always 204. Whether that token existed is not the caller's business. Trusted "
+                + "devices are deliberately left alone - signing out is not a security event.")
+            .Produces(StatusCodes.Status204NoContent);
 
         // Not mapped at all when self-registration is off, rather than mapped and answering 403.
         if (options.AllowSelfRegistration)
@@ -58,23 +84,45 @@ public static class ToamaisutaaPasswordEndpointExtensions
             group.MapPost("/register", RegisterAsync)
                 .AllowAnonymous()
                 .AddEndpointFilter<PasswordRateLimitFilter>()
-                .WithName($"{endpointNamePrefix}ToamaisutaaRegister");
+                .WithName($"{endpointNamePrefix}ToamaisutaaRegister")
+                .WithSummary("Creates a local account and signs it in.")
+                .WithDescription("Mapped only when `LocalLogin:AllowSelfRegistration` is true.")
+                .Produces<TokenResponse>(StatusCodes.Status201Created)
+                .Produces<ValidationErrorResponse>(StatusCodes.Status400BadRequest)
+                .Produces<ValidationErrorResponse>(StatusCodes.Status409Conflict)
+                .Produces(StatusCodes.Status429TooManyRequests);
         }
 
         // Explicitly authorised rather than relying on the fallback policy, which an application is
         // free to turn off.
         group.MapPost("/password", ChangePasswordAsync)
             .RequireAuthorization()
-            .WithName($"{endpointNamePrefix}ToamaisutaaChangePassword");
+            .WithName($"{endpointNamePrefix}ToamaisutaaChangePassword")
+            .WithSummary("Sets a first password or changes an existing one.")
+            .WithDescription(
+                "Send `currentPassword` when the account already has one and omit it when an "
+                + "identity provider owns the account and it is gaining its first.")
+            .Produces(StatusCodes.Status204NoContent)
+            .Produces<ValidationErrorResponse>(StatusCodes.Status400BadRequest)
+            .Produces(StatusCodes.Status401Unauthorized);
 
         group.MapPost("/password/forgot", ForgotPasswordAsync)
             .AllowAnonymous()
             .AddEndpointFilter<PasswordRateLimitFilter>()
-            .WithName($"{endpointNamePrefix}ToamaisutaaForgotPassword");
+            .WithName($"{endpointNamePrefix}ToamaisutaaForgotPassword")
+            .WithSummary("Requests a password reset link.")
+            .WithDescription(
+                "Always 204 - for an unknown address and for an account an identity provider owns "
+                + "alike. The log says which.")
+            .Produces(StatusCodes.Status204NoContent)
+            .Produces(StatusCodes.Status429TooManyRequests);
 
         group.MapPost("/password/reset", ResetPasswordAsync)
             .AllowAnonymous()
-            .WithName($"{endpointNamePrefix}ToamaisutaaResetPassword");
+            .WithName($"{endpointNamePrefix}ToamaisutaaResetPassword")
+            .WithSummary("Redeems a reset token and sets a new password.")
+            .Produces(StatusCodes.Status204NoContent)
+            .Produces<ValidationErrorResponse>(StatusCodes.Status400BadRequest);
 
         return group;
     }

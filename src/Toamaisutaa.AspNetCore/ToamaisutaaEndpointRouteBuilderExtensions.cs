@@ -37,6 +37,14 @@ public static class ToamaisutaaEndpointRouteBuilderExtensions
             .MapGet(pattern, (HttpContext context, IToamaisutaaClientConfigurationProvider provider)
                 => Results.Ok(provider.GetConfiguration(context)))
             .AllowAnonymous()
-            .WithName($"{endpointNamePrefix}ToamaisutaaClientConfiguration");
+            .WithName($"{endpointNamePrefix}ToamaisutaaClientConfiguration")
+            .WithTags("Application configuration")
+            .WithSummary("What the SPA reads at startup to configure its OIDC client.")
+            .WithDescription(
+                "Anonymous, because it is needed before anyone has signed in. To serve your own "
+                + "fields alongside these, or from a different route, inject "
+                + "`IToamaisutaaClientConfigurationProvider` into an endpoint of your own instead "
+                + "of calling this.")
+            .Produces<ToamaisutaaClientConfiguration>();
     }
 }
