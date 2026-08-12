@@ -124,6 +124,48 @@ Send the caller's own device token in an `X-Toamaisutaa-Device` header on the `G
 entry comes back with `isCurrent: true`, so a UI need not invite somebody to revoke the device they
 are sitting at.
 
+All three are authenticated. The `GET` returns an array - camelCase, because this is one of this
+package's own shapes rather than a token response:
+
+```json
+[
+  {
+    "id": "019ff5ca-b7e9-7394-a875-c8ad616b14db",
+    "label": "Ada's laptop",
+    "userAgent": "Mozilla/5.0 (Windows NT 10.0) ...",
+    "ipAddress": "::/48",
+    "createdAt": "2026-08-12T11:45:31.113+00:00",
+    "lastUsedAt": "2026-08-12T11:45:31.113+00:00",
+    "expiresAt": "2026-09-11T11:45:31.113+00:00",
+    "isCurrent": true
+  }
+]
+```
+
+`id` is the family id, which survives rotation - pass it back to `DELETE /auth/devices/{id}`. Both
+deletes answer 204 with no body, and revoking an id that does not exist or belongs to someone else
+answers 404, because those are the same answer to whoever asked.
+
+### Where the device token appears
+
+Nowhere of its own: it rides on the ordinary sign-in body, alongside the tokens.
+
+```json
+{
+  "access_token": "...",
+  "refresh_token": "...",
+  "expires_in": 900,
+  "token_type": "Bearer",
+  "recovery_codes_running_low": null,
+  "device_token": "JvYFOmcNekB5SvHZWfcdMc-MdqEXFFZB8rmQtbDh5jY",
+  "device_expires_in": 2592000
+}
+```
+
+`device_expires_in` counts down from when the family was established rather than restarting, so a
+rotated token reports a smaller number each time. That is the absolute lifetime being visible rather
+than a bug.
+
 ## What is stored, and what is not
 
 `Label` is whatever your application passes - the package does not invent one. `UserAgent` is the raw
@@ -157,4 +199,7 @@ device's family id, which is what the list and revoke endpoints use anyway.
 | `Lifetime` | `30.00:00:00` |
 | `MaxDevicesPerUser` | `10`, `0` for unlimited |
 | `IpAddressStorage` | `None` |
-| `EndpointPrefix` | `/auth/devices` |
+| `EndpointPrefix` | `/devices`, appended to `LocalLogin:EndpointPrefix` |
+
+`EndpointPrefix` is a suffix, not a full path - the same way the two-factor endpoints append `/2fa`.
+The default is still `/auth/devices`, and moving `LocalLogin:EndpointPrefix` moves these with it.

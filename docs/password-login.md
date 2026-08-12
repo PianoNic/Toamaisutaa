@@ -28,6 +28,104 @@ and all three are checked at startup rather than at the first request.
 | POST | `/auth/password/forgot` | 204, always |
 | POST | `/auth/password/reset` | 204 or 400 |
 
+::: warning Requests are camelCase, token responses are not
+Request bodies bind to this package's own records, so they are camelCase: `identifier`,
+`refreshToken`, `newPassword`. **Sign-in responses use the RFC 6749 names** - `access_token`,
+`refresh_token`, `expires_in`, `token_type` - because a token endpoint is a place where a standard
+already exists.
+
+The asymmetry is deliberate and it is the one thing here you cannot guess. Everything else this
+package returns is camelCase.
+:::
+
+### Bodies
+
+**`POST /auth/login`** - `deviceToken` is optional, and only meaningful with
+[trusted devices](/trusted-devices).
+
+```json
+{ "identifier": "ada", "password": "correct horse battery staple", "deviceToken": null }
+```
+
+Answers **200** with a token pair. `recovery_codes_running_low` is `true` or `null`, never `false`;
+`device_token` and `device_expires_in` are null unless a device was trusted.
+
+```json
+{
+  "access_token": "eyJhbGciOiJIUzI1NiIs...",
+  "refresh_token": "VWv8Paxg53FWF4HQ_Xzwp8o1EI3YWLSV4PbZAoH1x2M",
+  "expires_in": 900,
+  "token_type": "Bearer",
+  "recovery_codes_running_low": null,
+  "device_token": null,
+  "device_expires_in": null
+}
+```
+
+Or **200 with a challenge and no tokens**, for a user who has enrolled in
+[two-factor authentication](/two-factor). Branch on `two_factor_required`, which is absent from the
+shape above:
+
+```json
+{ "two_factor_required": true, "challenge": "No1CXq9-...", "expires_in": 300 }
+```
+
+**`POST /auth/refresh`** answers the same token-pair shape, or 401.
+
+```json
+{ "refreshToken": "VWv8Paxg53FWF4HQ_Xzwp8o1EI3YWLSV4PbZAoH1x2M" }
+```
+
+**`POST /auth/logout`** answers 204 whether or not that token existed.
+
+```json
+{ "refreshToken": "VWv8Paxg53FWF4HQ_Xzwp8o1EI3YWLSV4PbZAoH1x2M" }
+```
+
+**`POST /auth/register`** answers **201** with the same token-pair shape, so a registration signs the
+user straight in.
+
+```json
+{ "userName": "ada", "email": "ada@example.com", "password": "correct horse battery staple" }
+```
+
+**`POST /auth/password`** - authenticated. Omit `currentPassword` when the account arrived through an
+identity provider and is gaining its first password. Answers 204 or 400.
+
+```json
+{ "currentPassword": "the old one", "newPassword": "the new one" }
+```
+
+**`POST /auth/password/forgot`** answers 204 always - for an unknown address and for an account an
+identity provider owns alike.
+
+```json
+{ "email": "ada@example.com" }
+```
+
+**`POST /auth/password/reset`** answers 204 or 400.
+
+```json
+{ "token": "the token from the notifier", "newPassword": "the new one" }
+```
+
+### The two error shapes
+
+**A credential that was not accepted** answers 401 with the RFC 6749 shape. Wrong password, no such
+account, locked out and an unknown refresh token are all this one body, because telling them apart
+tells a caller which user names are real:
+
+```json
+{ "error": "invalid_grant", "error_description": "The credentials are not valid." }
+```
+
+**Input the caller can correct** answers 400 - or 409 for a taken user name - with a camelCase array.
+These strings are written to be shown to the person who typed the input:
+
+```json
+{ "errors": ["Use at least 8 characters."] }
+```
+
 A successful sign-in returns a short-lived access token and an opaque refresh token. The access
 token is signed locally and validated by the same bearer pipeline, so policies, `ICurrentUser` and
 provisioning cannot tell the two apart.
