@@ -18,7 +18,12 @@ public sealed class ToamaisutaaTrustedDeviceOptions
 
     public IpAddressStorage IpAddressStorage { get; set; } = IpAddressStorage.None;
 
-    public string EndpointPrefix { get; set; } = "/auth/devices";
+    /// <summary>
+    /// Composed onto <see cref="ToamaisutaaLocalLoginOptions.EndpointPrefix"/>, the same way the
+    /// two-factor endpoints append <c>/2fa</c>. A relative suffix rather than a full path, so that
+    /// moving local login moves these with it instead of stranding them at the old prefix.
+    /// </summary>
+    public string EndpointPrefix { get; set; } = "/devices";
 }
 
 /// <summary>

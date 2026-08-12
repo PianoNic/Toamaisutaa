@@ -13,10 +13,25 @@ public static class ToamaisutaaPasswordEndpointExtensions
     /// Maps the local sign-in endpoints under <c>LocalLogin:EndpointPrefix</c>.
     /// </summary>
     /// <remarks>
+    /// <para>
     /// The anonymous endpoints throttle themselves through a limiter this package owns, so there is
     /// no middleware for a consumer to remember to add.
+    /// </para>
+    /// <para>
+    /// Maps into whatever builder it is handed, so <c>app.MapGroup("/api/v1")</c> nests these under
+    /// that group and any conventions on it apply. <paramref name="endpointNamePrefix"/> is what
+    /// makes that work more than once: endpoint names are unique per application, so mapping the
+    /// same set into a second group needs distinct ones.
+    /// </para>
     /// </remarks>
-    public static IEndpointConventionBuilder MapToamaisutaaPasswordEndpoints(this IEndpointRouteBuilder endpoints)
+    /// <param name="endpoints">The builder to map into. A <c>RouteGroupBuilder</c> is one.</param>
+    /// <param name="endpointNamePrefix">
+    /// Prepended to every endpoint name, so the same endpoints can be mapped into more than one
+    /// group. Pass a distinct value per group - <c>"V1"</c> gives <c>V1ToamaisutaaLogin</c>.
+    /// </param>
+    public static IEndpointConventionBuilder MapToamaisutaaPasswordEndpoints(
+        this IEndpointRouteBuilder endpoints,
+        string? endpointNamePrefix = null)
     {
         ArgumentNullException.ThrowIfNull(endpoints);
 
@@ -27,15 +42,15 @@ public static class ToamaisutaaPasswordEndpointExtensions
         group.MapPost("/login", LoginAsync)
             .AllowAnonymous()
             .AddEndpointFilter<PasswordRateLimitFilter>()
-            .WithName("ToamaisutaaLogin");
+            .WithName($"{endpointNamePrefix}ToamaisutaaLogin");
 
         group.MapPost("/refresh", RefreshAsync)
             .AllowAnonymous()
-            .WithName("ToamaisutaaRefresh");
+            .WithName($"{endpointNamePrefix}ToamaisutaaRefresh");
 
         group.MapPost("/logout", LogoutAsync)
             .AllowAnonymous()
-            .WithName("ToamaisutaaLogout");
+            .WithName($"{endpointNamePrefix}ToamaisutaaLogout");
 
         // Not mapped at all when self-registration is off, rather than mapped and answering 403.
         if (options.AllowSelfRegistration)
@@ -43,23 +58,23 @@ public static class ToamaisutaaPasswordEndpointExtensions
             group.MapPost("/register", RegisterAsync)
                 .AllowAnonymous()
                 .AddEndpointFilter<PasswordRateLimitFilter>()
-                .WithName("ToamaisutaaRegister");
+                .WithName($"{endpointNamePrefix}ToamaisutaaRegister");
         }
 
         // Explicitly authorised rather than relying on the fallback policy, which an application is
         // free to turn off.
         group.MapPost("/password", ChangePasswordAsync)
             .RequireAuthorization()
-            .WithName("ToamaisutaaChangePassword");
+            .WithName($"{endpointNamePrefix}ToamaisutaaChangePassword");
 
         group.MapPost("/password/forgot", ForgotPasswordAsync)
             .AllowAnonymous()
             .AddEndpointFilter<PasswordRateLimitFilter>()
-            .WithName("ToamaisutaaForgotPassword");
+            .WithName($"{endpointNamePrefix}ToamaisutaaForgotPassword");
 
         group.MapPost("/password/reset", ResetPasswordAsync)
             .AllowAnonymous()
-            .WithName("ToamaisutaaResetPassword");
+            .WithName($"{endpointNamePrefix}ToamaisutaaResetPassword");
 
         return group;
     }
@@ -70,7 +85,7 @@ public static class ToamaisutaaPasswordEndpointExtensions
     /// </summary>
     private static IResult SignInFailed() =>
         Results.Json(
-            new { error = "invalid_grant", error_description = "The credentials are not valid." },
+            new ErrorResponse { Error = "invalid_grant", ErrorDescription = "The credentials are not valid." },
             statusCode: StatusCodes.Status401Unauthorized);
 
     private static async Task<IResult> LoginAsync(
@@ -98,11 +113,10 @@ public static class ToamaisutaaPasswordEndpointExtensions
         // have to change, which is why this is a breaking release.
         if (result.Outcome == SignInOutcome.TwoFactorRequired && result.Challenge is { } challenge)
         {
-            return Results.Ok(new
+            return Results.Ok(new TwoFactorChallengeResponse
             {
-                two_factor_required = true,
-                challenge = challenge.Token,
-                expires_in = challenge.ExpiresIn,
+                Challenge = challenge.Token,
+                ExpiresIn = challenge.ExpiresIn,
             });
         }
 
@@ -125,27 +139,31 @@ public static class ToamaisutaaPasswordEndpointExtensions
     /// <c>token_type</c>, <c>expires_in</c> - so anything that already speaks OAuth token endpoints
     /// reads this without a mapping. Endpoints that return this package's own shapes
     /// (<c>/auth/2fa</c>, <c>/auth/devices</c>) stay camelCase, because they are not token responses
-    /// and no standard names them.
+    /// and no standard names them. <see cref="Toamaisutaa.Abstractions.TokenResponse"/> pins each
+    /// name, so the decision survives a rename and an application's own JSON naming policy alike.
     /// </para>
     /// </remarks>
     internal static IResult SignInSucceeded(SignInResult result) =>
-        TokenResponse(result.Tokens!, result.RecoveryCodesRunningLow, result.TrustedDevice, StatusCodes.Status200OK);
+        Tokens(result.Tokens!, result.RecoveryCodesRunningLow, result.TrustedDevice, StatusCodes.Status200OK);
 
-    internal static IResult TokenResponse(
+    internal static IResult Tokens(
         TokenPair tokens,
         bool recoveryCodesRunningLow,
         TrustedDeviceToken? trustedDevice,
         int statusCode) =>
         Results.Json(
-            new
+            new TokenResponse
             {
-                access_token = tokens.AccessToken,
-                refresh_token = tokens.RefreshToken,
-                expires_in = tokens.ExpiresIn,
-                token_type = tokens.TokenType,
-                recovery_codes_running_low = recoveryCodesRunningLow ? true : (bool?)null,
-                device_token = trustedDevice?.Token,
-                device_expires_in = trustedDevice?.ExpiresIn,
+                AccessToken = tokens.AccessToken,
+                RefreshToken = tokens.RefreshToken,
+                ExpiresIn = tokens.ExpiresIn,
+                TokenType = tokens.TokenType,
+
+                // true or absent, never false: the shape 0.2.0 shipped, and clients read it as
+                // truthy rather than comparing it.
+                RecoveryCodesRunningLow = recoveryCodesRunningLow ? true : null,
+                DeviceToken = trustedDevice?.Token,
+                DeviceExpiresIn = trustedDevice?.ExpiresIn,
             },
             statusCode: statusCode);
 
@@ -185,13 +203,13 @@ public static class ToamaisutaaPasswordEndpointExtensions
         var result = await accounts.RegisterAsync(request, cancellationToken);
 
         if (result.Succeeded)
-            return TokenResponse(result.Tokens!, false, null, StatusCodes.Status201Created);
+            return Tokens(result.Tokens!, false, null, StatusCodes.Status201Created);
 
         // Registration cannot hide whether an account exists without an email round trip, which
         // this package does not do. Documented, and why it is off by default.
         return result.Conflict
-            ? Results.Json(new { errors = result.Errors }, statusCode: StatusCodes.Status409Conflict)
-            : Results.BadRequest(new { errors = result.Errors });
+            ? Results.Json(new ValidationErrorResponse { Errors = result.Errors }, statusCode: StatusCodes.Status409Conflict)
+            : Results.BadRequest(new ValidationErrorResponse { Errors = result.Errors });
     }
 
     private static async Task<IResult> ChangePasswordAsync(
@@ -209,7 +227,9 @@ public static class ToamaisutaaPasswordEndpointExtensions
 
         var result = await accounts.SetPasswordAsync(user.Id, request.CurrentPassword, request.NewPassword, cancellationToken);
 
-        return result.Succeeded ? Results.NoContent() : Results.BadRequest(new { errors = result.Errors });
+        return result.Succeeded
+            ? Results.NoContent()
+            : Results.BadRequest(new ValidationErrorResponse { Errors = result.Errors });
     }
 
     private static async Task<IResult> ForgotPasswordAsync(
@@ -235,6 +255,8 @@ public static class ToamaisutaaPasswordEndpointExtensions
 
         var result = await accounts.ResetPasswordAsync(request.Token, request.NewPassword, cancellationToken);
 
-        return result.Succeeded ? Results.NoContent() : Results.BadRequest(new { errors = result.Errors });
+        return result.Succeeded
+            ? Results.NoContent()
+            : Results.BadRequest(new ValidationErrorResponse { Errors = result.Errors });
     }
 }
