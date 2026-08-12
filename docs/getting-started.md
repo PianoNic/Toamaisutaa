@@ -85,9 +85,35 @@ on every request after. See [Storage and migrations](/storage).
 `/api/app` so a SPA build stays environment-agnostic. It is anonymous, because it is needed before
 anyone has signed in.
 
-Applications that serve their own fields from the same route should inject
-`IToamaisutaaClientConfigurationProvider` into their own endpoint instead - the redirect-URI
-resolution, which is the only part with real logic in it, stays in one place either way.
+```json
+{
+  "authority": "https://id.example.com",
+  "clientId": "your-app",
+  "redirectUri": "https://app.example.com/",
+  "postLogoutRedirectUri": "https://app.example.com/",
+  "scope": "openid profile email roles"
+}
+```
+
+The route is a parameter: `MapToamaisutaaConfiguration("/api/config")`. This is an application
+configuration endpoint rather than an auth one, so it is the likeliest of these to collide with
+conventions you already have.
+
+To serve **your own fields alongside these, or from a route of your own**, skip the map call and
+inject `IToamaisutaaClientConfigurationProvider` into an endpoint you write:
+
+```csharp
+app.MapGet("/api/app", (HttpContext context, IToamaisutaaClientConfigurationProvider provider) =>
+    Results.Ok(new
+    {
+        Auth = provider.GetConfiguration(context),
+        FeatureFlags = /* whatever else your SPA reads at startup */
+    }))
+    .AllowAnonymous();
+```
+
+The redirect-URI resolution, which is the only part with real logic in it, stays in one place either
+way.
 
 ## The sample
 

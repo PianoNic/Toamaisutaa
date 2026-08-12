@@ -29,6 +29,53 @@ enrol, be handed recovery codes, and never once be challenged.
 | POST | `/auth/2fa/recovery-codes` | Authenticated **and proof** | 200 with new codes, or 400 |
 | POST | `/auth/2fa/verify` | Anonymous | 200 with a token pair, or 401 |
 
+These are this package's own shapes, so they are camelCase in both directions. `/auth/2fa/verify` is
+the exception: it ends a sign-in, so it returns the same RFC 6749 token body as
+[`/auth/login`](/password-login#bodies).
+
+### Bodies
+
+**`GET /auth/2fa`**
+
+```json
+{ "enabled": false, "enrolmentPending": false, "recoveryCodesRemaining": 0 }
+```
+
+**`POST /auth/2fa/begin`** takes no body. Render `uri` as a QR code; show `secret` for anyone typing
+it in by hand.
+
+```json
+{
+  "secret": "Q3POHNNLWL4EYRNJJ6OQ4WTGG5PTYOCU",
+  "uri": "otpauth://totp/Example:ada?secret=Q3POHNNLWL4EYRNJJ6OQ4WTGG5PTYOCU&issuer=Example&algorithm=SHA1&digits=6&period=30"
+}
+```
+
+**`POST /auth/2fa/confirm`** takes `{ "code": "123456" }` and returns the recovery codes, once:
+
+```json
+{ "recoveryCodes": ["GT7AX-P26E5", "LTN7X-CHS77", "..."] }
+```
+
+**`POST /auth/2fa/disable`** takes `{ "proof": "123456" }` and answers 204 or 400.
+**`POST /auth/2fa/recovery-codes`** takes the same and returns the same shape as `confirm`.
+
+**`POST /auth/2fa/verify`** finishes the sign-in. `rememberDevice` and `deviceLabel` are optional and
+only meaningful with [trusted devices](/trusted-devices).
+
+```json
+{ "challenge": "No1CXq9-...", "code": "123456", "rememberDevice": false, "deviceLabel": null }
+```
+
+It answers the token-pair body, or 401 with
+`{ "error": "invalid_grant", "error_description": "That code is not valid." }`. Everything else here
+answers 400 with `{ "errors": ["..."] }`.
+
+::: tip Confirming logs you out of the token you used to confirm
+`confirm`, `disable` and `recovery-codes` each move the user's security stamp, which invalidates the
+access token that made the call. Refresh before the next request rather than reusing it.
+:::
+
 ## Enrolment is two steps, on purpose
 
 `begin` generates a secret and stores it **unconfirmed**. Nothing is enabled. `confirm` takes a
@@ -179,6 +226,34 @@ remember to perform, and cannot be recalled - and putting it right means every a
 enrolling again. The same goes for recovery codes.
 
 Nothing in this package logs either one. Log the user id and what happened.
+
+### The leak is easiest to add by accident in your own pipeline
+
+Nothing here logs the secret, but this package cannot stop what wraps it, and one pattern gets it
+wrong reliably: **a mediator or middleware that logs every request and response generically.**
+
+`TwoFactorEnrolmentStarted` carries `Secret` and carries it again inside `Uri`. Put it in a response
+DTO of your own - which is the natural thing to do when you are composing this package's data with
+your own fields - and a pipeline behaviour that serialises responses will write a live TOTP secret
+to your logs without anyone writing a line of code that mentions it.
+
+`TwoFactorEnrolmentCompleted.RecoveryCodes` is the same class of thing.
+
+If you have that kind of behaviour, exclude these two types from it explicitly, and do it before you
+wrap them rather than after you find them in a log search.
+
+## Calling `ITwoFactorService` yourself
+
+The endpoints are a convenience. `ITwoFactorService` is public, so an application that routes
+everything through its own handlers can skip `MapToamaisutaaTwoFactorEndpoints` and call it directly.
+
+One asymmetry to know before you wrap it: **the enrolment methods throw where the rest return a
+result.** `BeginEnrolmentAsync`, `ConfirmEnrolmentAsync` and `RegenerateRecoveryCodesAsync` raise
+`TwoFactorEnrolmentException`, while `DisableAsync` returns a `TwoFactorResult` with an `Errors`
+list. A handler over the first three needs a `try`/`catch` that a handler over the fourth does not.
+
+The message on that exception is safe to show the caller: they are authenticated and working on
+their own account, so it says exactly what is wrong.
 
 ## Configuration
 
