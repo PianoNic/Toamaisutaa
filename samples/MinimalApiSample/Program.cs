@@ -74,6 +74,13 @@ builder.Services.AddToamaisutaaTrustedDevices(builder.Configuration);
 
 builder.Services.AddToamaisutaaTokenCleanup();
 
+// Freshness, on top of the Toamaisutaa.TwoFactor policy the package registers. A 403 from this is
+// what /auth/2fa/step-up is for.
+builder.Services.AddAuthorizationBuilder()
+    .AddPolicy("FreshSecondFactor", policy => policy
+        .RequireAuthenticatedUser()
+        .RequireFreshSecondFactor(TimeSpan.FromMinutes(2)));
+
 // Required, and deliberately not shipped: sending mail is not an authentication library's job. This
 // one writes the link to the log, which is all a sample needs.
 builder.Services.AddSingleton<IPasswordResetNotifier, LoggingPasswordResetNotifier>();
@@ -150,6 +157,13 @@ app.MapGet("/api/admin", () => "The gate master knows you. Come through.")
 app.MapGet("/api/sensitive", () => "Two locks, both opened. This is the inner room.")
     .RequireAuthorization("Toamaisutaa.TwoFactor")
     .WithName("Sensitive");
+
+// Not "did you ever prove a second factor" but "did you prove one in the last two minutes". A
+// device-trusted sign-in fails this until the user steps up, which is the whole distinction
+// toa_2fa_at exists to make. Two minutes so the sample is quick to try; five is a saner default.
+app.MapGet("/api/vault", () => "Nothing cached got you in here. That was a live code.")
+    .RequireAuthorization("FreshSecondFactor")
+    .WithName("Vault");
 
 app.Run();
 

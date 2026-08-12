@@ -60,6 +60,32 @@ internal sealed class FakePasswordStore
         return Task.CompletedTask;
     }
 
+    public Task<ToamaisutaaRefreshToken?> FindLiveByFamilyAsync(Guid familyId, CancellationToken cancellationToken = default) =>
+        Task.FromResult(Live(familyId));
+
+    public Task<bool> UpdateSecondFactorAsync(
+        Guid familyId,
+        string authenticationMethods,
+        string twoFactorSource,
+        DateTimeOffset secondFactorAt,
+        CancellationToken cancellationToken = default)
+    {
+        var live = Live(familyId);
+
+        if (live is null)
+            return Task.FromResult(false);
+
+        live.AuthenticationMethods = authenticationMethods;
+        live.TwoFactorSource = twoFactorSource;
+        live.SecondFactorAt = secondFactorAt;
+
+        return Task.FromResult(true);
+    }
+
+    private ToamaisutaaRefreshToken? Live(Guid familyId) =>
+        RefreshTokens.SingleOrDefault(
+            entry => entry.FamilyId == familyId && entry.RotatedAt is null && entry.RevokedAt is null);
+
     public Task RevokeFamilyAsync(Guid familyId, string reason, DateTimeOffset revokedAt, CancellationToken cancellationToken = default)
     {
         foreach (var token in RefreshTokens.Where(entry => entry.FamilyId == familyId && entry.RevokedAt is null))

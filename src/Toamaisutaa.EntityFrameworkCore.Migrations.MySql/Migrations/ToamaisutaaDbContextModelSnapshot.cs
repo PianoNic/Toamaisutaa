@@ -317,6 +317,12 @@ namespace Toamaisutaa.EntityFrameworkCore.Migrations.MySql.Migrations
                     b.Property<long>("ExpiresAt")
                         .HasColumnType("bigint");
 
+                    b.Property<Guid?>("FamilyId")
+                        .HasColumnType("char(36)");
+
+                    b.Property<int>("Purpose")
+                        .HasColumnType("int");
+
                     b.Property<string>("TokenHash")
                         .IsRequired()
                         .HasMaxLength(64)

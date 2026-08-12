@@ -49,7 +49,12 @@ internal sealed class TwoFactorGate(
         return enrolment is not { ConfirmedAt: not null };
     }
 
-    internal async Task<TwoFactorChallenge> IssueChallengeAsync(Guid userId, DateTimeOffset now, CancellationToken cancellationToken)
+    internal async Task<TwoFactorChallenge> IssueChallengeAsync(
+        Guid userId,
+        DateTimeOffset now,
+        CancellationToken cancellationToken,
+        TwoFactorChallengePurpose purpose = TwoFactorChallengePurpose.SignIn,
+        Guid? familyId = null)
     {
         var challenges = Required<ITwoFactorChallengeStore>();
         var lifetime = options.Value.ChallengeLifetime;
@@ -63,23 +68,62 @@ internal sealed class TwoFactorGate(
                 TokenHash = SecureTokens.HashToken(raw),
                 CreatedAt = now,
                 ExpiresAt = now + lifetime,
+                Purpose = purpose,
+                FamilyId = familyId,
             },
             cancellationToken);
 
         return new TwoFactorChallenge(raw, (int)lifetime.TotalSeconds);
     }
 
+    /// <summary>Spends a challenge, if it is the right kind and belongs to whoever is holding it.</summary>
+    /// <param name="challengeToken">The raw challenge as the caller presented it.</param>
+    /// <param name="code">A TOTP code or a recovery code.</param>
+    /// <param name="now">The current instant, from the caller's clock.</param>
+    /// <param name="cancellationToken">Cancels the lookups.</param>
+    /// <param name="purpose">
+    /// What the redeeming endpoint is for. A challenge minted for the other one is refused, so a
+    /// step-up challenge cannot be spent anonymously at the sign-in endpoint for a whole token pair.
+    /// </param>
+    /// <param name="familyId">
+    /// The session presenting it, for <see cref="TwoFactorChallengePurpose.StepUp"/>. A challenge
+    /// bound to a different family belongs to another of this user's sessions and is refused.
+    /// </param>
     internal async Task<ChallengeRedemption> RedeemChallengeAsync(
         string challengeToken,
         string code,
         DateTimeOffset now,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        TwoFactorChallengePurpose purpose = TwoFactorChallengePurpose.SignIn,
+        Guid? familyId = null)
     {
         var challenges = Required<ITwoFactorChallengeStore>();
         var stored = await challenges.FindByHashAsync(SecureTokens.HashToken(challengeToken), cancellationToken);
 
         if (stored is null)
             return ChallengeRedemption.Failed(SignInOutcome.InvalidChallenge);
+
+        // Same answer as a challenge that never existed, and on purpose: which ceremony a token
+        // belongs to is not something an endpoint should confirm to whoever is holding it.
+        if (stored.Purpose != purpose)
+        {
+            logger.LogWarning(
+                "Two-factor challenge for user {UserId} was presented at the wrong endpoint: it is a {Actual} challenge and this is {Expected}.",
+                stored.UserId,
+                stored.Purpose,
+                purpose);
+
+            return ChallengeRedemption.Failed(SignInOutcome.InvalidChallenge);
+        }
+
+        if (purpose == TwoFactorChallengePurpose.StepUp && stored.FamilyId != familyId)
+        {
+            logger.LogWarning(
+                "Step-up challenge for user {UserId} was presented by a different session than the one that asked for it.",
+                stored.UserId);
+
+            return ChallengeRedemption.Failed(SignInOutcome.InvalidChallenge);
+        }
 
         if (stored.ConsumedAt is not null)
         {

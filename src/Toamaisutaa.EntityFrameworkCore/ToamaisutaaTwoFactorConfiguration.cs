@@ -82,6 +82,14 @@ public sealed class ToamaisutaaTwoFactorChallengeConfiguration : IEntityTypeConf
         builder.Property(challenge => challenge.ExpiresAt).HasConversion(InstantConverters.Instant);
         builder.Property(challenge => challenge.ConsumedAt).HasConversion(InstantConverters.NullableInstant);
 
+        // Stored as the integer the enum already is. A string would read better in a table nobody
+        // queries by hand and would cost a conversion on the one path that matters.
+        builder.Property(challenge => challenge.Purpose).IsRequired();
+
+        // Null for a sign-in challenge, where there is no session yet. No foreign key: families are
+        // a column on the refresh token rather than a table of their own.
+        builder.Property(challenge => challenge.FamilyId);
+
         builder.HasIndex(challenge => challenge.TokenHash).IsUnique();
         builder.HasIndex(challenge => challenge.UserId);
 

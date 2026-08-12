@@ -57,4 +57,25 @@ public static class ToamaisutaaDefaults
     /// freshness rather than merely asking whether the factor was cached.
     /// </summary>
     public const string SecondFactorAtClaim = "toa_2fa_at";
+
+    /// <summary>
+    /// The refresh family this token belongs to, which is what "session" means here: it survives
+    /// rotation, so it names the same session for as long as the session lasts. Step-up needs it to
+    /// find the row to elevate, and to elevate that one rather than every session the user has.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Namespaced rather than the registered <c>sid</c>, which an identity provider may already put
+    /// on its own tokens - two issuers writing the same claim to mean two different sessions is a
+    /// collision nothing downstream could untangle. Every non-standard claim here carries the
+    /// <c>toa_</c> prefix for the same reason.
+    /// </para>
+    /// <para>
+    /// <b>An identifier, not a credential.</b> Nothing authorises on it: it names a row, it does not
+    /// prove anything about the caller, and the bearer token carrying it was already the thing that
+    /// had to be protected. Exposing it to a client that already holds that token grants nothing it
+    /// did not have.
+    /// </para>
+    /// </remarks>
+    public const string SessionIdClaim = "toa_sid";
 }

@@ -1,3 +1,4 @@
+using System.Security.Claims;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Diagnostics;
 using Microsoft.AspNetCore.Http;
@@ -9,6 +10,8 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using Microsoft.IdentityModel.JsonWebTokens;
+using Microsoft.IdentityModel.Tokens;
 using Toamaisutaa.Abstractions;
 using Toamaisutaa.EntityFrameworkCore;
 
@@ -138,6 +141,31 @@ internal sealed class TestApp : IAsyncDisposable
         await app.StartAsync();
 
         return new TestApp(app, connection, app.GetTestClient(), time);
+    }
+
+    /// <summary>
+    /// A valid token for this host that carries no <c>toa_sid</c> - the shape an identity
+    /// provider's token has, and the one step-up has to refuse with 400 rather than 401.
+    /// </summary>
+    /// <remarks>
+    /// Minted rather than doctored. Editing a real token breaks its signature, so the request would
+    /// be refused by the bearer pipeline and never reach the endpoint under test - a test that
+    /// passes for the wrong reason.
+    /// </remarks>
+    public string MintTokenWithoutSession(string subject)
+    {
+        var key = new SymmetricSecurityKey(new byte[32]) { KeyId = ToamaisutaaDefaults.LocalSigningKeyId };
+
+        return new JsonWebTokenHandler().CreateToken(new SecurityTokenDescriptor
+        {
+            Issuer = "toamaisutaa-tests",
+            Audience = "toamaisutaa-tests",
+            Subject = new ClaimsIdentity([new Claim("sub", subject)]),
+            IssuedAt = Time.Now.UtcDateTime,
+            NotBefore = Time.Now.UtcDateTime,
+            Expires = Time.Now.AddMinutes(15).UtcDateTime,
+            SigningCredentials = new SigningCredentials(key, SecurityAlgorithms.HmacSha256),
+        });
     }
 
     public async ValueTask DisposeAsync()

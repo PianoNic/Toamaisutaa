@@ -82,4 +82,32 @@ public class ToamaisutaaTwoFactorChallenge
 
     /// <summary>Set the moment it is spent. Presenting it again fails.</summary>
     public DateTimeOffset? ConsumedAt { get; set; }
+
+    /// <summary>
+    /// What this challenge is for. Each endpoint refuses the other's, so a challenge minted for an
+    /// authenticated step-up cannot be spent at the anonymous sign-in endpoint for a whole token
+    /// pair.
+    /// </summary>
+    public TwoFactorChallengePurpose Purpose { get; set; }
+
+    /// <summary>
+    /// The refresh family that asked for a <see cref="TwoFactorChallengePurpose.StepUp"/> challenge.
+    /// Null for <see cref="TwoFactorChallengePurpose.SignIn"/>, where there is no session yet.
+    /// </summary>
+    /// <remarks>
+    /// Separate from <see cref="Purpose"/> and both are needed. Purpose alone leaves a user with two
+    /// sessions able to elevate the wrong one; binding alone leaves the cross-endpoint redemption
+    /// open.
+    /// </remarks>
+    public Guid? FamilyId { get; set; }
+}
+
+/// <summary>Which ceremony a challenge belongs to. Not interchangeable.</summary>
+public enum TwoFactorChallengePurpose
+{
+    /// <summary>Finishing a sign-in that stopped for a second factor. Redeemed anonymously.</summary>
+    SignIn,
+
+    /// <summary>Elevating a session that is already signed in. Redeemed by that session only.</summary>
+    StepUp,
 }

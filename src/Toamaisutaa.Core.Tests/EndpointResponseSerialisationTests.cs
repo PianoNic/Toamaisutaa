@@ -135,6 +135,45 @@ public class EndpointResponseSerialisationTests
             """);
     }
 
+    [Test]
+    public async Task Step_up_challenge_response_does_not_claim_anything_is_required()
+    {
+        var json = Serialise(new StepUpChallengeResponse { Challenge = "No1CXq9", ExpiresIn = 300 });
+
+        // No two_factor_required. The caller asked for this one, so saying it is required would be
+        // a lie, and it is why this is not TwoFactorChallengeResponse.
+        await Assert.That(json).IsEqualTo(
+            """
+            {"challenge":"No1CXq9","expires_in":300}
+            """);
+    }
+
+    /// <summary>
+    /// No refresh token, and that is the point. Sharing <see cref="TokenResponse"/> would put
+    /// <c>refresh_token: null</c> here, and a client that stored what came back would blank the
+    /// credential it needs to stay signed in.
+    /// </summary>
+    [Test]
+    public async Task Step_up_response_carries_an_access_token_and_no_refresh_token()
+    {
+        var json = Serialise(new StepUpResponse { AccessToken = "at", ExpiresIn = 900 });
+
+        await Assert.That(json).IsEqualTo(
+            """
+            {"access_token":"at","expires_in":900,"token_type":"Bearer","recovery_codes_running_low":null}
+            """);
+
+        await Assert.That(json).DoesNotContain("refresh_token");
+    }
+
+    [Test]
+    public async Task Step_up_response_reports_running_low_the_same_way_a_sign_in_does()
+    {
+        var json = Serialise(new StepUpResponse { AccessToken = "at", ExpiresIn = 900, RecoveryCodesRunningLow = true });
+
+        await Assert.That(json).Contains("\"recovery_codes_running_low\":true");
+    }
+
     /// <summary>
     /// The failure this whole file exists to catch. An application that sets its own naming policy
     /// would, without the pinned names, silently reshape a standard token response.

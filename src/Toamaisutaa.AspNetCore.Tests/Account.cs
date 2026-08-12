@@ -59,6 +59,38 @@ internal sealed class Account(TestApp app, string userName, string password)
         await SignInWithSecondFactorAsync();
     }
 
+    /// <summary>Begins and completes a step-up on the session this account currently holds.</summary>
+    public async Task<HttpResponseMessage> StepUpAsync(string? code = null, string? accessToken = null)
+    {
+        var token = accessToken ?? AccessToken;
+        var begin = await app.Client.PostEmpty("/auth/2fa/step-up", token);
+
+        if (begin.StatusCode != HttpStatusCode.OK)
+            throw new InvalidOperationException($"Step-up begin failed: {begin.StatusCode} {await begin.Content.ReadAsStringAsync()}");
+
+        var challenge = (await begin.Json()).String("challenge")!;
+
+        if (code is null)
+            app.Time.AdvanceToNextTotpStep();
+
+        return await app.Client.PostJson(
+            "/auth/2fa/step-up/verify",
+            new { challenge, code = code ?? Totp.Code(Secret!, app.Time.Now) },
+            token);
+    }
+
+    /// <summary>The claims on the access token this account currently holds.</summary>
+    public JsonElement Claims() => DecodeClaims(AccessToken);
+
+    public static JsonElement DecodeClaims(string accessToken)
+    {
+        var payload = accessToken.Split('.')[1];
+        var padded = payload.PadRight(payload.Length + ((4 - (payload.Length % 4)) % 4), '=');
+        var bytes = Convert.FromBase64String(padded.Replace('-', '+').Replace('_', '/'));
+
+        return JsonDocument.Parse(bytes).RootElement.Clone();
+    }
+
     /// <summary>A full sign-in through the challenge, returning the body of the final response.</summary>
     public async Task<JsonElement> SignInWithSecondFactorAsync(bool rememberDevice = false, string? deviceLabel = null)
     {

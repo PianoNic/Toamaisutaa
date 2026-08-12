@@ -28,6 +28,8 @@ enrol, be handed recovery codes, and never once be challenged.
 | POST | `/auth/2fa/disable` | Authenticated **and proof** | 204, or 400 |
 | POST | `/auth/2fa/recovery-codes` | Authenticated **and proof** | 200 with new codes, or 400 |
 | POST | `/auth/2fa/verify` | Anonymous | 200 with a token pair, or 401 |
+| POST | `/auth/2fa/step-up` | Authenticated | 200 with a challenge, 400, or 401 |
+| POST | `/auth/2fa/step-up/verify` | Authenticated | 200 with a new access token, 400, or 401 |
 
 These are this package's own shapes, so they are camelCase in both directions. `/auth/2fa/verify` is
 the exception: it ends a sign-in, so it returns the same RFC 6749 token body as
@@ -77,6 +79,67 @@ access token that made the call. The next request answers **401 with `"error": "
 refresh and retry rather than reusing it. A client with
 [refresh-on-401](/spa#refresh-on-401) already does this and the user notices nothing.
 :::
+
+## Step-up
+
+A [freshness policy](/trusted-devices#requiring-a-fresh-factor) answers 403 when the session's last
+live second factor is too old - a device-trusted sign-in, or a code entered an hour ago. Step-up is
+how the user gets past it without signing out.
+
+```
+POST /auth/2fa/step-up          authenticated, no body   → 200 with a challenge
+POST /auth/2fa/step-up/verify   authenticated            → 200 with a new access token
+```
+
+```json
+// POST /auth/2fa/step-up          →
+{ "challenge": "No1CXq9-...", "expires_in": 300 }
+
+// POST /auth/2fa/step-up/verify   { "challenge": "No1CXq9-...", "code": "123456" }   →
+{ "access_token": "eyJ...", "expires_in": 900, "token_type": "Bearer", "recovery_codes_running_low": null }
+```
+
+**No refresh token comes back, and none is needed.** Your existing one keeps working; replace only
+the access token. Rotating the family here would mean a client that ignored a new refresh token
+presented a spent one at its next refresh, tripping reuse detection - so proving your identity would
+end every session you have.
+
+### What it changes
+
+| | Before a step-up | After |
+|---|---|---|
+| `toa_2fa_at` | when the factor was last presented | now |
+| `toa_2fa_source` | `device`, or the original factor | `otp` or `recovery` |
+| `amr` | `["pwd","mfa"]` | `["pwd","mfa","otp"]` |
+
+`amr` only ever grows. A session that signed in on a trusted device carries no `otp`, and after a
+live TOTP step-up it does - so a policy written as `RequireClaim("amr", "otp")` starts passing
+rather than the user who just did the most work being the one it refuses. Nothing is ever removed,
+so no policy that passed before a step-up can start failing after one.
+
+A recovery code adds only `mfa`, matching what a recovery *sign-in* records - RFC 8176 has no
+`recovery` value and this package does not invent claim values. Which factor it actually was lives
+in `toa_2fa_source`.
+
+### What it does not change
+
+**The security stamp stays put.** Bumping it would revoke the refresh family of the session being
+elevated, so proving you are yourself would sign you out.
+
+### Things worth knowing before you wire it up
+
+- **A trusted device cannot satisfy a step-up.** There is no device token field on either endpoint -
+  a cached factor is exactly what step-up exists to refuse, so the way it is refused is that there
+  is nothing to present.
+- **A recovery code can, and it un-trusts every device.** Same inference as at sign-in: the
+  authenticator is gone. That does not change based on which endpoint it was typed into.
+- **Wrong codes count toward lockout.** Somebody holding a stolen access token can lock the owner
+  out of step-up, and that is the right trade - the alternative is handing that same person an
+  unthrottled six-digit oracle. The user keeps ordinary access for the life of the token they hold
+  and loses step-up for the lockout window.
+- **A signed-out session cannot step up**, even while its access token is still inside its lifetime.
+- **Identity-provider sessions cannot step up.** 400, not 401, naming the limitation: this package
+  cannot mint a replacement for a token it did not issue. Same boundary as everywhere else.
 
 ## Enrolment is two steps, on purpose
 

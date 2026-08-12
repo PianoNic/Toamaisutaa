@@ -75,15 +75,40 @@ A cached second factor is not a one-time password, and the token says so:
 | Password + TOTP | `["pwd","otp","mfa"]` | `otp` | now |
 | Password + recovery code | `["pwd","mfa"]` | `recovery` | now |
 | Password + trusted device | `["pwd","mfa"]` | `device` | **the original live challenge** |
+| …then a [step-up](/two-factor#step-up) | `["pwd","mfa","otp"]` | `otp` | now |
 
 `mfa` still holds - a second factor was performed, just not now - so a `Toamaisutaa.TwoFactor` policy
 keeps working. What changes is `toa_2fa_at`, which reports when the factor was actually presented.
 
-### Step-up is something you can express, not something this package does
+### Every claim a locally issued token carries
 
-**Toamaisutaa ships the claims, not the enforcement.** There is no step-up API here: nothing will
-interrupt a request to ask for a fresh code, and nothing re-challenges a user mid-session. What the
-token gives you is enough information to write the policy yourself, out of parts you already have:
+| Claim | Standard | Means |
+|---|---|---|
+| `sub`, `preferred_username`, `email`, `name` | yes | The usual profile claims |
+| `amr` | RFC 8176 | Every method this session has used. Only ever grows |
+| `toa_stamp` | no | The user's security stamp when the session was minted |
+| `toa_sid` | no | The refresh family - the session. Stable across every rotation |
+| `toa_2fa_source` | no | The most recent second factor: `otp`, `recovery` or `device` |
+| `toa_2fa_at` | no | Unix seconds of the last **live** second factor |
+| `toa_2fa_required` | no | Set when enforcement demands an enrolment this user has not made |
+
+`toa_sid` is an identifier, not a credential: nothing authorises on it, and the bearer token
+carrying it was already the thing worth protecting. It is namespaced rather than the registered
+`sid` because an identity provider may put its own `sid` on an external token, and two issuers
+writing one claim to mean two different sessions is a collision nothing downstream could untangle.
+
+### Requiring a fresh factor
+
+`toa_2fa_at` is what makes freshness expressible: without it "fresh" could only mean "not cached",
+which would wrongly accept a live code entered twenty minutes ago.
+
+```csharp
+options.AddPolicy("FreshSecondFactor", policy => policy
+    .RequireAuthenticatedUser()
+    .RequireFreshSecondFactor(TimeSpan.FromMinutes(5)));
+```
+
+That is the same check written by hand, if you would rather see the mechanism:
 
 ```csharp
 options.AddPolicy("FreshSecondFactor", policy => policy
@@ -96,12 +121,12 @@ options.AddPolicy("FreshSecondFactor", policy => policy
     }));
 ```
 
-A request failing that gets a 403. Sending the user back through a live challenge, and getting them
-where they were going afterwards, is your application's flow to build - this package has no view on
-what that should look like.
+Both fail closed: a token with no `toa_2fa_at`, or one that cannot be parsed, is refused rather than
+waved through.
 
-`toa_2fa_at` exists because without it "fresh" could only mean "not cached", which would wrongly
-accept a live code entered twenty minutes ago.
+A request failing the policy gets a **403**. What the user does next is
+[step-up](/two-factor#step-up), which asks for one code and returns a new access token for the same
+session - no sign-out, no new refresh token.
 
 ## Lifetime is absolute
 
