@@ -137,6 +137,26 @@ column can trip.
 Instants are stored as Unix milliseconds via `InstantConverters`, not as provider timestamps -
 SQLite cannot range-query a `DateTimeOffset`. Use the converter for any new timestamp column.
 
+## A new test is not done until you have watched it fail
+
+Not "until it passes". **Until you have broken the thing it exists to protect and seen it go red for
+that reason.** Then put the code back. This applies to every test in the repository, not only the
+HTTP ones.
+
+A green run carries no information about whether a test is connected to anything. The thirty HTTP
+tests all passed on the first run, and seven of them - named after `StaleSecurityStampFilter` -
+passed with that filter deleted, because the harness happened to register the consumer-side
+exception handler and it produced a byte-identical 401. They asserted nothing about the code they
+were named after, and only deleting the filter and counting failures showed it.
+
+**A suite that runs green while testing nothing is worse than no suite**, because it retires the
+manual checking that was actually finding things. Three bugs here were caught by a person running
+the sample and reading response bodies; the whole point of automating that is to keep the catching,
+not the ceremony.
+
+Watch what fails, too, not just that something did. If deleting one filter reddens a test that names
+a different component, one of the two is lying about what it covers.
+
 ## Before you claim it works
 
 - `dotnet build Toamaisutaa.slnx` is 0 warnings, 0 errors.
@@ -164,12 +184,13 @@ found by hand, one per phase, by someone running the sample and reading response
 provider, no network, no sample. **A change to an endpoint, a response shape, a status code, a
 route, or an endpoint filter is not done until there is a test there.**
 
-Two things about writing them:
+Two things about writing them, both instances of the same idea - a test that takes its expectation
+from the code under test agrees with that code even when it is wrong:
 
 - **Assert field names off raw JSON**, not by deserialising into the package's own records.
   Deserialising through `TokenResponse` makes the assertion agree with whatever that type currently
   says, which is exactly how a field goes missing on the wire while the types either side are fine.
-- **Mutate to check the test.** Break the fix, confirm the test fails, put it back. The first
-  version of the stale-stamp tests passed with the filter deleted, because the harness registered
-  the consumer-side exception handler and that produced an identical 401. They asserted nothing
-  about the code they named, and only the mutation showed it.
+- **Generate TOTP codes independently in the test project**, for the reason `TotpProviderTests`
+  asserts the published RFC 6238 vectors rather than its own output.
+
+And they are subject to the rule above: break the endpoint, watch the test go red.
