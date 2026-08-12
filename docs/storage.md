@@ -70,6 +70,43 @@ judgement about either: Pomelo has no EF Core 10 release, and its latest version
 of this package. If Pomelo ships for EF Core 10 and you would rather use it, the swap is a provider
 package and a regenerated migration - nothing in the schema changes.
 
+## Not using Entity Framework at all
+
+`Toamaisutaa.EntityFrameworkCore` is one implementation of a set of interfaces, not the storage
+layer. `Toamaisutaa.Core` depends on the interfaces and never on EF, so a deployment on Dapper, a
+document store, or an existing schema you do not control can implement them instead and register
+those in place of `AddToamaisutaaEntityFrameworkStores`.
+
+| Interface | Holds |
+|---|---|
+| `IUserStore` | The local user row, and the read-or-create on first sight of a subject |
+| `IExternalLoginStore` | One (provider, subject) pair per external identity |
+| `IPasswordCredentialStore` | The local credential, and the lockout counters |
+| `IRefreshTokenStore` | Refresh tokens, hashed, grouped into families |
+| `IPasswordResetTokenStore` | Single-use reset tokens, hashed |
+| `ITwoFactorStore` | One TOTP enrolment per user |
+| `IRecoveryCodeStore` | Hashed single-use recovery codes |
+| `ITwoFactorChallengeStore` | Half-finished sign-ins |
+| `ITrustedDeviceStore` | Trusted device families |
+
+Register whichever the features you use require - the startup checks name the missing one rather
+than failing at the first request:
+
+```csharp
+builder.Services.AddScoped<IUserStore, YourUserStore>();
+builder.Services.AddScoped<IRefreshTokenStore, YourRefreshTokenStore>();
+```
+
+Three things the EF implementations do that yours must also do, because `Core` relies on them:
+
+- **Tokens are looked up by hash, never by value.** Every `FindByHashAsync` takes an unsalted
+  SHA-256 of the token and expects an exact match.
+- **Rotation and revocation are recorded, not deleted.** `MarkRotatedAsync` has to leave the row
+  findable, because presenting an already-rotated token is the theft signal that revokes the family.
+  A store that deletes on rotation turns a stolen-token detector into a silent no-op.
+- **Instants are compared, so they must be range-queryable.** The EF stores keep them as Unix
+  milliseconds for the reason below.
+
 ## The tables
 
 | Table | Holds |

@@ -166,6 +166,30 @@ Nowhere of its own: it rides on the ordinary sign-in body, alongside the tokens.
 rotated token reports a smaller number each time. That is the absolute lifetime being visible rather
 than a bug.
 
+### Building the list into your own UI
+
+`ITrustedDeviceService` is public, so the three endpoints above are optional. Inject it and shape
+the response yourself:
+
+```csharp
+public sealed class DeviceListHandler(ITrustedDeviceService devices, ICurrentUser currentUser)
+{
+    public async Task<IReadOnlyList<TrustedDeviceSummary>> Handle(CancellationToken cancellationToken)
+    {
+        var user = await currentUser.GetOrProvisionAsync(cancellationToken);
+        return await devices.ListAsync(user.Id, cancellationToken);
+    }
+}
+```
+
+`RevokeAsync` returns `false` for a device that does not exist **and** for one belonging to somebody
+else. Keep those the same answer in whatever you return, or the endpoint becomes a way to discover
+another account's device ids.
+
+`isCurrent` is the one thing you lose going this route: the endpoint sets it by reading the
+`X-Toamaisutaa-Device` header, and a handler of your own has no header to read unless you pass the
+token through yourself.
+
 ## What is stored, and what is not
 
 `Label` is whatever your application passes - the package does not invent one. `UserAgent` is the raw
