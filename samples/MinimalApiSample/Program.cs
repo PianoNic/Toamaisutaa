@@ -1,6 +1,8 @@
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Diagnostics;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.OpenApi;
+using Scalar.AspNetCore;
 using Toamaisutaa.Abstractions;
 using Toamaisutaa.EntityFrameworkCore;
 
@@ -76,7 +78,16 @@ builder.Services.AddToamaisutaaTokenCleanup();
 // one writes the link to the log, which is all a sample needs.
 builder.Services.AddSingleton<IPasswordResetNotifier, LoggingPasswordResetNotifier>();
 
+// Toamaisutaa's own endpoints already answer 401 for a stale security stamp. This covers YOUR
+// endpoints: anything calling ICurrentUser.GetOrProvisionAsync can meet a token that was issued
+// before a credential changed, and without this it surfaces as a 500 for something the client only
+// needed to refresh. /api/me below is exactly that shape.
+builder.Services.AddExceptionHandler<StaleSecurityStampHandler>();
+builder.Services.AddProblemDetails();
+
 var app = builder.Build();
+
+app.UseExceptionHandler();
 
 await using (var scope = app.Services.CreateAsyncScope())
 {
@@ -102,7 +113,13 @@ app.MapToamaisutaaTwoFactorEndpoints();
 app.MapToamaisutaaTrustedDeviceEndpoints();
 
 if (app.Environment.IsDevelopment())
+{
     app.MapOpenApi().AllowAnonymous();
+
+    // http://localhost:5203/scalar - the document above, rendered. The Authorize button comes from
+    // the security scheme declared at the top of this file.
+    app.MapScalarApiReference(options => options.WithTitle("Toamaisutaa sample")).AllowAnonymous();
+}
 
 app.MapGet("/api/public", () => "The gate stands open here. No token needed.")
     .AllowAnonymous()
@@ -135,6 +152,37 @@ app.MapGet("/api/sensitive", () => "Two locks, both opened. This is the inner ro
     .WithName("Sensitive");
 
 app.Run();
+
+/// <summary>
+/// Answers 401 when a token's security stamp is stale, for endpoints this application owns.
+/// </summary>
+/// <remarks>
+/// A stale stamp means a credential changed after the token was issued - a password change, a
+/// two-factor enrolment - so the token is genuinely no longer valid even though its signature and
+/// expiry still are. That is an authentication failure, and a client seeing 401 with
+/// <c>invalid_token</c> knows to refresh. Left unhandled it is a 500, which reads as a server fault
+/// and gets escalated instead of retried.
+/// </remarks>
+internal sealed class StaleSecurityStampHandler : IExceptionHandler
+{
+    public async ValueTask<bool> TryHandleAsync(
+        HttpContext context,
+        Exception exception,
+        CancellationToken cancellationToken)
+    {
+        if (exception is not SecurityStampChangedException)
+            return false;
+
+        context.Response.StatusCode = StatusCodes.Status401Unauthorized;
+        context.Response.Headers.WWWAuthenticate = "Bearer error=\"invalid_token\"";
+
+        await context.Response.WriteAsJsonAsync(
+            new ErrorResponse { Error = "invalid_token", ErrorDescription = exception.Message },
+            cancellationToken);
+
+        return true;
+    }
+}
 
 /// <summary>
 /// Stands in for whatever the application already uses to send mail. The token is the only thing

@@ -12,6 +12,9 @@
          GHSA-v5pm-xwqc-g5wc. Named here to force the patched version. Sample only - no shipped
          package touches OpenAPI. -->
     <PackageReference Include="Microsoft.OpenApi" />
+    <!-- Renders the generated document. Sample only, like the two above - no shipped package takes
+         a dependency on OpenAPI or on anything that reads it. -->
+    <PackageReference Include="Scalar.AspNetCore" />
   </ItemGroup>
 
   <ItemGroup>

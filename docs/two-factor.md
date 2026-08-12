@@ -73,7 +73,9 @@ answers 400 with `{ "errors": ["..."] }`.
 
 ::: tip Confirming logs you out of the token you used to confirm
 `confirm`, `disable` and `recovery-codes` each move the user's security stamp, which invalidates the
-access token that made the call. Refresh before the next request rather than reusing it.
+access token that made the call. The next request answers **401 with `"error": "invalid_token"`** -
+refresh and retry rather than reusing it. A client with
+[refresh-on-401](/spa#refresh-on-401) already does this and the user notices nothing.
 :::
 
 ## Enrolment is two steps, on purpose

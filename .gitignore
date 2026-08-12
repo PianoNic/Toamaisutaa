@@ -440,3 +440,6 @@ artifacts/
 node_modules/
 docs/.vitepress/dist/
 docs/.vitepress/cache/
+
+# Playwright MCP scratch output (page snapshots, console logs)
+.playwright-mcp/

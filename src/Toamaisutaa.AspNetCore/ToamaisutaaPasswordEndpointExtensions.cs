@@ -39,6 +39,9 @@ public static class ToamaisutaaPasswordEndpointExtensions
 
         var group = endpoints.MapGroup(options.EndpointPrefix).WithTags("Authentication");
 
+        // /auth/password resolves the caller, so it can meet a token whose stamp has moved.
+        group.AddEndpointFilter<StaleSecurityStampFilter>();
+
         group.MapPost("/login", LoginAsync)
             .AllowAnonymous()
             .AddEndpointFilter<PasswordRateLimitFilter>()
@@ -104,7 +107,7 @@ public static class ToamaisutaaPasswordEndpointExtensions
                 + "identity provider owns the account and it is gaining its first.")
             .Produces(StatusCodes.Status204NoContent)
             .Produces<ValidationErrorResponse>(StatusCodes.Status400BadRequest)
-            .Produces(StatusCodes.Status401Unauthorized);
+            .Produces<ErrorResponse>(StatusCodes.Status401Unauthorized);
 
         group.MapPost("/password/forgot", ForgotPasswordAsync)
             .AllowAnonymous()

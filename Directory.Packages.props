@@ -32,6 +32,7 @@
     <!-- Transitive pin: Microsoft.AspNetCore.OpenApi 10.0.10 drags in Microsoft.OpenApi 2.0.0,
          which carries GHSA-v5pm-xwqc-g5wc. 2.11.0 is the same major, so no API change. -->
     <PackageVersion Include="Microsoft.OpenApi" Version="2.11.0" />
+    <PackageVersion Include="Scalar.AspNetCore" Version="2.16.18" />
     <PackageVersion Include="TUnit" Version="0.90.0" />
   </ItemGroup>
 
