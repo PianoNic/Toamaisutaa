@@ -26,6 +26,7 @@ export default defineConfig({
       { text: 'Password login', link: '/password-login' },
       { text: 'Two-factor', link: '/two-factor' },
       { text: 'Devices', link: '/trusted-devices' },
+      { text: 'From a SPA', link: '/spa' },
       { text: 'Development', link: '/dev-setup' },
     ],
     sidebar: [
@@ -46,6 +47,13 @@ export default defineConfig({
           { text: 'Local password login', link: '/password-login' },
           { text: 'Two-factor authentication', link: '/two-factor' },
           { text: 'Trusted devices', link: '/trusted-devices' },
+        ],
+      },
+      {
+        text: 'Building a client',
+        collapsed: false,
+        items: [
+          { text: 'Using this from a SPA', link: '/spa' },
         ],
       },
       {
