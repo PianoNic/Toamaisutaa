@@ -11,32 +11,45 @@ namespace Microsoft.AspNetCore.Builder;
 public static class ToamaisutaaTrustedDeviceEndpointExtensions
 {
     /// <summary>
-    /// Maps the device list and the two revoke endpoints under
+    /// Maps the device list and the two revoke endpoints under <c>LocalLogin:EndpointPrefix</c> +
     /// <c>TrustedDevices:EndpointPrefix</c>. A trust the user cannot see or take back is a
     /// liability, so these are not optional alongside the feature.
     /// </summary>
-    public static IEndpointConventionBuilder MapToamaisutaaTrustedDeviceEndpoints(this IEndpointRouteBuilder endpoints)
+    /// <remarks>
+    /// The prefix composes onto the local login one, the same way <c>/2fa</c> does. It used to be a
+    /// full path defaulting to <c>/auth/devices</c>, which meant moving <c>LocalLogin</c> to
+    /// <c>/identity</c> moved sign-in and two-factor and silently left the devices behind.
+    /// </remarks>
+    /// <param name="endpoints">The builder to map into. A <c>RouteGroupBuilder</c> is one.</param>
+    /// <param name="endpointNamePrefix">
+    /// Prepended to every endpoint name, so the same endpoints can be mapped into more than one
+    /// group. Endpoint names are unique per application, so a second group needs distinct ones.
+    /// </param>
+    public static IEndpointConventionBuilder MapToamaisutaaTrustedDeviceEndpoints(
+        this IEndpointRouteBuilder endpoints,
+        string? endpointNamePrefix = null)
     {
         ArgumentNullException.ThrowIfNull(endpoints);
 
         var options = endpoints.ServiceProvider.GetRequiredService<IOptions<ToamaisutaaTrustedDeviceOptions>>().Value;
+        var localLogin = endpoints.ServiceProvider.GetRequiredService<IOptions<ToamaisutaaLocalLoginOptions>>().Value;
 
-        var group = endpoints.MapGroup(options.EndpointPrefix);
+        var group = endpoints.MapGroup(localLogin.EndpointPrefix + options.EndpointPrefix);
 
         group.MapGet("/", ListAsync)
             .RequireAuthorization()
             .AddEndpointFilter<PasswordRateLimitFilter>()
-            .WithName("ToamaisutaaTrustedDevices");
+            .WithName($"{endpointNamePrefix}ToamaisutaaTrustedDevices");
 
         group.MapDelete("/{id:guid}", RevokeAsync)
             .RequireAuthorization()
             .AddEndpointFilter<PasswordRateLimitFilter>()
-            .WithName("ToamaisutaaRevokeTrustedDevice");
+            .WithName($"{endpointNamePrefix}ToamaisutaaRevokeTrustedDevice");
 
         group.MapDelete("/", RevokeAllAsync)
             .RequireAuthorization()
             .AddEndpointFilter<PasswordRateLimitFilter>()
-            .WithName("ToamaisutaaRevokeAllTrustedDevices");
+            .WithName($"{endpointNamePrefix}ToamaisutaaRevokeAllTrustedDevices");
 
         return group;
     }

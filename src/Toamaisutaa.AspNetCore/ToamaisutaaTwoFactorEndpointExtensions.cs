@@ -18,7 +18,14 @@ public static class ToamaisutaaTwoFactorEndpointExtensions
     /// throttled too, for a different reason: every call writes a fresh unconfirmed secret, so an
     /// unbounded loop is write amplification rather than a guessing attack.
     /// </remarks>
-    public static IEndpointConventionBuilder MapToamaisutaaTwoFactorEndpoints(this IEndpointRouteBuilder endpoints)
+    /// <param name="endpoints">The builder to map into. A <c>RouteGroupBuilder</c> is one.</param>
+    /// <param name="endpointNamePrefix">
+    /// Prepended to every endpoint name, so the same endpoints can be mapped into more than one
+    /// group. Endpoint names are unique per application, so a second group needs distinct ones.
+    /// </param>
+    public static IEndpointConventionBuilder MapToamaisutaaTwoFactorEndpoints(
+        this IEndpointRouteBuilder endpoints,
+        string? endpointNamePrefix = null)
     {
         ArgumentNullException.ThrowIfNull(endpoints);
 
@@ -28,29 +35,29 @@ public static class ToamaisutaaTwoFactorEndpointExtensions
 
         group.MapGet("/", StatusAsync)
             .RequireAuthorization()
-            .WithName("ToamaisutaaTwoFactorStatus");
+            .WithName($"{endpointNamePrefix}ToamaisutaaTwoFactorStatus");
 
         group.MapPost("/begin", BeginAsync)
             .RequireAuthorization()
             .AddEndpointFilter<PasswordRateLimitFilter>()
-            .WithName("ToamaisutaaTwoFactorBegin");
+            .WithName($"{endpointNamePrefix}ToamaisutaaTwoFactorBegin");
 
         group.MapPost("/confirm", ConfirmAsync)
             .RequireAuthorization()
-            .WithName("ToamaisutaaTwoFactorConfirm");
+            .WithName($"{endpointNamePrefix}ToamaisutaaTwoFactorConfirm");
 
         group.MapPost("/disable", DisableAsync)
             .RequireAuthorization()
-            .WithName("ToamaisutaaTwoFactorDisable");
+            .WithName($"{endpointNamePrefix}ToamaisutaaTwoFactorDisable");
 
         group.MapPost("/recovery-codes", RegenerateAsync)
             .RequireAuthorization()
-            .WithName("ToamaisutaaTwoFactorRecoveryCodes");
+            .WithName($"{endpointNamePrefix}ToamaisutaaTwoFactorRecoveryCodes");
 
         group.MapPost("/verify", VerifyAsync)
             .AllowAnonymous()
             .AddEndpointFilter<PasswordRateLimitFilter>()
-            .WithName("ToamaisutaaTwoFactorVerify");
+            .WithName($"{endpointNamePrefix}ToamaisutaaTwoFactorVerify");
 
         return group;
     }
@@ -83,7 +90,7 @@ public static class ToamaisutaaTwoFactorEndpointExtensions
         }
         catch (TwoFactorEnrolmentException exception)
         {
-            return Results.BadRequest(new { errors = new[] { exception.Message } });
+            return Results.BadRequest(new ValidationErrorResponse { Errors = [exception.Message] });
         }
     }
 
@@ -105,7 +112,7 @@ public static class ToamaisutaaTwoFactorEndpointExtensions
         }
         catch (TwoFactorEnrolmentException exception)
         {
-            return Results.BadRequest(new { errors = new[] { exception.Message } });
+            return Results.BadRequest(new ValidationErrorResponse { Errors = [exception.Message] });
         }
     }
 
@@ -121,7 +128,9 @@ public static class ToamaisutaaTwoFactorEndpointExtensions
         var user = await currentUser.GetOrProvisionAsync(cancellationToken);
         var result = await twoFactor.DisableAsync(user.Id, request.Proof, cancellationToken);
 
-        return result.Succeeded ? Results.NoContent() : Results.BadRequest(new { errors = result.Errors });
+        return result.Succeeded
+            ? Results.NoContent()
+            : Results.BadRequest(new ValidationErrorResponse { Errors = result.Errors });
     }
 
     private static async Task<IResult> RegenerateAsync(
@@ -142,7 +151,7 @@ public static class ToamaisutaaTwoFactorEndpointExtensions
         }
         catch (TwoFactorEnrolmentException exception)
         {
-            return Results.BadRequest(new { errors = new[] { exception.Message } });
+            return Results.BadRequest(new ValidationErrorResponse { Errors = [exception.Message] });
         }
     }
 
@@ -182,6 +191,6 @@ public static class ToamaisutaaTwoFactorEndpointExtensions
     /// </summary>
     private static IResult Unauthorized() =>
         Results.Json(
-            new { error = "invalid_grant", error_description = "That code is not valid." },
+            new ErrorResponse { Error = "invalid_grant", ErrorDescription = "That code is not valid." },
             statusCode: StatusCodes.Status401Unauthorized);
 }
