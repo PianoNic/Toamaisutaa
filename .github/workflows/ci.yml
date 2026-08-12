@@ -31,6 +31,12 @@ jobs:
       - name: Test
         run: dotnet run --project src/Toamaisutaa.Core.Tests/Toamaisutaa.Core.Tests.csproj --configuration Release --no-build
 
+      # Separate from the service suite because it covers a different failure: three bugs shipped
+      # past a Core suite that was correct throughout, every one of them between a correct service
+      # and the wire. Runs the real pipeline in process against SQLite, so it needs nothing.
+      - name: Test the HTTP surface
+        run: dotnet run --project src/Toamaisutaa.AspNetCore.Tests/Toamaisutaa.AspNetCore.Tests.csproj --configuration Release --no-build
+
       # Packing on every build is the only thing that catches a broken icon path, a missing licence
       # file or a bad dependency group before a tag does. Per-project rather than per-solution: pack
       # on a solution warns for every project that is deliberately not packable, and that warning

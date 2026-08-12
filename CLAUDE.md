@@ -142,4 +142,34 @@ SQLite cannot range-query a `DateTimeOffset`. Use the converter for any new time
 - `dotnet build Toamaisutaa.slnx` is 0 warnings, 0 errors.
 - `dotnet run --project src/Toamaisutaa.Core.Tests/Toamaisutaa.Core.Tests.csproj` is green (TUnit -
   `[Test]`, no `[TestClass]`, the project runs itself).
+- `dotnet run --project src/Toamaisutaa.AspNetCore.Tests/Toamaisutaa.AspNetCore.Tests.csproj` is
+  green. **This is what "verified end to end" means now** - it used to mean a human ran the sample,
+  which is not a thing that survives a session.
 - If it touches packaging, `dotnet pack` each shipping project and look inside the `.nupkg`.
+
+## Anything that touches the wire needs an HTTP test
+
+Three bugs shipped past a service suite that was correct throughout, and every one of them lived
+between a correct service and the wire:
+
+- the rotated device token the endpoint dropped, so a trusted device worked exactly once;
+- endpoint names that made the routing matcher unbuildable, so the host started clean and then
+  answered 500 on **every** route from the first request;
+- `SecurityStampChangedException` escaping as a 500 on the happy path of enrolment.
+
+None was findable from `Core.Tests`, because the service layer was right in all three. They were
+found by hand, one per phase, by someone running the sample and reading response bodies.
+
+`Toamaisutaa.AspNetCore.Tests` runs the whole pipeline in process against SQLite - no identity
+provider, no network, no sample. **A change to an endpoint, a response shape, a status code, a
+route, or an endpoint filter is not done until there is a test there.**
+
+Two things about writing them:
+
+- **Assert field names off raw JSON**, not by deserialising into the package's own records.
+  Deserialising through `TokenResponse` makes the assertion agree with whatever that type currently
+  says, which is exactly how a field goes missing on the wire while the types either side are fine.
+- **Mutate to check the test.** Break the fix, confirm the test fails, put it back. The first
+  version of the stale-stamp tests passed with the filter deleted, because the harness registered
+  the consumer-side exception handler and that produced an identical 401. They asserted nothing
+  about the code they named, and only the mutation showed it.

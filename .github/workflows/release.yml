@@ -131,6 +131,9 @@ jobs:
       - name: Test
         run: dotnet run --project src/Toamaisutaa.Core.Tests/Toamaisutaa.Core.Tests.csproj --configuration Release --no-build -p:Version=${{ steps.version.outputs.version }}
 
+      - name: Test the HTTP surface
+        run: dotnet run --project src/Toamaisutaa.AspNetCore.Tests/Toamaisutaa.AspNetCore.Tests.csproj --configuration Release --no-build -p:Version=${{ steps.version.outputs.version }}
+
       # Per-project rather than per-solution: pack on a solution warns for every project that is
       # deliberately not packable, and that warning carries no code, so it cannot be suppressed.
       - name: Pack
