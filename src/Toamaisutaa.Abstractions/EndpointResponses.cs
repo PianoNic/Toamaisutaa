@@ -168,3 +168,12 @@ public sealed record AdminAccountResponse
 
     public string? Email { get; init; }
 }
+
+/// <summary>What <c>POST /auth/invitations</c> returns. Never the token - see
+/// <see cref="IInvitationNotifier"/>.</summary>
+public sealed record InvitationResponse
+{
+    public required Guid UserId { get; init; }
+
+    public required string Email { get; init; }
+}

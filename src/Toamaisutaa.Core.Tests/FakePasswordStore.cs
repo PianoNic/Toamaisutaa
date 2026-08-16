@@ -5,13 +5,15 @@ namespace Toamaisutaa.Core.Tests;
 /// <summary>In-memory credential, refresh-token and reset-token storage, including the unique
 /// identifier constraint the real store gets from its indexes.</summary>
 internal sealed class FakePasswordStore
-    : IPasswordCredentialStore, IRefreshTokenStore, IPasswordResetTokenStore
+    : IPasswordCredentialStore, IRefreshTokenStore, IPasswordResetTokenStore, IInvitationTokenStore
 {
     internal List<ToamaisutaaPasswordCredential> Credentials { get; } = [];
 
     internal List<ToamaisutaaRefreshToken> RefreshTokens { get; } = [];
 
     internal List<ToamaisutaaPasswordResetToken> ResetTokens { get; } = [];
+
+    internal List<ToamaisutaaInvitationToken> InvitationTokens { get; } = [];
 
     // ── Credentials ──
 
@@ -139,6 +141,27 @@ internal sealed class FakePasswordStore
 
     Task<int> IPasswordResetTokenStore.DeleteExpiredAsync(DateTimeOffset expiredBefore, CancellationToken cancellationToken) =>
         Task.FromResult(ResetTokens.RemoveAll(token => token.ExpiresAt <= expiredBefore));
+
+    // ── Invitation tokens ──
+
+    public Task CreateAsync(ToamaisutaaInvitationToken token, CancellationToken cancellationToken = default)
+    {
+        InvitationTokens.Add(token);
+        return Task.CompletedTask;
+    }
+
+    Task<ToamaisutaaInvitationToken?> IInvitationTokenStore.FindByHashAsync(string tokenHash, CancellationToken cancellationToken) =>
+        Task.FromResult(InvitationTokens.FirstOrDefault(token => token.TokenHash == tokenHash));
+
+    Task IInvitationTokenStore.MarkConsumedAsync(Guid tokenId, DateTimeOffset consumedAt, CancellationToken cancellationToken)
+    {
+        var token = InvitationTokens.First(entry => entry.Id == tokenId);
+        token.ConsumedAt ??= consumedAt;
+        return Task.CompletedTask;
+    }
+
+    Task<int> IInvitationTokenStore.DeleteExpiredAsync(DateTimeOffset expiredBefore, CancellationToken cancellationToken) =>
+        Task.FromResult(InvitationTokens.RemoveAll(token => token.ExpiresAt <= expiredBefore));
 }
 
 internal sealed class FakeAccessTokenIssuer(TimeProvider timeProvider) : IAccessTokenIssuer
@@ -177,6 +200,17 @@ internal sealed class FakeAdminPasswordIssuedNotifier : IAdminPasswordIssuedNoti
     public Task PasswordIssuedAsync(ToamaisutaaUser user, string rawPassword, CancellationToken cancellationToken = default)
     {
         Issued.Add((user.Id, rawPassword));
+        return Task.CompletedTask;
+    }
+}
+
+internal sealed class FakeInvitationNotifier : IInvitationNotifier
+{
+    internal List<(Guid UserId, string Token)> Sent { get; } = [];
+
+    public Task SendAsync(ToamaisutaaUser user, string invitationToken, CancellationToken cancellationToken = default)
+    {
+        Sent.Add((user.Id, invitationToken));
         return Task.CompletedTask;
     }
 }

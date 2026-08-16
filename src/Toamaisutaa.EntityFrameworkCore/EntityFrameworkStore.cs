@@ -110,6 +110,20 @@ internal sealed class EntityFrameworkStore<TContext>(TContext context, TimeProvi
                 cancellationToken);
     }
 
+    public async Task SetUserNameAsync(Guid userId, string userName, CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(userName);
+
+        await context.Set<ToamaisutaaUser>()
+            .Where(user => user.Id == userId)
+            .ExecuteUpdateAsync(
+                setters => setters
+                    .SetProperty(user => user.UserName, userName)
+                    .SetProperty(user => user.DisplayName, userName)
+                    .SetProperty(user => user.UpdatedAt, timeProvider.GetUtcNow()),
+                cancellationToken);
+    }
+
     /// <summary>
     /// Every user gets one from the moment the row exists, including one provisioned from an
     /// identity provider that will never have a password. A null stamp compares equal to nothing

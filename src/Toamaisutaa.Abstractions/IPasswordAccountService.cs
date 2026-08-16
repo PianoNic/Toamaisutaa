@@ -36,6 +36,20 @@ public interface IPasswordAccountService
     /// <see cref="IAdminPasswordIssuedNotifier"/> and is never returned from this call.
     /// </summary>
     Task<AccountResult> AdminSetPasswordAsync(Guid userId, string? password, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Reserves an account with nothing but an email - no user name, no credential - and hands an
+    /// invitation token to <see cref="IInvitationNotifier"/>. Never returned from this call.
+    /// </summary>
+    Task<AccountResult> CreateInvitationAsync(string email, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Completes the one reserved account an invitation token names: sets the user name and password
+    /// the person chose, and signs them in - the same shape <see cref="RegisterAsync"/> answers with.
+    /// A silent, single failure for a token that is unknown, already used or expired, the same
+    /// reasoning <see cref="ResetPasswordAsync"/> uses.
+    /// </summary>
+    Task<AccountResult> CompleteInvitationAsync(string invitationToken, string userName, string password, CancellationToken cancellationToken = default);
 }
 
 /// <summary>For the log, not for the caller. Every one of these answers 204.</summary>

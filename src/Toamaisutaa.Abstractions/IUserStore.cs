@@ -34,6 +34,13 @@ public interface IUserStore
     Task UpdateSecurityStampAsync(Guid userId, string securityStamp, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Sets the user name - and, alongside it, the display name - on an existing row. For completing
+    /// a reserved invitation: the row was created with only an email, and the person chooses their
+    /// own user name when they finish registering.
+    /// </summary>
+    Task SetUserNameAsync(Guid userId, string userName, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Removes a user and everything that hangs off it. Used to take back a row created moments ago
     /// for a registration that then lost a race on the credential's unique index, so a failed
     /// attempt does not leave an account behind that nobody can sign in to.

@@ -154,6 +154,33 @@ public static class ToamaisutaaPasswordEndpointExtensions
                 .Produces<ValidationErrorResponse>(StatusCodes.Status400BadRequest);
         }
 
+        // Same reasoning: not mapped at all without an IInvitationNotifier.
+        if (endpoints.ServiceProvider.GetService<IInvitationNotifier>() is not null)
+        {
+            group.MapPost("/invitations", CreateInvitationAsync)
+                .RequireAuthorization()
+                .WithName($"{endpointNamePrefix}ToamaisutaaCreateInvitation")
+                .WithSummary("Reserves an account with nothing but an email.")
+                .WithDescription(
+                    "No user name and no credential yet - the invited person chooses both at "
+                    + "/auth/invitations/complete. Never returns the invitation token, which goes to "
+                    + "IInvitationNotifier instead.")
+                .Produces<InvitationResponse>(StatusCodes.Status201Created)
+                .Produces<ValidationErrorResponse>(StatusCodes.Status400BadRequest);
+
+            group.MapPost("/invitations/complete", CompleteInvitationAsync)
+                .AllowAnonymous()
+                .WithName($"{endpointNamePrefix}ToamaisutaaCompleteInvitation")
+                .WithSummary("Sets the user name and password on the one reserved account a token names.")
+                .WithDescription(
+                    "Signs in on success, the same shape /auth/register answers with. Not open "
+                    + "registration - completing an invitation only ever touches the single row the "
+                    + "token was issued for.")
+                .Produces<TokenResponse>(StatusCodes.Status201Created)
+                .Produces<ValidationErrorResponse>(StatusCodes.Status400BadRequest)
+                .Produces<ValidationErrorResponse>(StatusCodes.Status409Conflict);
+        }
+
         return group;
     }
 
@@ -371,5 +398,43 @@ public static class ToamaisutaaPasswordEndpointExtensions
         return result.Succeeded
             ? Results.NoContent()
             : Results.BadRequest(new ValidationErrorResponse { Errors = result.Errors });
+    }
+
+    private static async Task<IResult> CreateInvitationAsync(
+        CreateInvitationRequest request,
+        IPasswordAccountService accounts,
+        CancellationToken cancellationToken)
+    {
+        if (request is null || string.IsNullOrEmpty(request.Email))
+            return Results.BadRequest();
+
+        var result = await accounts.CreateInvitationAsync(request.Email, cancellationToken);
+
+        if (!result.Succeeded)
+            return Results.BadRequest(new ValidationErrorResponse { Errors = result.Errors });
+
+        return Results.Json(
+            new InvitationResponse { UserId = result.UserId!.Value, Email = request.Email },
+            statusCode: StatusCodes.Status201Created);
+    }
+
+    private static async Task<IResult> CompleteInvitationAsync(
+        CompleteInvitationRequest request,
+        IPasswordAccountService accounts,
+        CancellationToken cancellationToken)
+    {
+        if (request is null || string.IsNullOrEmpty(request.Token) || string.IsNullOrEmpty(request.UserName) || string.IsNullOrEmpty(request.Password))
+            return Results.BadRequest();
+
+        var result = await accounts.CompleteInvitationAsync(request.Token, request.UserName, request.Password, cancellationToken);
+
+        if (!result.Succeeded)
+        {
+            return result.Conflict
+                ? Results.Json(new ValidationErrorResponse { Errors = result.Errors }, statusCode: StatusCodes.Status409Conflict)
+                : Results.BadRequest(new ValidationErrorResponse { Errors = result.Errors });
+        }
+
+        return Tokens(result.Tokens!, false, null, StatusCodes.Status201Created);
     }
 }
