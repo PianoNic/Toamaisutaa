@@ -185,7 +185,20 @@ internal sealed class PasswordAccountService(
             },
             cancellationToken);
 
-        await notifier.SendAsync(user, raw, cancellationToken);
+        try
+        {
+            await notifier.SendAsync(user, raw, cancellationToken);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            // A real notifier can fail for reasons that have nothing to do with the account: a
+            // provider outage, a rate limit, an expired credential. None of that may reach the
+            // caller as anything but 204 - an unhandled exception here would answer 500 for this
+            // address and 204 for an unknown one, which is exactly the distinction "always 204" was
+            // meant to erase.
+            logger.LogError(ex, "Password reset notifier failed for user {UserId}. The token was issued; no email was sent.", credential.UserId);
+            return PasswordResetRequestOutcome.NotificationFailed;
+        }
 
         logger.LogInformation("Password reset token issued for user {UserId} and handed to the notifier.", credential.UserId);
         return PasswordResetRequestOutcome.Sent;
