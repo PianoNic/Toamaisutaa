@@ -99,9 +99,9 @@ builder.Services.AddScoped<IRefreshTokenStore, YourRefreshTokenStore>();
 ```
 
 ::: warning Breaking: `IUserStore` gained `SetUserNameAsync`
-Completing a reserved invitation ([admin-provisioned accounts](/password-login#admin-provisioned-accounts))
-sets a user name on a row that was created with only an email, and no existing method could write
-it. A custom `IUserStore` needs the new member before it compiles against this version.
+[Completing a reserved invitation](/provisioning-accounts#completing-a-reserved-invitation) sets a
+user name on a row that was created with only an email, and no existing method could write it. A
+custom `IUserStore` needs the new member before it compiles against this version.
 :::
 
 Three things the EF implementations do that yours must also do, because `Core` relies on them:

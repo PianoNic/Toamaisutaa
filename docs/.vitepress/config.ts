@@ -44,7 +44,16 @@ export default defineConfig({
         collapsed: false,
         items: [
           { text: 'OIDC bearer validation', link: '/oidc' },
-          { text: 'Local password login', link: '/password-login' },
+          {
+            text: 'Local password login',
+            link: '/password-login',
+            collapsed: true,
+            items: [
+              { text: 'Password hashing', link: '/password-hashing' },
+              { text: 'Customizing local login', link: '/customizing-password-login' },
+              { text: 'Provisioning accounts', link: '/provisioning-accounts' },
+            ],
+          },
           { text: 'Two-factor authentication', link: '/two-factor' },
           { text: 'Trusted devices', link: '/trusted-devices' },
         ],
