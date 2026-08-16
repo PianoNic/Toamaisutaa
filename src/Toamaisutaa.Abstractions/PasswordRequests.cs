@@ -28,3 +28,7 @@ public sealed record CreateUserRequest(string UserName, string? Email, string? P
 /// <summary><see cref="Password"/> is optional - omit it and Toamaisutaa generates one, handed to
 /// <see cref="IAdminPasswordIssuedNotifier"/> rather than returned from the endpoint.</summary>
 public sealed record SetUserPasswordRequest(string? Password);
+
+public sealed record CreateInvitationRequest(string Email);
+
+public sealed record CompleteInvitationRequest(string Token, string UserName, string Password);

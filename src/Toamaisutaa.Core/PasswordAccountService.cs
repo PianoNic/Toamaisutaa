@@ -10,6 +10,7 @@ internal sealed class PasswordAccountService(
     IUserStore users,
     IRefreshTokenStore refreshTokens,
     IPasswordResetTokenStore resetTokens,
+    IInvitationTokenStore invitationTokens,
     IPasswordHasher hasher,
     IPasswordValidator validator,
     IPasswordResetNotifier notifier,
@@ -237,6 +238,102 @@ internal sealed class PasswordAccountService(
         return new AccountResult { Succeeded = true, UserId = userId };
     }
 
+    public async Task<AccountResult> CreateInvitationAsync(string email, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(email);
+
+        if (string.IsNullOrWhiteSpace(email))
+            return AccountResult.Failure("Give an email address.");
+
+        var invitationNotifier = ResolveInvitationNotifier();
+        var now = timeProvider.GetUtcNow();
+
+        // No user name and no credential - the row exists to be completed, not signed into. It is
+        // deliberately not a match for RegisterAsync's shape: nothing here is a finished account yet.
+        var user = await users.CreateAsync(
+            new ToamaisutaaUser
+            {
+                Email = email.Trim(),
+                SecurityStamp = SecureTokens.Create(),
+            },
+            cancellationToken);
+
+        var raw = SecureTokens.Create();
+
+        await invitationTokens.CreateAsync(
+            new ToamaisutaaInvitationToken
+            {
+                Id = Guid.CreateVersion7(now),
+                UserId = user.Id,
+                TokenHash = SecureTokens.HashToken(raw),
+                CreatedAt = now,
+                ExpiresAt = now + options.Value.InvitationTokenLifetime,
+            },
+            cancellationToken);
+
+        await invitationNotifier.SendAsync(user, raw, cancellationToken);
+
+        logger.LogInformation("Invitation created for user {UserId} and handed to the notifier.", user.Id);
+
+        return new AccountResult { Succeeded = true, UserId = user.Id };
+    }
+
+    public async Task<AccountResult> CompleteInvitationAsync(
+        string invitationToken,
+        string userName,
+        string password,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(invitationToken);
+
+        if (string.IsNullOrWhiteSpace(userName))
+            return AccountResult.Failure("Choose a user name.");
+
+        var now = timeProvider.GetUtcNow();
+        var stored = await invitationTokens.FindByHashAsync(SecureTokens.HashToken(invitationToken), cancellationToken);
+
+        // One message for every way this can fail, the same reasoning ResetPasswordAsync uses: an
+        // invalid token and a spent one are the same answer to whoever is holding it.
+        if (stored is null || stored.ConsumedAt is not null || stored.ExpiresAt <= now)
+        {
+            logger.LogWarning("Invitation completion refused: the token is unknown, already used or expired.");
+            return AccountResult.Failure("That invitation link is no longer valid.");
+        }
+
+        var errors = validator.Validate(password);
+        if (errors.Count > 0)
+            return new AccountResult { Succeeded = false, Errors = errors };
+
+        var user = await users.FindByIdAsync(stored.UserId, cancellationToken);
+        if (user is null)
+            return AccountResult.Failure("That invitation link is no longer valid.");
+
+        var trimmedUserName = userName.Trim();
+
+        try
+        {
+            await credentials.CreateAsync(BuildCredential(user.Id, trimmedUserName, user.Email, password, now), cancellationToken);
+        }
+        catch (PasswordIdentifierConflictException)
+        {
+            // The reservation survives a taken user name untouched: the token is still unconsumed
+            // and nothing was written to the user row, so the same person can simply try again.
+            logger.LogInformation("Invitation completion refused: the user name is already in use.");
+            return AccountResult.Taken("That user name is already in use.");
+        }
+
+        await users.SetUserNameAsync(user.Id, trimmedUserName, cancellationToken);
+        await invitationTokens.MarkConsumedAsync(stored.Id, now, cancellationToken);
+
+        logger.LogInformation("Invitation completed for user {UserId}.", user.Id);
+
+        var tokens = await signIn.SignInAsync(
+            new PasswordSignInRequest { Identifier = trimmedUserName, Password = password },
+            cancellationToken);
+
+        return new AccountResult { Succeeded = true, UserId = user.Id, Tokens = tokens.Tokens };
+    }
+
     public async Task<PasswordResetRequestOutcome> RequestPasswordResetAsync(string email, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(email);
@@ -383,4 +480,12 @@ internal sealed class PasswordAccountService(
             $"No {nameof(IAdminPasswordIssuedNotifier)} is registered. An admin-issued password is handed to it "
             + "and never returned from this call - register one before calling AdminCreateAccountAsync or "
             + "AdminSetPasswordAsync.");
+
+    /// <summary>Same reasoning as <see cref="ResolveAdminPasswordNotifier"/>: optional, resolved
+    /// lazily, and only required at the one call site that actually needs it.</summary>
+    private IInvitationNotifier ResolveInvitationNotifier() =>
+        serviceProvider.GetService<IInvitationNotifier>()
+        ?? throw new InvalidOperationException(
+            $"No {nameof(IInvitationNotifier)} is registered. An invitation token is handed to it and never "
+            + "returned from this call - register one before calling CreateInvitationAsync.");
 }

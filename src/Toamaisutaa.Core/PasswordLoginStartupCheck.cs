@@ -68,6 +68,7 @@ internal sealed class PasswordLoginStartupCheck(
                      typeof(IPasswordCredentialStore),
                      typeof(IRefreshTokenStore),
                      typeof(IPasswordResetTokenStore),
+                     typeof(IInvitationTokenStore),
                  })
         {
             if (!IsRegistered(storeType))

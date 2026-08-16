@@ -43,13 +43,15 @@ internal sealed class TestApp : IAsyncDisposable
         SqliteConnection connection,
         HttpClient client,
         MutableTimeProvider time,
-        List<(Guid UserId, string Password)> issuedPasswords)
+        List<(Guid UserId, string Password)> issuedPasswords,
+        List<(Guid UserId, string Token)> issuedInvitations)
     {
         _app = app;
         _connection = connection;
         Client = client;
         Time = time;
         IssuedPasswords = issuedPasswords;
+        IssuedInvitations = issuedInvitations;
     }
 
     public HttpClient Client { get; }
@@ -59,6 +61,10 @@ internal sealed class TestApp : IAsyncDisposable
     /// endpoint issued can be observed, since it is never in an HTTP response.
     /// </summary>
     public List<(Guid UserId, string Password)> IssuedPasswords { get; }
+
+    /// <summary>What <c>IInvitationNotifier</c> was handed - the only place an invitation token can
+    /// be observed, since it is never in an HTTP response.</summary>
+    public List<(Guid UserId, string Token)> IssuedInvitations { get; }
 
     /// <summary>
     /// Advance it to cross a TOTP step. Anchored at the real clock and never moved far, because the
@@ -80,12 +86,17 @@ internal sealed class TestApp : IAsyncDisposable
     /// On by default, so <c>/auth/users</c> and <c>/auth/users/{userId}/password</c> are mapped and
     /// most tests can use them. Off to prove they are not mapped at all without one.
     /// </param>
+    /// <param name="includeInvitationNotifier">
+    /// On by default, so <c>/auth/invitations</c> and <c>/auth/invitations/complete</c> are mapped
+    /// and most tests can use them. Off to prove they are not mapped at all without one.
+    /// </param>
     public static async Task<TestApp> StartAsync(
         Action<IEndpointRouteBuilder>? mapExtra = null,
         Action<Dictionary<string, string?>>? configure = null,
         bool handleStaleStampGlobally = false,
         Action<IServiceCollection>? configureServices = null,
-        bool includeAdminPasswordNotifier = true)
+        bool includeAdminPasswordNotifier = true,
+        bool includeInvitationNotifier = true)
     {
         var settings = new Dictionary<string, string?>
         {
@@ -126,9 +137,13 @@ internal sealed class TestApp : IAsyncDisposable
         builder.Services.AddSingleton<IPasswordResetNotifier, SilentResetNotifier>();
 
         var issuedPasswords = new List<(Guid UserId, string Password)>();
+        var issuedInvitations = new List<(Guid UserId, string Token)>();
 
         if (includeAdminPasswordNotifier)
             builder.Services.AddSingleton<IAdminPasswordIssuedNotifier>(new CapturingAdminPasswordIssuedNotifier(issuedPasswords));
+
+        if (includeInvitationNotifier)
+            builder.Services.AddSingleton<IInvitationNotifier>(new CapturingInvitationNotifier(issuedInvitations));
 
         configureServices?.Invoke(builder.Services);
 
@@ -167,7 +182,7 @@ internal sealed class TestApp : IAsyncDisposable
 
         await app.StartAsync();
 
-        return new TestApp(app, connection, app.GetTestClient(), time, issuedPasswords);
+        return new TestApp(app, connection, app.GetTestClient(), time, issuedPasswords, issuedInvitations);
     }
 
     /// <summary>
@@ -213,6 +228,15 @@ internal sealed class TestApp : IAsyncDisposable
         public Task PasswordIssuedAsync(ToamaisutaaUser user, string rawPassword, CancellationToken cancellationToken = default)
         {
             issued.Add((user.Id, rawPassword));
+            return Task.CompletedTask;
+        }
+    }
+
+    private sealed class CapturingInvitationNotifier(List<(Guid UserId, string Token)> sent) : IInvitationNotifier
+    {
+        public Task SendAsync(ToamaisutaaUser user, string invitationToken, CancellationToken cancellationToken = default)
+        {
+            sent.Add((user.Id, invitationToken));
             return Task.CompletedTask;
         }
     }

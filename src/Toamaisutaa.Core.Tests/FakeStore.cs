@@ -67,6 +67,20 @@ internal sealed class FakeStore(TimeProvider timeProvider) : IUserStore, IExtern
         return Task.CompletedTask;
     }
 
+    public Task SetUserNameAsync(Guid userId, string userName, CancellationToken cancellationToken = default)
+    {
+        var user = Users.FirstOrDefault(entry => entry.Id == userId);
+
+        if (user is not null)
+        {
+            user.UserName = userName;
+            user.DisplayName = userName;
+            user.UpdatedAt = timeProvider.GetUtcNow();
+        }
+
+        return Task.CompletedTask;
+    }
+
     public Task<ToamaisutaaUser> CreateAsync(ExternalUserProfile profile, CancellationToken cancellationToken = default)
     {
         var now = timeProvider.GetUtcNow();

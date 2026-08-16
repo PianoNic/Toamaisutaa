@@ -9,7 +9,7 @@ namespace Toamaisutaa.EntityFrameworkCore;
 /// application can replace one of them without the others.
 /// </summary>
 internal sealed class EntityFrameworkPasswordStore<TContext>(TContext context)
-    : IPasswordCredentialStore, IRefreshTokenStore, IPasswordResetTokenStore
+    : IPasswordCredentialStore, IRefreshTokenStore, IPasswordResetTokenStore, IInvitationTokenStore
     where TContext : DbContext
 {
     // ── Credentials ──
@@ -160,6 +160,28 @@ internal sealed class EntityFrameworkPasswordStore<TContext>(TContext context)
 
     async Task<int> IPasswordResetTokenStore.DeleteExpiredAsync(DateTimeOffset expiredBefore, CancellationToken cancellationToken) =>
         await context.Set<ToamaisutaaPasswordResetToken>()
+            .Where(token => token.ExpiresAt <= expiredBefore)
+            .ExecuteDeleteAsync(cancellationToken);
+
+    // ── Invitation tokens ──
+
+    public async Task CreateAsync(ToamaisutaaInvitationToken token, CancellationToken cancellationToken = default)
+    {
+        context.Set<ToamaisutaaInvitationToken>().Add(token);
+        await context.SaveChangesAsync(cancellationToken);
+    }
+
+    async Task<ToamaisutaaInvitationToken?> IInvitationTokenStore.FindByHashAsync(string tokenHash, CancellationToken cancellationToken) =>
+        await context.Set<ToamaisutaaInvitationToken>()
+            .FirstOrDefaultAsync(token => token.TokenHash == tokenHash, cancellationToken);
+
+    async Task IInvitationTokenStore.MarkConsumedAsync(Guid tokenId, DateTimeOffset consumedAt, CancellationToken cancellationToken) =>
+        await context.Set<ToamaisutaaInvitationToken>()
+            .Where(token => token.Id == tokenId && token.ConsumedAt == null)
+            .ExecuteUpdateAsync(setters => setters.SetProperty(token => token.ConsumedAt, consumedAt), cancellationToken);
+
+    async Task<int> IInvitationTokenStore.DeleteExpiredAsync(DateTimeOffset expiredBefore, CancellationToken cancellationToken) =>
+        await context.Set<ToamaisutaaInvitationToken>()
             .Where(token => token.ExpiresAt <= expiredBefore)
             .ExecuteDeleteAsync(cancellationToken);
 }

@@ -88,6 +88,13 @@ public sealed class ToamaisutaaLocalLoginOptions
 
     public TimeSpan PasswordResetTokenLifetime { get; set; } = TimeSpan.FromHours(1);
 
+    /// <summary>
+    /// Longer than <see cref="PasswordResetTokenLifetime"/> on purpose: a reset link answers "I
+    /// cannot sign in right now", read within minutes; an invitation waits on someone who was not
+    /// expecting it, and a week is nearer how long that email actually sits unread.
+    /// </summary>
+    public TimeSpan InvitationTokenLifetime { get; set; } = TimeSpan.FromDays(7);
+
     /// <summary>How often the opt-in cleanup service deletes expired refresh and reset rows.</summary>
     public TimeSpan TokenCleanupInterval { get; set; } = TimeSpan.FromHours(6);
 

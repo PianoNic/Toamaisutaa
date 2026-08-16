@@ -32,6 +32,8 @@ and all three are checked at startup rather than at the first request.
 | POST | `/auth/password/reset` | 204 or 400 |
 | POST | `/auth/users` | 201, 400, or 409. Authenticated. Only mapped when an `IAdminPasswordIssuedNotifier` is registered |
 | POST | `/auth/users/{userId}/password` | 204 or 400. Authenticated. Only mapped when an `IAdminPasswordIssuedNotifier` is registered |
+| POST | `/auth/invitations` | 201 or 400. Authenticated. Only mapped when an `IInvitationNotifier` is registered |
+| POST | `/auth/invitations/complete` | 201 with a token pair, 400, or 409. Only mapped when an `IInvitationNotifier` is registered |
 
 ::: warning Requests are camelCase, token responses are not
 Request bodies bind to this package's own records, so they are camelCase: `identifier`,
@@ -133,6 +135,26 @@ never a password.
 
 ```json
 { "password": null }
+```
+
+**`POST /auth/invitations`** - authenticated, reserves an account with nothing but an email. Answers
+201 or 400. Never returns the invitation token - see
+[Completing a reserved invitation](#completing-a-reserved-invitation).
+
+```json
+{ "email": "newparent@example.com" }
+```
+
+```json
+{ "userId": "0199...", "email": "newparent@example.com" }
+```
+
+**`POST /auth/invitations/complete`** - anonymous, but only usable with a valid token. Sets the user
+name and password on the one reserved account the token names, and signs in - the same shape
+`/auth/register` answers with. Answers 201, 400, or 409 for a taken user name.
+
+```json
+{ "token": "the token from the notifier", "userName": "newparent", "password": "the one they chose" }
 ```
 
 ### The two error shapes
@@ -330,6 +352,30 @@ are the two methods named above.
 `AdminSetPasswordAsync` needs no current password, because the caller is acting on someone else's
 account - and revokes every local session the account holds, the same as a self-service change.
 
+### Completing a reserved invitation
+
+`CreateInvitationAsync` and `CompleteInvitationAsync` - `POST /auth/invitations` and
+`POST /auth/invitations/complete` - are the other admin-provisioning mode: instead of a finished
+account, an authenticated caller reserves one with nothing but an email. Toamaisutaa creates a
+`ToamaisutaaUser` row with no user name and no `ToamaisutaaPasswordCredential`, and a single-use,
+expiring token. The invited person, not the admin, chooses the user name and password when they
+complete it - so unlike `/auth/users`, no password ever passes through the admin's hands at all.
+
+```csharp
+builder.Services.AddSingleton<IInvitationNotifier, YourInvitationEmailSender>();
+```
+
+Same shape as `IAdminPasswordIssuedNotifier`: optional, resolved lazily, and what maps the two
+endpoints at all. The raw token exists in the clear only for the one call into
+`IInvitationNotifier` - never on the wire, and `POST /auth/invitations` never returns it.
+
+**Not open registration.** A token names exactly one reserved row; completing it can only ever set
+that one account's user name and password, never create an arbitrary new one. A taken user name
+answers 409 and leaves the token unconsumed, so the same person can simply try again.
+
+`InvitationTokenLifetime` defaults to seven days - longer than `PasswordResetTokenLifetime`,
+because an invitation waits on someone who was not expecting it.
+
 ### Revoking sessions means local sessions
 
 A password change or reset revokes every refresh token this package issued. An access token your
@@ -423,6 +469,7 @@ hands you - rather than expecting to construct one.
 | `LocalLogin:MinimumPasswordLength` | `8` | NIST: a length floor, no composition rules |
 | `LocalLogin:MaximumPasswordLength` | `128` | Not a strength rule - a bound on an anonymous endpoint |
 | `LocalLogin:PasswordResetTokenLifetime` | `01:00:00` | Single use |
+| `LocalLogin:InvitationTokenLifetime` | `7.00:00:00` | Single use |
 | `LocalLogin:AllowSelfRegistration` | `false` | When false the endpoint is not mapped at all |
 | `LocalLogin:EndpointPrefix` | `/auth` | |
 | `LocalLogin:RateLimit:Enabled` | `true` | Per caller address, fixed window |

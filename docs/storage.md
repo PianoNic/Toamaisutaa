@@ -84,6 +84,7 @@ those in place of `AddToamaisutaaEntityFrameworkStores`.
 | `IPasswordCredentialStore` | The local credential, and the lockout counters |
 | `IRefreshTokenStore` | Refresh tokens, hashed, grouped into families |
 | `IPasswordResetTokenStore` | Single-use reset tokens, hashed |
+| `IInvitationTokenStore` | Single-use invitation tokens, hashed |
 | `ITwoFactorStore` | One TOTP enrolment per user |
 | `IRecoveryCodeStore` | Hashed single-use recovery codes |
 | `ITwoFactorChallengeStore` | Half-finished sign-ins |
@@ -96,6 +97,12 @@ than failing at the first request:
 builder.Services.AddScoped<IUserStore, YourUserStore>();
 builder.Services.AddScoped<IRefreshTokenStore, YourRefreshTokenStore>();
 ```
+
+::: warning Breaking: `IUserStore` gained `SetUserNameAsync`
+Completing a reserved invitation ([admin-provisioned accounts](/password-login#admin-provisioned-accounts))
+sets a user name on a row that was created with only an email, and no existing method could write
+it. A custom `IUserStore` needs the new member before it compiles against this version.
+:::
 
 Three things the EF implementations do that yours must also do, because `Core` relies on them:
 
@@ -116,6 +123,7 @@ Three things the EF implementations do that yours must also do, because `Core` r
 | `ToamaisutaaPasswordCredentials` | The local credential, one per user at most |
 | `ToamaisutaaRefreshTokens` | Issued refresh tokens, hashed, grouped into families |
 | `ToamaisutaaPasswordResetTokens` | Single-use reset tokens, hashed |
+| `ToamaisutaaInvitationTokens` | Single-use invitation tokens, hashed |
 | `ToamaisutaaUserTwoFactors` | One TOTP enrolment per user, its secret encrypted at rest |
 | `ToamaisutaaRecoveryCodes` | Hashed single-use recovery codes |
 | `ToamaisutaaTwoFactorChallenges` | Half-finished sign-ins waiting on a second factor |

@@ -36,6 +36,8 @@ public class ToamaisutaaDbContext : DbContext
 
     public DbSet<ToamaisutaaPasswordResetToken> PasswordResetTokens => Set<ToamaisutaaPasswordResetToken>();
 
+    public DbSet<ToamaisutaaInvitationToken> InvitationTokens => Set<ToamaisutaaInvitationToken>();
+
     public DbSet<ToamaisutaaUserTwoFactor> UserTwoFactors => Set<ToamaisutaaUserTwoFactor>();
 
     public DbSet<ToamaisutaaRecoveryCode> RecoveryCodes => Set<ToamaisutaaRecoveryCode>();
