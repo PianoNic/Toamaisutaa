@@ -31,18 +31,24 @@ Use OIDC if you can.
 - **A bridge from claims to a user row.** Optional, written only when a claim actually changed, and
   safe when two first requests race.
 - **A local login, for when you have no provider.** PBKDF2, rotating refresh tokens, lockout, reset
-  tokens and TOTP. Off until you ask.
+  tokens, TOTP, and [two ways to get someone into an account](/provisioning-accounts) without open
+  registration. Off until you ask.
 - **Storage on your terms.** Four databases' migrations, your own `DbContext`, or no database at all.
 - **Seams, not assumptions.** Hashing, claims mapping, provisioning, roles and secret protection are
   each one interface you can replace.
 
 ## What it is not
 
-- **Not an identity provider.** It does not implement the authorization-code flow, a consent screen,
-  or client registration. Keycloak and Pocket ID do that well already.
+- **Not an identity-provider *protocol*.** Local login means it owns credentials and issues its own
+  tokens, which is identity-provider *behaviour* - but there is no authorization-code flow, no
+  consent screen, and no client registration, so another application cannot point its OIDC config at
+  Toamaisutaa the way it would at Keycloak or Pocket ID. It is one application's login, not SSO for
+  several.
 - **Not a roles system.** There is no roles table. Roles come from your identity provider's token, or
   from an `IUserRoleProvider` you supply.
-- **Not a user manager.** There is no admin UI, no user list, no invitation flow.
+- **Not a user manager.** There is no admin UI and no user list - creating an account or an
+  invitation for someone else is an API you call
+  ([provisioning accounts](/provisioning-accounts)), not a dashboard you click through.
 
 ## Why not ASP.NET Core Identity?
 
