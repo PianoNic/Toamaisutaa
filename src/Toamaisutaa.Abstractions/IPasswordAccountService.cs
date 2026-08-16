@@ -19,6 +19,23 @@ public interface IPasswordAccountService
     Task<PasswordResetRequestOutcome> RequestPasswordResetAsync(string email, CancellationToken cancellationToken = default);
 
     Task<AccountResult> ResetPasswordAsync(string resetToken, string newPassword, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Creates a local account on someone else's behalf. Never signs anyone in - the caller is
+    /// provisioning an account, not authenticating as its owner. <paramref name="password"/> is
+    /// optional: omit it and Toamaisutaa generates one. Either way, the raw value goes to
+    /// <see cref="IAdminPasswordIssuedNotifier"/> and is never returned from this call.
+    /// </summary>
+    Task<AccountResult> AdminCreateAccountAsync(string userName, string? email, string? password, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Overwrites <paramref name="userId"/>'s password unconditionally - no current-password check,
+    /// because the caller is acting on someone else's account, not their own. Revokes every local
+    /// session the account holds, the same as a self-service change. <paramref name="password"/> is
+    /// optional: omit it and Toamaisutaa generates one. Either way, the raw value goes to
+    /// <see cref="IAdminPasswordIssuedNotifier"/> and is never returned from this call.
+    /// </summary>
+    Task<AccountResult> AdminSetPasswordAsync(Guid userId, string? password, CancellationToken cancellationToken = default);
 }
 
 /// <summary>For the log, not for the caller. Every one of these answers 204.</summary>

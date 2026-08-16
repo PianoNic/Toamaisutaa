@@ -169,3 +169,14 @@ internal sealed class FakePasswordResetNotifier : IPasswordResetNotifier
         return Task.CompletedTask;
     }
 }
+
+internal sealed class FakeAdminPasswordIssuedNotifier : IAdminPasswordIssuedNotifier
+{
+    internal List<(Guid UserId, string Password)> Issued { get; } = [];
+
+    public Task PasswordIssuedAsync(ToamaisutaaUser user, string rawPassword, CancellationToken cancellationToken = default)
+    {
+        Issued.Add((user.Id, rawPassword));
+        return Task.CompletedTask;
+    }
+}

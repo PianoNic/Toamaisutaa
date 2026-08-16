@@ -127,6 +127,33 @@ public static class ToamaisutaaPasswordEndpointExtensions
             .Produces(StatusCodes.Status204NoContent)
             .Produces<ValidationErrorResponse>(StatusCodes.Status400BadRequest);
 
+        // Not mapped at all when no IAdminPasswordIssuedNotifier is registered, the same reasoning
+        // as self-registration above: an application that never provisions accounts for someone else
+        // should not see endpoints that would only ever throw.
+        if (endpoints.ServiceProvider.GetService<IAdminPasswordIssuedNotifier>() is not null)
+        {
+            group.MapPost("/users", CreateUserAsync)
+                .RequireAuthorization()
+                .WithName($"{endpointNamePrefix}ToamaisutaaCreateUser")
+                .WithSummary("Creates a local account on someone else's behalf.")
+                .WithDescription(
+                    "Never signs the caller in as the new account, and never returns a password - the raw value, "
+                    + "typed or generated, goes to IAdminPasswordIssuedNotifier instead.")
+                .Produces<AdminAccountResponse>(StatusCodes.Status201Created)
+                .Produces<ValidationErrorResponse>(StatusCodes.Status400BadRequest)
+                .Produces<ValidationErrorResponse>(StatusCodes.Status409Conflict);
+
+            group.MapPost("/users/{userId:guid}/password", SetUserPasswordAsync)
+                .RequireAuthorization()
+                .WithName($"{endpointNamePrefix}ToamaisutaaSetUserPassword")
+                .WithSummary("Overwrites a user's password, generating one if none is given.")
+                .WithDescription(
+                    "Unconditional - no current password is checked, because the caller is acting on someone "
+                    + "else's account - and revokes every local session the account holds.")
+                .Produces(StatusCodes.Status204NoContent)
+                .Produces<ValidationErrorResponse>(StatusCodes.Status400BadRequest);
+        }
+
         return group;
     }
 
@@ -305,6 +332,41 @@ public static class ToamaisutaaPasswordEndpointExtensions
             return Results.BadRequest();
 
         var result = await accounts.ResetPasswordAsync(request.Token, request.NewPassword, cancellationToken);
+
+        return result.Succeeded
+            ? Results.NoContent()
+            : Results.BadRequest(new ValidationErrorResponse { Errors = result.Errors });
+    }
+
+    private static async Task<IResult> CreateUserAsync(
+        CreateUserRequest request,
+        IPasswordAccountService accounts,
+        CancellationToken cancellationToken)
+    {
+        if (request is null || string.IsNullOrEmpty(request.UserName))
+            return Results.BadRequest();
+
+        var result = await accounts.AdminCreateAccountAsync(request.UserName, request.Email, request.Password, cancellationToken);
+
+        if (!result.Succeeded)
+        {
+            return result.Conflict
+                ? Results.Json(new ValidationErrorResponse { Errors = result.Errors }, statusCode: StatusCodes.Status409Conflict)
+                : Results.BadRequest(new ValidationErrorResponse { Errors = result.Errors });
+        }
+
+        return Results.Json(
+            new AdminAccountResponse { UserId = result.UserId!.Value, UserName = request.UserName, Email = request.Email },
+            statusCode: StatusCodes.Status201Created);
+    }
+
+    private static async Task<IResult> SetUserPasswordAsync(
+        Guid userId,
+        SetUserPasswordRequest? request,
+        IPasswordAccountService accounts,
+        CancellationToken cancellationToken)
+    {
+        var result = await accounts.AdminSetPasswordAsync(userId, request?.Password, cancellationToken);
 
         return result.Succeeded
             ? Results.NoContent()

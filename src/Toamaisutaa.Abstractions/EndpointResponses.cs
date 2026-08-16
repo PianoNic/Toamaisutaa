@@ -157,3 +157,14 @@ public sealed record ValidationErrorResponse
     [JsonPropertyName("errors")]
     public required IReadOnlyList<string> Errors { get; init; }
 }
+
+/// <summary>What <c>POST /auth/users</c> returns. Never a password - see
+/// <see cref="IAdminPasswordIssuedNotifier"/>.</summary>
+public sealed record AdminAccountResponse
+{
+    public required Guid UserId { get; init; }
+
+    public required string UserName { get; init; }
+
+    public string? Email { get; init; }
+}

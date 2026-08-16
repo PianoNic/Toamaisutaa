@@ -1,3 +1,4 @@
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Toamaisutaa.Abstractions;
@@ -16,7 +17,8 @@ internal sealed class PasswordAccountService(
     TrustedDeviceGate trustedDevices,
     IOptions<ToamaisutaaLocalLoginOptions> options,
     TimeProvider timeProvider,
-    ILogger<PasswordAccountService> logger) : IPasswordAccountService
+    ILogger<PasswordAccountService> logger,
+    IServiceProvider serviceProvider) : IPasswordAccountService
 {
     public async Task<AccountResult> RegisterAsync(RegisterRequest request, CancellationToken cancellationToken = default)
     {
@@ -128,6 +130,109 @@ internal sealed class PasswordAccountService(
         await refreshTokens.RevokeAllForUserAsync(userId, "password-changed", now, cancellationToken);
         await trustedDevices.RevokeAllAsync(userId, "password-changed", now, cancellationToken);
         await resetTokens.InvalidateAllForUserAsync(userId, now, cancellationToken);
+
+        return new AccountResult { Succeeded = true, UserId = userId };
+    }
+
+    public async Task<AccountResult> AdminCreateAccountAsync(
+        string userName,
+        string? email,
+        string? password,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(userName))
+            return AccountResult.Failure("Choose a user name.");
+
+        var adminNotifier = ResolveAdminPasswordNotifier();
+        var effectivePassword = password ?? AdminPasswordGenerator.Generate();
+
+        var errors = validator.Validate(effectivePassword);
+        if (errors.Count > 0)
+            return new AccountResult { Succeeded = false, Errors = errors };
+
+        var now = timeProvider.GetUtcNow();
+
+        var user = await users.CreateAsync(
+            new ToamaisutaaUser
+            {
+                UserName = userName.Trim(),
+                Email = string.IsNullOrWhiteSpace(email) ? null : email.Trim(),
+                DisplayName = userName.Trim(),
+                SecurityStamp = SecureTokens.Create(),
+            },
+            cancellationToken);
+
+        try
+        {
+            await credentials.CreateAsync(BuildCredential(user.Id, userName.Trim(), email, effectivePassword, now), cancellationToken);
+        }
+        catch (PasswordIdentifierConflictException)
+        {
+            // Same rule as self-registration: an account that ends up owning nothing accumulates
+            // forever if it is left behind.
+            await users.DeleteAsync(user.Id, cancellationToken);
+            logger.LogInformation("Admin account creation refused: the user name or email is already in use.");
+            return AccountResult.Taken("That user name or email address is already in use.");
+        }
+
+        // The only moment this password exists in the clear outside the hasher. Handed to the
+        // caller's own notifier, never returned from this call and never logged.
+        await adminNotifier.PasswordIssuedAsync(user, effectivePassword, cancellationToken);
+
+        logger.LogInformation("Admin-created local account for user {UserId}.", user.Id);
+
+        return new AccountResult { Succeeded = true, UserId = user.Id };
+    }
+
+    public async Task<AccountResult> AdminSetPasswordAsync(Guid userId, string? password, CancellationToken cancellationToken = default)
+    {
+        var user = await users.FindByIdAsync(userId, cancellationToken);
+        if (user is null)
+            return AccountResult.Failure("That account no longer exists.");
+
+        var adminNotifier = ResolveAdminPasswordNotifier();
+        var effectivePassword = password ?? AdminPasswordGenerator.Generate();
+
+        var errors = validator.Validate(effectivePassword);
+        if (errors.Count > 0)
+            return new AccountResult { Succeeded = false, Errors = errors };
+
+        var now = timeProvider.GetUtcNow();
+        var credential = await credentials.FindByUserIdAsync(userId, cancellationToken);
+
+        if (credential is null)
+        {
+            var identifier = user.UserName ?? user.Email;
+            if (string.IsNullOrWhiteSpace(identifier))
+                return AccountResult.Failure("This account has no user name or email address to sign in with. Set one first.");
+
+            try
+            {
+                await credentials.CreateAsync(BuildCredential(userId, identifier.Trim(), user.Email, effectivePassword, now), cancellationToken);
+            }
+            catch (PasswordIdentifierConflictException)
+            {
+                return AccountResult.Failure("Another local account already uses that user name or email address.");
+            }
+        }
+        else
+        {
+            // Unconditional, unlike the self-service path: there is no current password to prove,
+            // because the caller here is acting on someone else's account, not their own.
+            ApplyNewPassword(credential, effectivePassword, now);
+            await credentials.UpdateAsync(credential, cancellationToken);
+        }
+
+        await adminNotifier.PasswordIssuedAsync(user, effectivePassword, cancellationToken);
+
+        // Same reasoning as a self-service change: whoever is now holding this password should not
+        // find the account's other sessions still alive.
+        await users.UpdateSecurityStampAsync(userId, SecureTokens.Create(), cancellationToken);
+        await refreshTokens.RevokeAllForUserAsync(userId, "admin-password-set", now, cancellationToken);
+        await trustedDevices.RevokeAllAsync(userId, "admin-password-set", now, cancellationToken);
+        await resetTokens.InvalidateAllForUserAsync(userId, now, cancellationToken);
+
+        logger.LogInformation("Admin set the password for user {UserId}; all local sessions revoked.", userId);
 
         return new AccountResult { Succeeded = true, UserId = userId };
     }
@@ -264,4 +369,18 @@ internal sealed class PasswordAccountService(
         // Whoever just proved they own the account should not still be locked out of it.
         LockoutPolicy.RegisterSuccess(credential);
     }
+
+    /// <summary>
+    /// Not a constructor dependency on purpose: <see cref="IAdminPasswordIssuedNotifier"/> is
+    /// optional, unlike <see cref="IPasswordResetNotifier"/>. An application that never provisions
+    /// accounts on someone else's behalf should not have to register one just to use local login at
+    /// all - so the failure, when it happens, happens here, at the one call site that actually needs
+    /// it, rather than at startup for everyone.
+    /// </summary>
+    private IAdminPasswordIssuedNotifier ResolveAdminPasswordNotifier() =>
+        serviceProvider.GetService<IAdminPasswordIssuedNotifier>()
+        ?? throw new InvalidOperationException(
+            $"No {nameof(IAdminPasswordIssuedNotifier)} is registered. An admin-issued password is handed to it "
+            + "and never returned from this call - register one before calling AdminCreateAccountAsync or "
+            + "AdminSetPasswordAsync.");
 }

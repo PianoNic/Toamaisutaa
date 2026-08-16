@@ -30,6 +30,8 @@ and all three are checked at startup rather than at the first request.
 | POST | `/auth/password` | 204. Authenticated. Sets a first password or changes an existing one |
 | POST | `/auth/password/forgot` | 204, always |
 | POST | `/auth/password/reset` | 204 or 400 |
+| POST | `/auth/users` | 201, 400, or 409. Authenticated. Only mapped when an `IAdminPasswordIssuedNotifier` is registered |
+| POST | `/auth/users/{userId}/password` | 204 or 400. Authenticated. Only mapped when an `IAdminPasswordIssuedNotifier` is registered |
 
 ::: warning Requests are camelCase, token responses are not
 Request bodies bind to this package's own records, so they are camelCase: `identifier`,
@@ -110,6 +112,27 @@ identity provider owns alike.
 
 ```json
 { "token": "the token from the notifier", "newPassword": "the new one" }
+```
+
+**`POST /auth/users`** - authenticated, provisions an account on someone else's behalf. `password` is
+optional; omit it and Toamaisutaa generates one. Answers 201, 400, or 409. Never signs the caller in
+as the new account, and the response never carries a password - see
+[Admin-provisioned accounts](#admin-provisioned-accounts).
+
+```json
+{ "userName": "newteacher", "email": "newteacher@example.com", "password": null }
+```
+
+```json
+{ "userId": "0199...", "userName": "newteacher", "email": "newteacher@example.com" }
+```
+
+**`POST /auth/users/{userId}/password`** - authenticated, overwrites `userId`'s password
+unconditionally. `password` is optional; omit it and Toamaisutaa generates one. Answers 204 or 400,
+never a password.
+
+```json
+{ "password": null }
 ```
 
 ### The two error shapes
@@ -281,6 +304,31 @@ builder.Services.AddToamaisutaaPasswordLogin(builder.Configuration);
 Nothing else changes: it is a plain `IPasswordResetNotifier`, so the package still ships no default
 and nothing about local login treats it specially. Host, port, sender address and the reset link
 template are checked at startup the same way the rest of `LocalLogin` is.
+
+### Admin-provisioned accounts
+
+`AdminCreateAccountAsync` and `AdminSetPasswordAsync` - `POST /auth/users` and
+`POST /auth/users/{userId}/password` - let an authenticated caller create or overwrite someone
+else's credentials. Neither ever returns a password, typed or generated: the raw value is handed to
+`IAdminPasswordIssuedNotifier` instead, in process, and never appears on the wire.
+
+```csharp
+builder.Services.AddSingleton<IAdminPasswordIssuedNotifier, YourCredentialSheetGenerator>();
+```
+
+Optional, unlike `IPasswordResetNotifier`: an application that never provisions accounts for someone
+else does not need to register one to use local login at all. Registering it is also what maps the
+two endpoints - neither exists on the wire without it, the same reasoning `/auth/register` uses for
+`AllowSelfRegistration`. Calling either method directly without one registered throws, at the call
+site rather than at startup, because the feature itself is optional.
+
+**Never called for a password a person chose for themselves.** Self-registration, a self-service
+change or reset, and completing a reserved invitation never reach `IAdminPasswordIssuedNotifier` -
+there is no code path from any of them to it. The only two ways a password reaches that interface
+are the two methods named above.
+
+`AdminSetPasswordAsync` needs no current password, because the caller is acting on someone else's
+account - and revokes every local session the account holds, the same as a self-service change.
 
 ### Revoking sessions means local sessions
 
