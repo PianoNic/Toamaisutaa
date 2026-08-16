@@ -9,6 +9,8 @@
 	<Project Path="src/Toamaisutaa.EntityFrameworkCore.Migrations.Sqlite/Toamaisutaa.EntityFrameworkCore.Migrations.Sqlite.csproj" />
 	<Project Path="src/Toamaisutaa.EntityFrameworkCore.Migrations.MySql/Toamaisutaa.EntityFrameworkCore.Migrations.MySql.csproj" />
 	<Project Path="src/Toamaisutaa.EntityFrameworkCore.Migrations.SqlServer/Toamaisutaa.EntityFrameworkCore.Migrations.SqlServer.csproj" />
+	<Project Path="src/Toamaisutaa.Email.Smtp/Toamaisutaa.Email.Smtp.csproj" />
+	<Project Path="src/Toamaisutaa.Email.Smtp.Tests/Toamaisutaa.Email.Smtp.Tests.csproj" />
 	<Project Path="src/Toamaisutaa.OpenIdConnect/Toamaisutaa.OpenIdConnect.csproj" />
 	<Folder Name="/samples/">
 		<Project Path="samples/MinimalApiSample/MinimalApiSample.csproj" />
