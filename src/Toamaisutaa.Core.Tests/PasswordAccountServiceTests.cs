@@ -148,6 +148,22 @@ public class PasswordAccountServiceTests
         await Assert.That(harness.Passwords.ResetTokens.Single().TokenHash).IsNotEqualTo(harness.Notifier.Sent[0].Token);
     }
 
+    // A real notifier can fail for reasons that have nothing to do with the account, and none of
+    // that may reach the caller as anything but 204 - see docs/password-login.md.
+    [Test]
+    public async Task ANotifierFailureDoesNotThrowAndStillIssuedAToken()
+    {
+        var harness = PasswordHarness.Create();
+        await harness.RegisterAsync();
+        harness.Notifier.ThrowOnSend = new InvalidOperationException("the mail server is down");
+
+        var outcome = await harness.Accounts.RequestPasswordResetAsync("nic@example.com");
+
+        await Assert.That(outcome).IsEqualTo(PasswordResetRequestOutcome.NotificationFailed);
+        await Assert.That(harness.Notifier.Sent).IsEmpty();
+        await Assert.That(harness.Passwords.ResetTokens.Count).IsEqualTo(1);
+    }
+
     [Test]
     public async Task AnUnknownAddressIsSilent()
     {

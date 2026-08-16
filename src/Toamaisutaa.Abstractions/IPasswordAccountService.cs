@@ -30,6 +30,10 @@ public enum PasswordResetRequestOutcome
     /// <summary>The account exists but is owned by an identity provider, so there is no password
     /// here to reset. Grep for this when someone reports that no mail arrived.</summary>
     NoLocalCredential,
+
+    /// <summary>The token was issued and stored, but <see cref="IPasswordResetNotifier"/> threw.
+    /// Grep for this when someone reports that no mail arrived and the account is local.</summary>
+    NotificationFailed,
 }
 
 public sealed record AccountResult

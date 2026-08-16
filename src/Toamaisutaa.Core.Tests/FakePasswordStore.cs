@@ -156,8 +156,15 @@ internal sealed class FakePasswordResetNotifier : IPasswordResetNotifier
 {
     internal List<(Guid UserId, string Token)> Sent { get; } = [];
 
+    /// <summary>Set to make the next <see cref="SendAsync"/> throw, so a real notifier failure can
+    /// be simulated without a real SMTP server.</summary>
+    internal Exception? ThrowOnSend { get; set; }
+
     public Task SendAsync(ToamaisutaaUser user, string resetToken, CancellationToken cancellationToken = default)
     {
+        if (ThrowOnSend is not null)
+            throw ThrowOnSend;
+
         Sent.Add((user.Id, resetToken));
         return Task.CompletedTask;
     }

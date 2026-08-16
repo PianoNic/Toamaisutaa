@@ -62,10 +62,13 @@ internal sealed class TestApp : IAsyncDisposable
     /// produces, so leaving it on made every stale-stamp assertion below pass with the filter
     /// deleted. Mutation-tested, and it was masking the thing it was meant to check.
     /// </param>
+    /// <param name="configureServices">Overrides a registration after the package's own - e.g.
+    /// swapping in a notifier that throws, to prove a dependency failing does not become a 500.</param>
     public static async Task<TestApp> StartAsync(
         Action<IEndpointRouteBuilder>? mapExtra = null,
         Action<Dictionary<string, string?>>? configure = null,
-        bool handleStaleStampGlobally = false)
+        bool handleStaleStampGlobally = false,
+        Action<IServiceCollection>? configureServices = null)
     {
         var settings = new Dictionary<string, string?>
         {
@@ -104,6 +107,8 @@ internal sealed class TestApp : IAsyncDisposable
         builder.Services.AddToamaisutaaTwoFactor(builder.Configuration);
         builder.Services.AddToamaisutaaTrustedDevices(builder.Configuration);
         builder.Services.AddSingleton<IPasswordResetNotifier, SilentResetNotifier>();
+
+        configureServices?.Invoke(builder.Services);
 
         if (handleStaleStampGlobally)
         {

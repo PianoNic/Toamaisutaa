@@ -261,9 +261,10 @@ deliberately not in this package. Registration is off by default; turning it on 
 ### Password reset delivery is yours
 
 `IPasswordResetNotifier` is required and has no default implementation - startup fails without one.
-Requesting a reset always answers 204, for an unknown address and for an account owned by an
-identity provider alike. The log says which, and that line is the only way anyone diagnoses "no
-email ever arrived".
+Requesting a reset always answers 204, for an unknown address, for an account owned by an identity
+provider, and for a notifier that threw alike. The log says which, and that line is the only way
+anyone diagnoses "no email ever arrived" - including when the reason is your notifier failing, not
+the account.
 
 Writing your own is one method. If SMTP is enough, `Toamaisutaa.Email.Smtp` is an opt-in package
 that supplies one instead:
