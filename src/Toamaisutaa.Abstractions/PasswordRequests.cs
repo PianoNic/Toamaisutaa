@@ -20,3 +20,11 @@ public sealed record ChangePasswordRequest(string? CurrentPassword, string NewPa
 public sealed record ForgotPasswordRequest(string Email);
 
 public sealed record ResetPasswordRequest(string Token, string NewPassword);
+
+/// <summary><see cref="Password"/> is optional - omit it and Toamaisutaa generates one, handed to
+/// <see cref="IAdminPasswordIssuedNotifier"/> rather than returned from the endpoint.</summary>
+public sealed record CreateUserRequest(string UserName, string? Email, string? Password);
+
+/// <summary><see cref="Password"/> is optional - omit it and Toamaisutaa generates one, handed to
+/// <see cref="IAdminPasswordIssuedNotifier"/> rather than returned from the endpoint.</summary>
+public sealed record SetUserPasswordRequest(string? Password);

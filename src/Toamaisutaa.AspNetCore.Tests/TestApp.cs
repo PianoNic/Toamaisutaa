@@ -38,15 +38,27 @@ internal sealed class TestApp : IAsyncDisposable
     private readonly WebApplication _app;
     private readonly SqliteConnection _connection;
 
-    private TestApp(WebApplication app, SqliteConnection connection, HttpClient client, MutableTimeProvider time)
+    private TestApp(
+        WebApplication app,
+        SqliteConnection connection,
+        HttpClient client,
+        MutableTimeProvider time,
+        List<(Guid UserId, string Password)> issuedPasswords)
     {
         _app = app;
         _connection = connection;
         Client = client;
         Time = time;
+        IssuedPasswords = issuedPasswords;
     }
 
     public HttpClient Client { get; }
+
+    /// <summary>
+    /// What <c>IAdminPasswordIssuedNotifier</c> was handed - the only place a password an admin
+    /// endpoint issued can be observed, since it is never in an HTTP response.
+    /// </summary>
+    public List<(Guid UserId, string Password)> IssuedPasswords { get; }
 
     /// <summary>
     /// Advance it to cross a TOTP step. Anchored at the real clock and never moved far, because the
@@ -64,11 +76,16 @@ internal sealed class TestApp : IAsyncDisposable
     /// </param>
     /// <param name="configureServices">Overrides a registration after the package's own - e.g.
     /// swapping in a notifier that throws, to prove a dependency failing does not become a 500.</param>
+    /// <param name="includeAdminPasswordNotifier">
+    /// On by default, so <c>/auth/users</c> and <c>/auth/users/{userId}/password</c> are mapped and
+    /// most tests can use them. Off to prove they are not mapped at all without one.
+    /// </param>
     public static async Task<TestApp> StartAsync(
         Action<IEndpointRouteBuilder>? mapExtra = null,
         Action<Dictionary<string, string?>>? configure = null,
         bool handleStaleStampGlobally = false,
-        Action<IServiceCollection>? configureServices = null)
+        Action<IServiceCollection>? configureServices = null,
+        bool includeAdminPasswordNotifier = true)
     {
         var settings = new Dictionary<string, string?>
         {
@@ -108,6 +125,11 @@ internal sealed class TestApp : IAsyncDisposable
         builder.Services.AddToamaisutaaTrustedDevices(builder.Configuration);
         builder.Services.AddSingleton<IPasswordResetNotifier, SilentResetNotifier>();
 
+        var issuedPasswords = new List<(Guid UserId, string Password)>();
+
+        if (includeAdminPasswordNotifier)
+            builder.Services.AddSingleton<IAdminPasswordIssuedNotifier>(new CapturingAdminPasswordIssuedNotifier(issuedPasswords));
+
         configureServices?.Invoke(builder.Services);
 
         if (handleStaleStampGlobally)
@@ -145,7 +167,7 @@ internal sealed class TestApp : IAsyncDisposable
 
         await app.StartAsync();
 
-        return new TestApp(app, connection, app.GetTestClient(), time);
+        return new TestApp(app, connection, app.GetTestClient(), time, issuedPasswords);
     }
 
     /// <summary>
@@ -184,6 +206,15 @@ internal sealed class TestApp : IAsyncDisposable
     {
         public Task SendAsync(ToamaisutaaUser user, string resetToken, CancellationToken cancellationToken = default) =>
             Task.CompletedTask;
+    }
+
+    private sealed class CapturingAdminPasswordIssuedNotifier(List<(Guid UserId, string Password)> issued) : IAdminPasswordIssuedNotifier
+    {
+        public Task PasswordIssuedAsync(ToamaisutaaUser user, string rawPassword, CancellationToken cancellationToken = default)
+        {
+            issued.Add((user.Id, rawPassword));
+            return Task.CompletedTask;
+        }
     }
 
     /// <summary>The handler the docs hand a consumer, verbatim, so the suite exercises it too.</summary>

@@ -15,7 +15,8 @@ internal sealed class PasswordHarness
         ToamaisutaaTwoFactorOptions twoFactorOptions,
         ToamaisutaaTrustedDeviceOptions trustedDeviceOptions,
         bool withTwoFactor,
-        bool withTrustedDevices)
+        bool withTrustedDevices,
+        bool withAdminPasswordNotifier)
     {
         TrustedDeviceOptions = trustedDeviceOptions;
 
@@ -30,6 +31,7 @@ internal sealed class PasswordHarness
         Passwords = new FakePasswordStore();
         Issuer = new FakeAccessTokenIssuer(Clock);
         Notifier = new FakePasswordResetNotifier();
+        AdminPasswordNotifier = new FakeAdminPasswordIssuedNotifier();
         Hasher = new Pbkdf2PasswordHasher(wrapped);
 
         TwoFactorStore = new FakeTwoFactorStore();
@@ -48,6 +50,11 @@ internal sealed class PasswordHarness
             NullLogger<TwoFactorVerifier>.Instance);
 
         var provider = new FakeServiceProvider();
+
+        // Registered by default, so most tests get it for free; the one test about the missing-
+        // notifier failure asks for it to be left out instead.
+        if (withAdminPasswordNotifier)
+            provider.Add<IAdminPasswordIssuedNotifier>(AdminPasswordNotifier);
 
         // Registered only when the test asks for it, so the "password login with no second factor
         // configured" path is exercised by every other test rather than assumed.
@@ -100,7 +107,8 @@ internal sealed class PasswordHarness
             deviceGate,
             wrapped,
             Clock,
-            NullLogger<PasswordAccountService>.Instance);
+            NullLogger<PasswordAccountService>.Instance,
+            provider);
 
         TwoFactor = new TwoFactorService(
             TwoFactorStore,
@@ -130,6 +138,8 @@ internal sealed class PasswordHarness
     internal FakeAccessTokenIssuer Issuer { get; }
 
     internal FakePasswordResetNotifier Notifier { get; }
+
+    internal FakeAdminPasswordIssuedNotifier AdminPasswordNotifier { get; }
 
     internal Pbkdf2PasswordHasher Hasher { get; }
 
@@ -179,7 +189,8 @@ internal sealed class PasswordHarness
         Action<ToamaisutaaTwoFactorOptions>? configureTwoFactor = null,
         Action<ToamaisutaaTrustedDeviceOptions>? configureTrustedDevices = null,
         bool withTwoFactor = false,
-        bool withTrustedDevices = false)
+        bool withTrustedDevices = false,
+        bool withAdminPasswordNotifier = true)
     {
         // Iterations far below the production floor: these tests run many derivations and the floor
         // is a startup check, not a property of the hasher.
@@ -196,7 +207,7 @@ internal sealed class PasswordHarness
         var trustedDevices = new ToamaisutaaTrustedDeviceOptions();
         configureTrustedDevices?.Invoke(trustedDevices);
 
-        return new PasswordHarness(options, twoFactor, trustedDevices, withTwoFactor, withTrustedDevices);
+        return new PasswordHarness(options, twoFactor, trustedDevices, withTwoFactor, withTrustedDevices, withAdminPasswordNotifier);
     }
 
     /// <summary>A registered local account, as self-registration would have produced it.</summary>
