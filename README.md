@@ -116,6 +116,7 @@ traffic - there is no third option that does not cost a read per request.
 | [`Toamaisutaa.EntityFrameworkCore.Migrations.Sqlite`](https://www.nuget.org/packages/Toamaisutaa.EntityFrameworkCore.Migrations.Sqlite) | The SQLite migration set |
 | [`Toamaisutaa.EntityFrameworkCore.Migrations.SqlServer`](https://www.nuget.org/packages/Toamaisutaa.EntityFrameworkCore.Migrations.SqlServer) | The SQL Server migration set |
 | [`Toamaisutaa.EntityFrameworkCore.Migrations.MySql`](https://www.nuget.org/packages/Toamaisutaa.EntityFrameworkCore.Migrations.MySql) | The MySQL migration set |
+| [`Toamaisutaa.Email.Smtp`](https://www.nuget.org/packages/Toamaisutaa.Email.Smtp) | Opt-in SMTP `IPasswordResetNotifier`, for local login |
 
 ## Documentation
 

@@ -37,6 +37,9 @@ jobs:
       - name: Test the HTTP surface
         run: dotnet run --project src/Toamaisutaa.AspNetCore.Tests/Toamaisutaa.AspNetCore.Tests.csproj --configuration Release --no-build
 
+      - name: Test the SMTP notifier
+        run: dotnet run --project src/Toamaisutaa.Email.Smtp.Tests/Toamaisutaa.Email.Smtp.Tests.csproj --configuration Release --no-build
+
       # Packing on every build is the only thing that catches a broken icon path, a missing licence
       # file or a bad dependency group before a tag does. Per-project rather than per-solution: pack
       # on a solution warns for every project that is deliberately not packable, and that warning

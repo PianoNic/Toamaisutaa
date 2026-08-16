@@ -265,6 +265,22 @@ Requesting a reset always answers 204, for an unknown address and for an account
 identity provider alike. The log says which, and that line is the only way anyone diagnoses "no
 email ever arrived".
 
+Writing your own is one method. If SMTP is enough, `Toamaisutaa.Email.Smtp` is an opt-in package
+that supplies one instead:
+
+```bash
+dotnet add package Toamaisutaa.Email.Smtp
+```
+
+```csharp
+builder.Services.AddToamaisutaaSmtpEmail(builder.Configuration);   // section "Email:Smtp"
+builder.Services.AddToamaisutaaPasswordLogin(builder.Configuration);
+```
+
+Nothing else changes: it is a plain `IPasswordResetNotifier`, so the package still ships no default
+and nothing about local login treats it specially. Host, port, sender address and the reset link
+template are checked at startup the same way the rest of `LocalLogin` is.
+
 ### Revoking sessions means local sessions
 
 A password change or reset revokes every refresh token this package issued. An access token your

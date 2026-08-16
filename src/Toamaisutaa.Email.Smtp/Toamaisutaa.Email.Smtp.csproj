@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <Description>Opt-in SMTP implementation of IPasswordResetNotifier for Toamaisutaa. Nothing else references this package - install it only if you want Toamaisutaa to send the reset email itself instead of you writing a notifier.</Description>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Toamaisutaa.Abstractions\Toamaisutaa.Abstractions.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />
+    <PackageReference Include="Microsoft.Extensions.Hosting.Abstractions" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
+    <PackageReference Include="Microsoft.Extensions.Options" />
+    <PackageReference Include="Microsoft.Extensions.Options.ConfigurationExtensions" />
+    <!-- The one external dependency this package takes on. System.Net.Mail.SmtpClient is legacy -
+         Microsoft's own docs steer new code away from it - and MailKit is the de facto standard
+         replacement: MIT-licensed, actively maintained, ~6.8k GitHub stars. -->
+    <PackageReference Include="MailKit" />
+  </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="Toamaisutaa.Email.Smtp.Tests" />
+  </ItemGroup>
+</Project>
