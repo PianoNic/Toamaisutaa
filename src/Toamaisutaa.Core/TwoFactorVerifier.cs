@@ -15,6 +15,7 @@ internal sealed class TwoFactorVerifier(
     ITotpProvider totp,
     IRecoveryCodeProvider recoveryCodeProvider,
     ISecretProtector protector,
+    ToamaisutaaMetrics metrics,
     IOptions<ToamaisutaaTwoFactorOptions> options,
     TimeProvider timeProvider,
     ILogger<TwoFactorVerifier> logger)
@@ -54,8 +55,11 @@ internal sealed class TwoFactorVerifier(
             if (!totp.TryVerify(secret, code, now, enrolment.LastUsedStep, out var matchedStep))
             {
                 logger.LogWarning("Second factor refused for user {UserId}: the code is wrong, expired or already used.", userId);
+                metrics.TwoFactorVerified(TwoFactorSource.Otp, succeeded: false);
                 return TwoFactorVerification.Failed;
             }
+
+            metrics.TwoFactorVerified(TwoFactorSource.Otp, succeeded: true);
 
             await enrolments.RecordUsedStepAsync(userId, matchedStep, cancellationToken);
 
@@ -89,8 +93,11 @@ internal sealed class TwoFactorVerifier(
         if (stored is null)
         {
             logger.LogWarning("Second factor refused for user {UserId}: that recovery code is unknown or already spent.", userId);
+            metrics.TwoFactorVerified(TwoFactorSource.Recovery, succeeded: false);
             return TwoFactorVerification.Failed;
         }
+
+        metrics.TwoFactorVerified(TwoFactorSource.Recovery, succeeded: true);
 
         await recoveryCodes.MarkConsumedAsync(stored.Id, timeProvider.GetUtcNow(), cancellationToken);
 

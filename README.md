@@ -132,6 +132,7 @@ traffic - there is no third option that does not cost a read per request.
 - [Two-factor authentication](https://docs.toamaisutaa.pianonic.ch/two-factor)
 - [Trusted devices](https://docs.toamaisutaa.pianonic.ch/trusted-devices)
 - [Storage and migrations](https://docs.toamaisutaa.pianonic.ch/storage)
+- [Metrics](https://docs.toamaisutaa.pianonic.ch/metrics)
 - [Developer setup](https://docs.toamaisutaa.pianonic.ch/dev-setup)
 
 ## Get started (development)

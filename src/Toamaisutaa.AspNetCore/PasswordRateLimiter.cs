@@ -2,6 +2,7 @@ using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Options;
 using Toamaisutaa.Abstractions;
+using Toamaisutaa.Core;
 
 namespace Toamaisutaa.AspNetCore;
 
@@ -20,8 +21,9 @@ namespace Toamaisutaa.AspNetCore;
 /// application also calls <c>UseRateLimiter()</c>, and <c>UseRateLimiter</c> leaves no marker in
 /// <c>app.Properties</c> to assert on - so a consumer who forgets it gets unthrottled anonymous
 /// endpoints with nothing to warn them. Owning the limiter means this works because it is
-/// registered, not because someone read the documentation. The cost is losing the framework's
-/// metrics and its configured rejection handling.
+/// registered, not because someone read the documentation. The cost is the framework's configured
+/// rejection handling, and its metrics - which this package publishes itself instead, as
+/// <c>toamaisutaa.rate_limit.rejections</c>.
 /// </para>
 /// </remarks>
 internal sealed class PasswordRateLimiter : IDisposable
@@ -58,14 +60,16 @@ internal sealed class PasswordRateLimiter : IDisposable
 }
 
 /// <summary>Turns a refused lease into 429 without touching any other endpoint's behaviour.</summary>
-internal sealed class PasswordRateLimitFilter(PasswordRateLimiter limiter) : IEndpointFilter
+internal sealed class PasswordRateLimitFilter(PasswordRateLimiter limiter, ToamaisutaaMetrics metrics) : IEndpointFilter
 {
     public async ValueTask<object?> InvokeAsync(EndpointFilterInvocationContext context, EndpointFilterDelegate next)
     {
         using var lease = await limiter.AcquireAsync(context.HttpContext);
 
-        return lease.IsAcquired
-            ? await next(context)
-            : Results.StatusCode(StatusCodes.Status429TooManyRequests);
+        if (lease.IsAcquired)
+            return await next(context);
+
+        metrics.RateLimitRejected();
+        return Results.StatusCode(StatusCodes.Status429TooManyRequests);
     }
 }

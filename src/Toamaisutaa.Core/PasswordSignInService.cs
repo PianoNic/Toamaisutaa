@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Toamaisutaa.Abstractions;
@@ -14,6 +15,7 @@ internal sealed class PasswordSignInService(
     DummyPasswordHash dummy,
     TwoFactorGate twoFactor,
     TrustedDeviceGate trustedDevices,
+    ToamaisutaaMetrics metrics,
     IOptions<ToamaisutaaLocalLoginOptions> options,
     TimeProvider timeProvider,
     ILogger<PasswordSignInService> logger) : IPasswordSignInService
@@ -32,22 +34,24 @@ internal sealed class PasswordSignInService(
         {
             // Pay the same price a real account would, so the clock does not answer what the body
             // will not.
-            dummy.Verify(password);
+            VerifyDummy(password);
             logger.LogInformation("Sign-in refused: no local credential matches the identifier presented.");
-            return Failed(SignInOutcome.UnknownUser);
+            return Refused(SignInOutcome.UnknownUser);
         }
 
         if (LockoutPolicy.IsLockedOut(credential, now))
         {
-            dummy.Verify(password);
+            VerifyDummy(password);
             logger.LogWarning(
                 "Sign-in refused for user {UserId}: locked out until {LockedOutUntil}.",
                 credential.UserId,
                 credential.LockedOutUntil);
-            return Failed(SignInOutcome.LockedOut);
+            return Refused(SignInOutcome.LockedOut);
         }
 
+        var startedVerifying = Stopwatch.GetTimestamp();
         var verification = hasher.Verify(password, credential.PasswordHash);
+        metrics.PasswordVerified(startedVerifying, verification);
 
         if (verification == PasswordVerificationResult.Failed)
         {
@@ -55,13 +59,19 @@ internal sealed class PasswordSignInService(
             credential.UpdatedAt = now;
             await credentials.UpdateAsync(credential, cancellationToken);
 
+            // Asked after the fact rather than inferred from the count, because the policy owns the
+            // threshold and the window reset - and it was not locked a line ago, so a lock now is
+            // this attempt's doing.
+            if (LockoutPolicy.IsLockedOut(credential, now))
+                metrics.LockedOut();
+
             logger.LogWarning(
                 "Sign-in refused for user {UserId}: wrong password. {FailedAttempts} failed attempt(s) in the current window{Locked}.",
                 credential.UserId,
                 credential.FailedAttemptCount,
                 credential.LockedOutUntil is { } until ? $"; locked out until {until:O}" : string.Empty);
 
-            return Failed(SignInOutcome.InvalidPassword);
+            return Refused(SignInOutcome.InvalidPassword);
         }
 
         if (verification == PasswordVerificationResult.SucceededRehashNeeded)
@@ -88,45 +98,61 @@ internal sealed class PasswordSignInService(
         {
             var trust = await trustedDevices.TryRedeemAsync(user, request.DeviceToken, now, cancellationToken);
 
+            // Counted here rather than inside the gate, which has six ways to refuse and no way to
+            // tell "this token is no good" from "nobody presented one".
+            if (!string.IsNullOrWhiteSpace(request.DeviceToken))
+                metrics.TwoFactorVerified(TwoFactorSource.Device, trust.Trusted);
+
             if (!trust.Trusted)
             {
                 var challenge = await twoFactor.IssueChallengeAsync(user.Id, now, cancellationToken);
                 logger.LogInformation("Password accepted for user {UserId}; a second factor is required.", user.Id);
+
+                metrics.SignInCompleted(SignInOutcome.TwoFactorRequired, methods: null);
 
                 return new SignInResult { Outcome = SignInOutcome.TwoFactorRequired, Challenge = challenge };
             }
 
             logger.LogInformation("Sign-in succeeded for user {UserId} with a cached second factor.", user.Id);
 
-            return await IssueAsync(
+            // No otp: nothing one-time was presented. mfa still holds - a second factor was
+            // performed, just not now, which is what toa_2fa_at reports.
+            string[] cached = ["pwd", ToamaisutaaDefaults.MultiFactorMethod];
+
+            var cachedResult = await IssueAsync(
                 user,
                 familyId: null,
                 familyStartedAt: null,
-
-                // No otp: nothing one-time was presented. mfa still holds - a second factor was
-                // performed, just not now, which is what toa_2fa_at reports.
-                methods: ["pwd", ToamaisutaaDefaults.MultiFactorMethod],
+                methods: cached,
                 recoveryCodesRunningLow: false,
                 twoFactorSource: TwoFactorSource.Device,
                 secondFactorAt: trust.SecondFactorAt,
                 trustedDevice: trust.RotatedToken,
                 now,
                 cancellationToken);
+
+            metrics.SignInCompleted(cachedResult.Outcome, cached);
+            return cachedResult;
         }
 
         logger.LogInformation("Sign-in succeeded for user {UserId}.", user.Id);
 
-        return await IssueAsync(
+        string[] passwordOnly = ["pwd"];
+
+        var result = await IssueAsync(
             user,
             familyId: null,
             familyStartedAt: null,
-            methods: ["pwd"],
+            methods: passwordOnly,
             recoveryCodesRunningLow: false,
             twoFactorSource: null,
             secondFactorAt: null,
             trustedDevice: null,
             now,
             cancellationToken);
+
+        metrics.SignInCompleted(result.Outcome, passwordOnly);
+        return result;
     }
 
     public async Task<SignInResult> VerifyTwoFactorAsync(TwoFactorSignInRequest request, CancellationToken cancellationToken = default)
@@ -137,7 +163,7 @@ internal sealed class PasswordSignInService(
         var redemption = await twoFactor.RedeemChallengeAsync(request.ChallengeToken, request.Code, now, cancellationToken);
 
         if (redemption.Outcome != SignInOutcome.Succeeded)
-            return Failed(redemption.Outcome);
+            return Refused(redemption.Outcome);
 
         var user = await users.FindByIdAsync(redemption.UserId, cancellationToken)
             ?? throw new InvalidOperationException($"Challenge points at user {redemption.UserId}, which does not exist.");
@@ -156,19 +182,24 @@ internal sealed class PasswordSignInService(
 
         logger.LogInformation("Sign-in completed for user {UserId} with a second factor.", user.Id);
 
-        return await IssueAsync(
+        string[] methods = redemption.UsedRecoveryCode
+            ? ["pwd", ToamaisutaaDefaults.MultiFactorMethod]
+            : ["pwd", "otp", ToamaisutaaDefaults.MultiFactorMethod];
+
+        var result = await IssueAsync(
             user,
             familyId: null,
             familyStartedAt: null,
-            methods: redemption.UsedRecoveryCode
-                ? ["pwd", ToamaisutaaDefaults.MultiFactorMethod]
-                : ["pwd", "otp", ToamaisutaaDefaults.MultiFactorMethod],
+            methods,
             redemption.RecoveryCodesRunningLow,
             twoFactorSource: redemption.UsedRecoveryCode ? TwoFactorSource.Recovery : TwoFactorSource.Otp,
             secondFactorAt: now,
             trustedDevice: issued,
             now,
             cancellationToken);
+
+        metrics.SignInCompleted(result.Outcome, methods);
+        return result;
     }
 
     public async Task<StepUpChallengeResult> BeginStepUpAsync(StepUpRequest request, CancellationToken cancellationToken = default)
@@ -224,6 +255,9 @@ internal sealed class PasswordSignInService(
                 LockoutPolicy.RegisterFailure(credential, options.Value, now);
                 credential.UpdatedAt = now;
                 await credentials.UpdateAsync(credential, cancellationToken);
+
+                if (LockoutPolicy.IsLockedOut(credential, now))
+                    metrics.LockedOut();
 
                 logger.LogWarning(
                     "Step-up refused for user {UserId}: wrong code. {FailedAttempts} failed attempt(s) in the current window{Locked}.",
@@ -414,6 +448,8 @@ internal sealed class PasswordSignInService(
                 stored.RotatedAt,
                 stored.FamilyId);
 
+            metrics.RefreshTokenReuseDetected();
+
             await refreshTokens.RevokeFamilyAsync(stored.FamilyId, "refresh-token-reuse", now, cancellationToken);
 
             // Explicit, because the stamp cannot carry this one either: bumping it would revoke
@@ -563,4 +599,24 @@ internal sealed class PasswordSignInService(
     }
 
     private static SignInResult Failed(SignInOutcome outcome) => new() { Outcome = outcome };
+
+    /// <summary>
+    /// A sign-in attempt that ends here, counted on the way out. Refresh uses <see cref="Failed"/>
+    /// instead: rotating a token is not somebody trying to sign in, and folding the two together
+    /// would make the attempt rate rise with session length rather than with traffic.
+    /// </summary>
+    private SignInResult Refused(SignInOutcome outcome)
+    {
+        metrics.SignInCompleted(outcome, methods: null);
+        return Failed(outcome);
+    }
+
+    /// <summary>The equalising derivation against the dummy hash, timed like the real one so the
+    /// series can be compared and the equalisation checked rather than assumed.</summary>
+    private void VerifyDummy(string password)
+    {
+        var started = Stopwatch.GetTimestamp();
+        dummy.Verify(password);
+        metrics.PasswordVerified(started, result: null);
+    }
 }

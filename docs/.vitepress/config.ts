@@ -27,6 +27,7 @@ export default defineConfig({
       { text: 'Two-factor', link: '/two-factor' },
       { text: 'Devices', link: '/trusted-devices' },
       { text: 'From a SPA', link: '/spa' },
+      { text: 'Metrics', link: '/metrics' },
       { text: 'Development', link: '/dev-setup' },
     ],
     sidebar: [
@@ -64,6 +65,13 @@ export default defineConfig({
         collapsed: false,
         items: [
           { text: 'Using this from a SPA', link: '/spa' },
+        ],
+      },
+      {
+        text: 'Running it',
+        collapsed: false,
+        items: [
+          { text: 'Metrics', link: '/metrics' },
         ],
       },
       {

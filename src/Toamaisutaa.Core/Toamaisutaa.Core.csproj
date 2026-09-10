@@ -17,6 +17,10 @@
     <InternalsVisibleTo Include="Toamaisutaa.Core.Tests" />
     <InternalsVisibleTo Include="Toamaisutaa.OpenIdConnect" />
     <InternalsVisibleTo Include="Toamaisutaa.AspNetCore" />
+    <!-- For ToamaisutaaMetrics: a metrics assertion has to listen to the host's own meter instance
+         rather than to every meter in the process that shares the name, or two tests running at
+         once count each other's instruments. -->
+    <InternalsVisibleTo Include="Toamaisutaa.AspNetCore.Tests" />
     <!-- For PhcString and the pepper rules: the Argon2 hasher writes the same row format and reads
          the same keys, and a second copy of either would be a second answer to the same question. -->
     <InternalsVisibleTo Include="Toamaisutaa.PasswordHashing.Argon2" />

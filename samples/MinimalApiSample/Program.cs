@@ -1,3 +1,5 @@
+using System.Diagnostics.Metrics;
+using System.Text;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Diagnostics;
 using Microsoft.EntityFrameworkCore;
@@ -59,6 +61,12 @@ builder.Services.AddToamaisutaaTwoFactor(builder.Configuration);
 builder.Services.AddToamaisutaaTrustedDevices(builder.Configuration);
 
 builder.Services.AddToamaisutaaTokenCleanup();
+
+// Nothing switches the metrics on - the meter is always there. This subscribes to it and writes
+// every measurement to the log, which is what an exporter does with somewhere better to put it.
+// Sign in, mistype a password, redeem a recovery code, and watch the counters move. The real wiring
+// is one AddMeter call: see docs/metrics.md.
+builder.Services.AddHostedService<MetricsToTheLog>();
 
 // Freshness, on top of the Toamaisutaa.TwoFactor policy the package registers. A 403 from this is
 // what /auth/2fa/step-up is for.
@@ -195,6 +203,50 @@ internal sealed class StaleSecurityStampHandler : IExceptionHandler
             cancellationToken);
 
         return true;
+    }
+}
+
+/// <summary>
+/// Every measurement the <c>Toamaisutaa</c> meter publishes, read aloud into the log.
+/// </summary>
+/// <remarks>
+/// A stand-in for an exporter, so the sample needs no metrics package to show the instruments
+/// working. A real deployment points OpenTelemetry at the same meter by name and sends this
+/// somewhere it can be graphed.
+/// </remarks>
+internal sealed class MetricsToTheLog(ILogger<MetricsToTheLog> logger) : IHostedService
+{
+    private readonly MeterListener _listener = new();
+
+    public Task StartAsync(CancellationToken cancellationToken)
+    {
+        _listener.InstrumentPublished = (instrument, listener) =>
+        {
+            if (instrument.Meter.Name == ToamaisutaaDefaults.MeterName)
+                listener.EnableMeasurementEvents(instrument);
+        };
+
+        _listener.SetMeasurementEventCallback<long>((instrument, value, tags, _) => Write(instrument, value, tags));
+        _listener.SetMeasurementEventCallback<double>((instrument, value, tags, _) => Write(instrument, value, tags));
+        _listener.Start();
+
+        return Task.CompletedTask;
+    }
+
+    public Task StopAsync(CancellationToken cancellationToken)
+    {
+        _listener.Dispose();
+        return Task.CompletedTask;
+    }
+
+    private void Write(Instrument instrument, double value, ReadOnlySpan<KeyValuePair<string, object?>> tags)
+    {
+        var described = new StringBuilder();
+
+        foreach (var tag in tags)
+            described.Append(described.Length == 0 ? " " : ", ").Append(tag.Key).Append('=').Append(tag.Value);
+
+        logger.LogInformation("{Instrument} {Value}{Tags}", instrument.Name, value, described.ToString());
     }
 }
 

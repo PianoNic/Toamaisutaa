@@ -77,6 +77,10 @@ public static class ToamaisutaaTwoFactorExtensions
         services.TryAddSingleton<IRecoveryCodeProvider, RecoveryCodeProvider>();
         services.TryAddSingleton<ISecretProtector, AesGcmSecretProtector>();
 
+        // Registered here as well as by password login, because the enrolment endpoints verify
+        // second factors whether or not this deployment has local sign-in.
+        services.TryAddSingleton<ToamaisutaaMetrics>();
+
         services.TryAddScoped<TwoFactorVerifier>();
         services.TryAddScoped<TwoFactorGate>();
 
