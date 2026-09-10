@@ -89,6 +89,22 @@ public class MagicLinkTests
         await Assert.That(outcome).IsEqualTo(MagicLinkRequestOutcome.NotificationFailed);
     }
 
+    // A relay that stops answering raises TaskCanceledException on its own timeout, which is not
+    // this request being cancelled and must not escape as one.
+    [Test]
+    public async Task ANotifierThatTimesOutIsReportedRatherThanRaised()
+    {
+        var harness = PasswordHarness.Create();
+        var user = await harness.RegisterAsync();
+        await VerifyEmailAsync(harness, user);
+
+        harness.MagicLinkNotifier.ThrowOnSend = new TaskCanceledException("The request was canceled due to the configured HttpClient.Timeout of 100 seconds elapsing.");
+
+        var outcome = await harness.Accounts.RequestMagicLinkAsync("nic@example.com");
+
+        await Assert.That(outcome).IsEqualTo(MagicLinkRequestOutcome.NotificationFailed);
+    }
+
     [Test]
     public async Task RequestingWithoutTheNotifierRegisteredThrows()
     {

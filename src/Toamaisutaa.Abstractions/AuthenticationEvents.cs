@@ -87,6 +87,27 @@ public sealed record PasswordReset : AuthenticationEvent
     public override string Kind => "password-reset";
 }
 
+/// <summary>
+/// A verification link was redeemed, so the account's login identifier and the address every reset
+/// link and magic link is sent to are now the ones that link named.
+/// </summary>
+/// <remarks>
+/// Both addresses are carried because the old one is the fact that cannot be recovered from the
+/// account afterwards, and an investigation asking when the recovery mailbox moved has this row and
+/// nothing else. <see cref="PreviousEmail"/> equal to <see cref="Email"/> is the first verification
+/// of an address already on file: that changed the account too, because it is what makes a magic
+/// link work.
+/// </remarks>
+public sealed record EmailChanged : AuthenticationEvent
+{
+    public override string Kind => "email-changed";
+
+    /// <summary>Null for an account that had no address on file until this.</summary>
+    public string? PreviousEmail { get; init; }
+
+    public required string Email { get; init; }
+}
+
 /// <summary>An enrolment was confirmed with a working code. Beginning one publishes nothing: until
 /// it is confirmed, nothing about the account has changed.</summary>
 public sealed record TwoFactorEnrolled : AuthenticationEvent

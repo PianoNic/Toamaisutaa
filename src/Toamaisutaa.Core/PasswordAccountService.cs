@@ -1,4 +1,4 @@
-using Microsoft.Extensions.DependencyInjection;
+﻿using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Toamaisutaa.Abstractions;
@@ -355,6 +355,8 @@ internal sealed class PasswordAccountService(
             return AccountResult.Taken("That email address is already in use.");
         }
 
+        var previousEmail = credential.Email;
+
         credential.Email = stored.Email;
         credential.NormalizedEmail = normalized;
         credential.EmailConfirmedAt = now;
@@ -368,6 +370,18 @@ internal sealed class PasswordAccountService(
         // addressing mail to where this account used to be. Nothing else moves: sessions stay alive,
         // because proving an address is not a credential change.
         await users.SetEmailAsync(stored.UserId, stored.Email, cancellationToken);
+
+        // The one account change that moves where a reset link goes, so an audit table gets a row
+        // for it rather than leaving the move to be inferred from the sign-ins that follow it.
+        await events.PublishAsync(
+            new EmailChanged
+            {
+                OccurredAt = now,
+                UserId = stored.UserId,
+                PreviousEmail = previousEmail,
+                Email = stored.Email,
+            },
+            cancellationToken);
 
         logger.LogInformation("Email verified for user {UserId}.", stored.UserId);
 
@@ -445,11 +459,13 @@ internal sealed class PasswordAccountService(
         {
             await magicLinkNotifier.SendAsync(user, raw, cancellationToken);
         }
-        catch (Exception ex) when (ex is not OperationCanceledException)
+        catch (Exception ex) when (ex is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
         {
             // Same reasoning as the reset notifier: an unhandled exception here would answer 500 for
             // a real address and 204 for an unknown one, which is exactly the distinction "always
-            // 204" was meant to erase.
+            // 204" was meant to erase. A relay that stops answering raises TaskCanceledException on
+            // its own timeout, so the filter asks whether this request was cancelled rather than
+            // reading a cancellation type as one.
             logger.LogError(ex, "Magic-link notifier failed for user {UserId}. The token was issued; no email was sent.", credential.UserId);
             return MagicLinkRequestOutcome.NotificationFailed;
         }
@@ -625,13 +641,15 @@ internal sealed class PasswordAccountService(
         {
             await notifier.SendAsync(user, raw, cancellationToken);
         }
-        catch (Exception ex) when (ex is not OperationCanceledException)
+        catch (Exception ex) when (ex is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
         {
             // A real notifier can fail for reasons that have nothing to do with the account: a
-            // provider outage, a rate limit, an expired credential. None of that may reach the
-            // caller as anything but 204 - an unhandled exception here would answer 500 for this
-            // address and 204 for an unknown one, which is exactly the distinction "always 204" was
-            // meant to erase.
+            // provider outage, a rate limit, an expired credential, a mail API that stops answering
+            // until HttpClient gives up on it. None of that may reach the caller as anything but
+            // 204 - an unhandled exception here would answer 500 for this address and 204 for an
+            // unknown one, which is exactly the distinction "always 204" was meant to erase. The
+            // timeout arrives as TaskCanceledException, so only this request's own cancellation is
+            // let through.
             logger.LogError(ex, "Password reset notifier failed for user {UserId}. The token was issued; no email was sent.", credential.UserId);
             return PasswordResetRequestOutcome.NotificationFailed;
         }
