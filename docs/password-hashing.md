@@ -79,6 +79,11 @@ parameters that cannot be repaired afterwards. Salt and output lengths stay
 `LocalLogin:SaltSizeBytes` and `LocalLogin:HashSizeBytes`, and a configured `LocalLogin:Pepper` keeps
 applying.
 
+It refuses the other end as well: `m` above `1048576`, `t` above `64` or `p` above `64`. A stored
+row may not ask this process for more than that, so a value above one of those bounds would be
+written into rows and then refused by the same hasher, and the correct password would come back as
+a wrong one. `LocalLogin:HashSizeBytes` has the same ceiling of `1024` for both hashers.
+
 ### There is no migration, in either direction
 
 Every stored hash is a PHC string naming the algorithm and parameters that produced it:

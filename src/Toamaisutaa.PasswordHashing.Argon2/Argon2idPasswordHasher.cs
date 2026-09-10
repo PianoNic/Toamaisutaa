@@ -51,9 +51,12 @@ public sealed class Argon2idPasswordHasher(
     // A stored row is ours, but a database an attacker can write is a database that can ask this
     // process for a gigabyte of memory and a minute of work per login attempt. Bound what a row may
     // request.
-    private const int MaxMemoryKib = 1024 * 1024;
-    private const int MaxIterations = 64;
-    private const int MaxParallelism = 64;
+    //
+    // Internal because Argon2HashingStartupCheck refuses configured parameters above them: a value
+    // this hasher will write but not read back produces credentials nothing can verify.
+    internal const int MaxMemoryKib = 1024 * 1024;
+    internal const int MaxIterations = 64;
+    internal const int MaxParallelism = 64;
     private const int MaxHashSizeBytes = 1024;
 
     // RFC 9106 floors. Konscious computes a shorter salt or tag without complaint, so nothing but

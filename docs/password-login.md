@@ -322,8 +322,8 @@ hands you - rather than expecting to construct one.
 | `LocalLogin:AccessTokenLifetime` | `00:15:00` | |
 | `LocalLogin:RefreshTokenLifetime` | `14.00:00:00` | |
 | `LocalLogin:RefreshTokenAbsoluteLifetime` | `90.00:00:00` | How long a rotating chain may live |
-| `LocalLogin:Pbkdf2Iterations` | `600000` | Startup floor |
-| `LocalLogin:SaltSizeBytes` / `HashSizeBytes` | `16` / `32` | Startup floor |
+| `LocalLogin:Pbkdf2Iterations` | `600000` | Startup floor; `50000000` is the ceiling a stored row may name |
+| `LocalLogin:SaltSizeBytes` / `HashSizeBytes` | `16` / `32` | Startup floor; `HashSizeBytes` has a ceiling of `1024` |
 | `LocalLogin:Pepper` / `PepperVersion` / `RetiredPeppers` | none / `1` / empty | See [password hashing](/password-hashing#a-pepper-is-available-and-off-by-default) |
 | `LocalLogin:LockoutEnabled` | `true` | |
 | `LocalLogin:MaxFailedAttempts` | `5` | |

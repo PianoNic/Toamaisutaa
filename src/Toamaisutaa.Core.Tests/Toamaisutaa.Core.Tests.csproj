@@ -9,6 +9,9 @@
 
   <ItemGroup>
     <PackageReference Include="TUnit" />
+    <!-- A real service collection for the startup check, which reads one to decide what is
+         registered. Test project only - Core itself needs no more than the abstractions. -->
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" />
   </ItemGroup>
 
   <ItemGroup>

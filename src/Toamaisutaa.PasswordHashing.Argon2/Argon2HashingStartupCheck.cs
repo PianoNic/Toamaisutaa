@@ -11,10 +11,18 @@ namespace Toamaisutaa.PasswordHashing.Argon2;
 /// enough, the same reasoning <c>PasswordLoginStartupCheck</c> uses for local login.
 /// </summary>
 /// <remarks>
+/// <para>
 /// Weak parameters are worse than a missing dependency here, because nothing about them is visible
 /// afterwards: sign-in works, the rows look right, and the only symptom is how fast somebody else
 /// cracks them. They also cannot be repaired in place - every password hashed under them stays that
 /// way until its owner next signs in.
+/// </para>
+/// <para>
+/// The ceilings are the same argument from the other end. <see cref="Argon2idPasswordHasher"/>
+/// bounds what a stored row may ask this process for, so parameters above those bounds write rows
+/// the same hasher then refuses: the account is registered, and the correct password is answered
+/// with a failure that reads exactly like a wrong one.
+/// </para>
 /// </remarks>
 internal sealed class Argon2HashingStartupCheck(
     IServiceCollection services,
@@ -95,9 +103,26 @@ internal sealed class Argon2HashingStartupCheck(
             return;
         }
 
+        if (settings.DegreeOfParallelism > Argon2idPasswordHasher.MaxParallelism)
+        {
+            problems.Add(
+                $"PasswordHashing:Argon2:DegreeOfParallelism is {settings.DegreeOfParallelism}; "
+                + $"{Argon2idPasswordHasher.MaxParallelism} is the highest a stored row may name, so every row written "
+                + "with it would fail to verify.");
+            return;
+        }
+
         if (settings.Iterations < 1)
         {
             problems.Add($"PasswordHashing:Argon2:Iterations is {settings.Iterations}; it has to be at least 1.");
+            return;
+        }
+
+        if (settings.Iterations > Argon2idPasswordHasher.MaxIterations)
+        {
+            problems.Add(
+                $"PasswordHashing:Argon2:Iterations is {settings.Iterations}; {Argon2idPasswordHasher.MaxIterations} is "
+                + "the highest a stored row may name, so every row written with it would fail to verify.");
             return;
         }
 
@@ -106,6 +131,15 @@ internal sealed class Argon2HashingStartupCheck(
             problems.Add(
                 $"PasswordHashing:Argon2:MemorySizeKib is {settings.MemorySizeKib}, which is below the eight blocks per "
                 + $"lane Argon2 needs for DegreeOfParallelism {settings.DegreeOfParallelism}.");
+            return;
+        }
+
+        if (settings.MemorySizeKib > Argon2idPasswordHasher.MaxMemoryKib)
+        {
+            problems.Add(
+                $"PasswordHashing:Argon2:MemorySizeKib is {settings.MemorySizeKib}; "
+                + $"{Argon2idPasswordHasher.MaxMemoryKib} is the highest a stored row may name, so every row written "
+                + "with it would fail to verify.");
             return;
         }
 

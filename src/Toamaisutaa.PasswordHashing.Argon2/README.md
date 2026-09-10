@@ -49,6 +49,10 @@ Startup refuses anything weaker than every OWASP configuration - `m=47104,t=1`, 
 `m=12288,t=3`, `m=9216,t=4`, `m=7168,t=5` - rather than hashing a real password with parameters that
 cannot be repaired afterwards.
 
+It refuses the other end as well: `m` above `1048576`, `t` above `64` or `p` above `64`. Those are
+the bounds on what a stored row may ask this process for, so anything above them would be written
+into rows the same hasher then refuses, and the correct password would come back as a wrong one.
+
 Salt and output lengths come from `LocalLogin:SaltSizeBytes` and `LocalLogin:HashSizeBytes`, shared
 with the PBKDF2 hasher. So does `LocalLogin:Pepper`: a peppered deployment stays peppered, and the
 version marker rides along in the `keyid` field of the stored string.
