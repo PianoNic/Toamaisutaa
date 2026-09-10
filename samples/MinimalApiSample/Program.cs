@@ -38,6 +38,11 @@ builder.Services.AddToamaisutaaCurrentUser();
 // deployment that cannot run an identity provider.
 builder.Services.AddToamaisutaaPasswordLogin(builder.Configuration);
 
+// Refuses passwords the Pwned Passwords corpus has seen, on top of the length floor rather than in
+// place of it. It talks to a third party, so try "password" against /auth/register to watch it work
+// and pull the network cable to watch it let one through with a warning instead.
+builder.Services.AddToamaisutaaHibpPasswordValidation(builder.Configuration);
+
 // TOTP. Enrolment is per user and entirely opt-in here, because TwoFactor:Enforcement is Optional -
 // but anyone who does enrol is challenged on every local sign-in from then on.
 builder.Services.AddToamaisutaaTwoFactor(builder.Configuration);

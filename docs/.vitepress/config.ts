@@ -50,6 +50,7 @@ export default defineConfig({
             collapsed: true,
             items: [
               { text: 'Password hashing', link: '/password-hashing' },
+              { text: 'Breached passwords', link: '/breached-passwords' },
               { text: 'Customizing local login', link: '/customizing-password-login' },
               { text: 'Provisioning accounts', link: '/provisioning-accounts' },
             ],

@@ -10,8 +10,8 @@ the fourth.
 NIST: a length floor and no composition rules, because "one uppercase, one digit, one symbol"
 reliably produces `Password1!` and nothing safer.
 
-If you need something else - a breached-password list, a zxcvbn score, your own wording on the
-message the user sees - register an `IPasswordValidator` and it replaces the default outright:
+If you need something else - a zxcvbn score, a rule about your organisation's name, your own wording
+on the message the user sees - register an `IPasswordValidator` and it replaces the default outright:
 
 ```csharp
 builder.Services.AddSingleton<IPasswordValidator, YourPasswordValidator>();
@@ -19,6 +19,14 @@ builder.Services.AddToamaisutaaPasswordLogin(builder.Configuration);
 ```
 
 The strings it returns reach the caller in the `errors` array, so write them for the person typing.
+
+`Validate` is the only method you have to write. `ValidateAsync` is what the package actually calls,
+and it defaults to `Validate` - implement it instead when the answer needs I/O, and the cancellation
+token is the caller's.
+
+For the breach-list check specifically, there is a package: see
+[breached passwords](/breached-passwords). It wraps whatever validator is registered rather than
+replacing it, so the length rules survive.
 
 ## What goes in the access token is a seam too
 

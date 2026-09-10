@@ -13,6 +13,8 @@
 	<Project Path="src/Toamaisutaa.Email.Smtp.Tests/Toamaisutaa.Email.Smtp.Tests.csproj" />
 	<Project Path="src/Toamaisutaa.OpenApi/Toamaisutaa.OpenApi.csproj" />
 	<Project Path="src/Toamaisutaa.OpenIdConnect/Toamaisutaa.OpenIdConnect.csproj" />
+	<Project Path="src/Toamaisutaa.PasswordValidation.Hibp/Toamaisutaa.PasswordValidation.Hibp.csproj" />
+	<Project Path="src/Toamaisutaa.PasswordValidation.Hibp.Tests/Toamaisutaa.PasswordValidation.Hibp.Tests.csproj" />
 	<Folder Name="/samples/">
 		<Project Path="samples/MinimalApiSample/MinimalApiSample.csproj" />
 	</Folder>

@@ -28,7 +28,7 @@ internal sealed class PasswordAccountService(
         if (string.IsNullOrWhiteSpace(request.UserName))
             return AccountResult.Failure("Choose a user name.");
 
-        var errors = validator.Validate(request.Password);
+        var errors = await validator.ValidateAsync(request.Password, cancellationToken);
         if (errors.Count > 0)
             return new AccountResult { Succeeded = false, Errors = errors };
 
@@ -78,7 +78,7 @@ internal sealed class PasswordAccountService(
         if (user is null)
             return AccountResult.Failure("That account no longer exists.");
 
-        var errors = validator.Validate(newPassword);
+        var errors = await validator.ValidateAsync(newPassword, cancellationToken);
         if (errors.Count > 0)
             return new AccountResult { Succeeded = false, Errors = errors };
 
@@ -147,7 +147,7 @@ internal sealed class PasswordAccountService(
         var adminNotifier = ResolveAdminPasswordNotifier();
         var effectivePassword = password ?? AdminPasswordGenerator.Generate();
 
-        var errors = validator.Validate(effectivePassword);
+        var errors = await validator.ValidateAsync(effectivePassword, cancellationToken);
         if (errors.Count > 0)
             return new AccountResult { Succeeded = false, Errors = errors };
 
@@ -194,7 +194,7 @@ internal sealed class PasswordAccountService(
         var adminNotifier = ResolveAdminPasswordNotifier();
         var effectivePassword = password ?? AdminPasswordGenerator.Generate();
 
-        var errors = validator.Validate(effectivePassword);
+        var errors = await validator.ValidateAsync(effectivePassword, cancellationToken);
         if (errors.Count > 0)
             return new AccountResult { Succeeded = false, Errors = errors };
 
@@ -300,7 +300,7 @@ internal sealed class PasswordAccountService(
             return AccountResult.Failure("That invitation link is no longer valid.");
         }
 
-        var errors = validator.Validate(password);
+        var errors = await validator.ValidateAsync(password, cancellationToken);
         if (errors.Count > 0)
             return new AccountResult { Succeeded = false, Errors = errors };
 
@@ -421,7 +421,7 @@ internal sealed class PasswordAccountService(
             return AccountResult.Failure("That reset link is no longer valid. Request a new one.");
         }
 
-        var errors = validator.Validate(newPassword);
+        var errors = await validator.ValidateAsync(newPassword, cancellationToken);
         if (errors.Count > 0)
             return new AccountResult { Succeeded = false, Errors = errors };
 
