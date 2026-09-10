@@ -95,7 +95,8 @@ public sealed class ToamaisutaaLocalLoginOptions
     /// </summary>
     public TimeSpan InvitationTokenLifetime { get; set; } = TimeSpan.FromDays(7);
 
-    /// <summary>How often the opt-in cleanup service deletes expired refresh and reset rows.</summary>
+    /// <summary>How often the opt-in cleanup service deletes expired refresh, reset and invitation
+    /// rows.</summary>
     public TimeSpan TokenCleanupInterval { get; set; } = TimeSpan.FromHours(6);
 
     // ── Endpoints ──

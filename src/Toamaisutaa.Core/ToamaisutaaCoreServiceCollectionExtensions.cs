@@ -40,9 +40,10 @@ public static class ToamaisutaaCoreServiceCollectionExtensions
     }
 
     /// <summary>
-    /// Runs a periodic sweep of expired refresh and password-reset rows. Opt-in: without it those
-    /// tables only grow, and with it this package writes to the database on a timer, which is not
-    /// something to switch on for someone.
+    /// Runs a periodic sweep of expired refresh, password-reset and invitation rows, plus the
+    /// two-factor challenge and trusted-device rows when those are configured. Opt-in: without it
+    /// those tables only grow, and with it this package writes to the database on a timer, which is
+    /// not something to switch on for someone.
     /// </summary>
     public static IServiceCollection AddToamaisutaaTokenCleanup(this IServiceCollection services)
     {

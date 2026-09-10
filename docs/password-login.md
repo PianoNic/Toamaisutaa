@@ -213,8 +213,10 @@ identity provider issued keeps working until it expires, because we cannot revok
 
 ### Expired tokens accumulate unless you sweep them
 
-`AddToamaisutaaTokenCleanup()` runs a periodic delete. Without it, plan to call
-`IRefreshTokenStore.DeleteExpiredAsync` from your own scheduler.
+`AddToamaisutaaTokenCleanup()` runs a periodic delete over every expiring row this package writes -
+refresh tokens, reset tokens, invitation tokens, and the two-factor challenge and trusted-device
+rows when those are configured. Without it, plan to call `DeleteExpiredAsync` on each of those
+stores from your own scheduler.
 
 ## Refresh tokens
 

@@ -76,4 +76,6 @@ that one account's user name and password, never create an arbitrary new one. A 
 answers 409 and leaves the token unconsumed, so the same person can simply try again.
 
 `InvitationTokenLifetime` defaults to seven days - longer than `PasswordResetTokenLifetime`,
-because an invitation waits on someone who was not expecting it.
+because an invitation waits on someone who was not expecting it. Expired rows are deleted by
+[`AddToamaisutaaTokenCleanup()`](/password-login#expired-tokens-accumulate-unless-you-sweep-them)
+along with the rest.
