@@ -30,7 +30,9 @@ comes back the way any other refused password does - `400` with the message in `
 
 Registering it wraps whatever validator is already there rather than replacing it, so
 `MinimumPasswordLength` and `MaximumPasswordLength` still apply and still say what they said. If you
-registered an `IPasswordValidator` of your own, it wraps yours.
+registered an `IPasswordValidator` of your own, it wraps yours - with the lifetime you registered it
+with. A scoped validator stays scoped, is handed the provider of the scope asking for it, and is
+disposed with that scope, so one that reads a per-request or per-tenant list goes on doing so.
 
 A password the length rules already refused is never looked up. There is nothing to learn about a
 password nobody is going to end up with, and asking would spend a request on every short password
@@ -70,7 +72,10 @@ register or change their password. If the trade is wrong for you, do not turn it
 | `PasswordValidation:Hibp:UserAgent` | `Toamaisutaa` | The range API refuses requests without one. Name your application |
 | `PasswordValidation:Hibp:Message` | the message above | What the person choosing the password is told |
 
-All of them are checked at startup, not at the first password anybody chooses.
+All of them are checked at startup, not at the first password anybody chooses. `ApiBaseAddress` has
+to be an absolute `http` or `https` URI; anything else refuses to start rather than failing open on
+every password. A trailing slash is not required - `https://mirror.internal/pwned` and
+`https://mirror.internal/pwned/` both look up `https://mirror.internal/pwned/range/{prefix}`.
 
 ### Raising the threshold
 

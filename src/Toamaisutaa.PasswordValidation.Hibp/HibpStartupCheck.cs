@@ -15,8 +15,14 @@ internal sealed class HibpStartupCheck(IOptions<ToamaisutaaHibpOptions> options)
         if (settings.BreachThreshold < 1)
             problems.Add($"PasswordValidation:Hibp:BreachThreshold is {settings.BreachThreshold}. It counts appearances in the corpus, so the lowest value that refuses anything real is 1.");
 
-        if (string.IsNullOrWhiteSpace(settings.ApiBaseAddress) || !Uri.TryCreate(settings.ApiBaseAddress, UriKind.Absolute, out _))
-            problems.Add("PasswordValidation:Hibp:ApiBaseAddress is not set or is not an absolute URI.");
+        // An absolute URI is not enough: file: and ftp: parse, and then every lookup fails on a
+        // scheme HttpClient will not send, which fails open and reads as the corpus being down.
+        if (string.IsNullOrWhiteSpace(settings.ApiBaseAddress)
+            || !Uri.TryCreate(settings.ApiBaseAddress, UriKind.Absolute, out var apiBaseAddress)
+            || (apiBaseAddress.Scheme != Uri.UriSchemeHttp && apiBaseAddress.Scheme != Uri.UriSchemeHttps))
+        {
+            problems.Add("PasswordValidation:Hibp:ApiBaseAddress is not set or is not an absolute http or https URI.");
+        }
 
         if (settings.Timeout <= TimeSpan.Zero)
             problems.Add($"PasswordValidation:Hibp:Timeout is {settings.Timeout}, so every lookup would be abandoned before it started.");

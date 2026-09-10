@@ -1,4 +1,4 @@
-using Microsoft.Extensions.DependencyInjection;
+﻿using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Toamaisutaa.Abstractions;
 using Toamaisutaa.Core;
@@ -29,6 +29,25 @@ public class HibpRegistrationTests
 
     private static IPasswordValidator Resolve(IServiceCollection services) =>
         services.BuildServiceProvider().GetRequiredService<IPasswordValidator>();
+
+    private static IServiceCollection ServicesWithAScopedValidator(DisposalLog log)
+    {
+        var services = Services();
+        services.AddSingleton(log);
+        services.AddScoped<ScopedDependency>();
+        services.AddScoped<IPasswordValidator, ScopedInnerValidator>();
+        services.AddToamaisutaaHibpPasswordValidation(_ => { });
+        services.AddSingleton<IBreachedPasswordIndex>(new FakeBreachedPasswordIndex(count: 0));
+
+        return services;
+    }
+
+    private static ScopedDependency Dependency(IServiceScope scope) =>
+        scope.ServiceProvider.GetRequiredService<ScopedDependency>();
+
+    private static async Task<IReadOnlyList<string>> Errors(IServiceScope scope) =>
+        await scope.ServiceProvider.GetRequiredService<IPasswordValidator>()
+            .ValidateAsync("a password long enough to pass");
 
     [Test]
     public async Task WrapsTheLengthRulesWhenAddedAfterThem()
@@ -89,16 +108,61 @@ public class HibpRegistrationTests
         await Assert.That(mine.Seen).HasSingleItem();
     }
 
-    // Leaving the wrapped registration in the container would hand anybody resolving
-    // IPasswordValidator a coin flip over which of the two they get.
+    // Leaving the wrapped registration in the container under its own service type would hand
+    // anybody resolving IPasswordValidator a coin flip over which of the two they get. It stays in
+    // under a private key instead, which is not a registration anybody resolves by accident.
     [Test]
     public async Task LeavesExactlyOneValidatorRegistered()
     {
         var services = Services();
         AddPasswordLoginsValidator(services);
         services.AddToamaisutaaHibpPasswordValidation(_ => { });
+        services.AddSingleton<IBreachedPasswordIndex>(new FakeBreachedPasswordIndex(count: 0));
 
-        await Assert.That(services.Count(descriptor => descriptor.ServiceType == typeof(IPasswordValidator))).IsEqualTo(1);
+        await Assert.That(services.Count(descriptor =>
+            descriptor.ServiceType == typeof(IPasswordValidator) && descriptor.ServiceKey is null)).IsEqualTo(1);
+
+        await Assert.That(services.BuildServiceProvider().GetServices<IPasswordValidator>().ToList()).HasSingleItem();
+    }
+
+    // A validator of somebody's own registered scoped stays scoped. Rebuilding it inside a singleton
+    // factory hands it the root provider, which under scope validation is a 500 on the first
+    // password and without it a scoped dependency captured for the life of the process.
+    [Test]
+    public async Task KeepsAScopedValidatorOfYourOwnScoped()
+    {
+        var services = ServicesWithAScopedValidator(new DisposalLog());
+
+        using var provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
+        using var first = provider.CreateScope();
+        using var second = provider.CreateScope();
+
+        await Assert.That(await Errors(first)).IsEquivalentTo(new[] { Dependency(first).Id });
+        await Assert.That(await Errors(second)).IsEquivalentTo(new[] { Dependency(second).Id });
+    }
+
+    // ActivatorUtilities builds an instance the container knows nothing about, so an IDisposable
+    // validator of somebody's own was never disposed. The container does it once the descriptor is
+    // the one building it.
+    [Test]
+    public async Task DisposesAScopedValidatorOfYourOwnWithItsScope()
+    {
+        var log = new DisposalLog();
+
+        using var provider = ServicesWithAScopedValidator(log)
+            .BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
+
+        string id;
+
+        using (var scope = provider.CreateScope())
+        {
+            id = Dependency(scope).Id;
+            await Errors(scope);
+
+            await Assert.That(log.Disposed).IsEmpty();
+        }
+
+        await Assert.That(log.Disposed).IsEquivalentTo(new[] { id });
     }
 
     [Test]

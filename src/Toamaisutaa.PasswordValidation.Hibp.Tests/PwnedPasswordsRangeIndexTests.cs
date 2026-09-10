@@ -132,6 +132,22 @@ public class PwnedPasswordsRangeIndexTests
             .IsEqualTo($"https://mirror.internal/pwned/range/{Prefix}");
     }
 
+    // Resolving "range/{prefix}" against a base address replaces its last segment, so the mirror
+    // written down without a trailing slash was asked for a path nobody hosts. The 404 fails open,
+    // which is breach checking that is off while looking on.
+    [Test]
+    [Arguments("https://mirror.internal/pwned", "https://mirror.internal/pwned/range/")]
+    [Arguments("https://mirror.internal/hibp/v1", "https://mirror.internal/hibp/v1/range/")]
+    [Arguments("https://mirror.internal", "https://mirror.internal/range/")]
+    public async Task KeepsEverySegmentOfABaseAddressThatDoesNotEndInASlash(string address, string expected)
+    {
+        var handler = RecordingHandler.Answering(Range($"{Suffix}:1"));
+
+        await Index(handler, options => options.ApiBaseAddress = address).CountAsync(Password);
+
+        await Assert.That(handler.Requests.Single().RequestUri!.ToString()).IsEqualTo(expected + Prefix);
+    }
+
     [Test]
     public async Task ResolvesTheNamedClientSoAHandlerCanBePutInFrontOfIt()
     {
