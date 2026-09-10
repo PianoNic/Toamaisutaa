@@ -36,10 +36,23 @@ The first version of `Refuses_a_token_whose_key_id_names_no_configured_key` caug
 run - a token signed by the configured key under a `kid` naming nothing was accepted, because the
 fallback put that key back in front of it.
 
-`TryAllIssuerSigningKeys = false` makes the resolver authoritative. Nothing the identity provider
-path relied on is lost, because the non-local branch hands back every key that is not ours rather
-than filtering by `kid` - the fallback was doing nothing for it that the resolver does not already
-do.
+`TryAllIssuerSigningKeys = false` makes the resolver authoritative.
+
+**The paragraph that stood here was wrong, and the correction is issue #95.** It claimed nothing the
+identity provider path relied on was lost, because the non-local branch hands that path's keys back
+explicitly. It does not: `IssuerSigningKeyResolver` is handed only `TokenValidationParameters`, and
+when the handler builds a configuration manager for an `Authority` it never merges the discovery keys
+into `IssuerSigningKeys` - it passes them to the validator as the `BaseConfiguration` instead. So the
+non-local branch was filtering an empty collection, and the fallback the paragraph called redundant
+was the only thing putting the identity provider's keys in front of its own tokens. Every one of them
+was refused with "The signature key was not found" the moment password login was also registered.
+
+The resolver is `IssuerSigningKeyResolverUsingConfiguration` now, which is handed the configuration
+as well, and the non-local branch reads both. `TryAllIssuerSigningKeys` stays false, so the two goals
+are no longer in conflict. The suite had no test presenting an identity-provider-issued token at all,
+which is why a change to the shared bearer pipeline could break the package's primary path and stay
+green; `IdentityProviderTokenHttpTests` stands a `StaticConfigurationManager` up as a stand-in issuer
+and covers it in both directions.
 
 ## The JWKS endpoint is not mapped under HS256
 

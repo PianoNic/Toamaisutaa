@@ -36,7 +36,8 @@ first or not - validates.
 
 RSA and NIST EC keys are accepted, and the algorithm follows from the key rather than being
 configured: RSA is `RS256`, and P-256, P-384 and P-521 are `ES256`, `ES384` and `ES512`. RSA keys
-below 2048 bits are refused at startup.
+below 2048 bits are refused at startup, and so is an EC key on any other curve - `secp256k1` is a
+256-bit key that imports exactly like a P-256 one, and the startup message names the curve it found.
 
 A `Jwk` entry may carry its own `kid`, in which case `Kid` can be left out. Generating a key with
 OpenSSL:
@@ -49,6 +50,9 @@ The private key is a credential of exactly the weight of the symmetric one, so i
 environment or a secret store - never in a settings file you commit. Everything the startup check
 knows about the symmetric key it also knows about these: a key that does not parse, a duplicated
 `kid` or a first entry that cannot sign refuses the host rather than failing on the first sign-in.
+That holds in a process that only validates tokens as well - if you bind `LocalLogin` in a service
+that calls `AddToamaisutaaBearer` and nothing else, a key it cannot read still stops the host rather
+than turning into a 401 on every token it was configured to accept.
 
 ## The JWKS endpoint
 

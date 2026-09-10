@@ -43,7 +43,8 @@ internal sealed class LocalSigningKeyMaterial(string keyId, string algorithm, As
 /// It never throws. A bad entry becomes a line in <see cref="Problems"/>, which
 /// <see cref="PasswordLoginStartupCheck"/> reports next to every other misconfiguration in one
 /// message - a first exception would hide the rest, and a key list is exactly where two mistakes at
-/// once is normal.
+/// once is normal. <see cref="LocalSigningKeyStartupCheck"/> reports the same list in a process that
+/// only validates tokens, where that check is not registered.
 /// </para>
 /// </remarks>
 internal sealed class LocalSigningKeyRing : IDisposable
@@ -160,7 +161,8 @@ internal sealed class LocalSigningKeyRing : IDisposable
         if (Algorithm(key) is not { } algorithm)
         {
             _problems.Add(
-                $"{label} is an EC key on a curve no JWS algorithm names. Use P-256, P-384 or P-521, or an RSA key.");
+                $"{label} is an EC key on the curve '{CurveName(key)}', which no JWS algorithm names. Use P-256, "
+                + "P-384 or P-521, or an RSA key.");
             key.Dispose();
             return;
         }
@@ -343,9 +345,10 @@ internal sealed class LocalSigningKeyRing : IDisposable
         KeyType = "EC",
         KeyId = material.KeyId,
         Algorithm = material.Algorithm,
-        // Named off the algorithm rather than the exported curve, because a named curve exports as
-        // an OID and the two are one-to-one here. ES512 is P-521, which is why this is a map and
-        // not string arithmetic on the algorithm name.
+        // Named off the algorithm rather than the exported curve, and the two are one-to-one only
+        // because Algorithm refuses every key that is not on one of these three curves - which it
+        // did not always do. ES512 is P-521, which is why this is a map and not string arithmetic
+        // on the algorithm name.
         Curve = material.Algorithm switch
         {
             "ES256" => "P-256",
@@ -359,11 +362,48 @@ internal sealed class LocalSigningKeyRing : IDisposable
     private static string? Algorithm(AsymmetricAlgorithm key) => key switch
     {
         RSA => "RS256",
-        ECDsa { KeySize: 256 } => "ES256",
-        ECDsa { KeySize: 384 } => "ES384",
-        ECDsa { KeySize: 521 } => "ES512",
+        ECDsa ecdsa => EcAlgorithm(ecdsa),
         _ => null,
     };
+
+    /// <summary>
+    /// The JWS algorithm an EC key implies, read off the curve it is on rather than off its size.
+    /// </summary>
+    /// <remarks>
+    /// Size is not enough. secp256k1 is 256 bits, imports from a PEM exactly as readily as P-256,
+    /// and is one letter away from the documented <c>prime256v1</c>; naming it ES256 would publish
+    /// its point in the JWKS document under <c>"crv": "P-256"</c>, which is a point on a curve no
+    /// reader of that document is on. The JWK path has always whitelisted the three curves - this is
+    /// the same whitelist for the PEM path.
+    /// </remarks>
+    private static string? EcAlgorithm(ECDsa key) => Curve(key)?.Oid?.Value switch
+    {
+        "1.2.840.10045.3.1.7" => "ES256",
+        "1.3.132.0.34" => "ES384",
+        "1.3.132.0.35" => "ES512",
+        _ => null,
+    };
+
+    /// <summary>The curve a key is on, or null when it cannot be read - which is itself an answer,
+    /// because a curve nothing can name is a curve no JWS algorithm names either.</summary>
+    private static ECCurve? Curve(ECDsa key)
+    {
+        try
+        {
+            return key.ExportParameters(includePrivateParameters: false).Curve;
+        }
+        catch (CryptographicException)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>How to refer to the curve in the startup message. Whoever reads that line has a key
+    /// file and needs to know which one of them is the wrong one.</summary>
+    private static string CurveName(AsymmetricAlgorithm key) =>
+        key is ECDsa ecdsa && Curve(ecdsa)?.Oid is { } oid
+            ? oid.FriendlyName ?? oid.Value ?? "(unnamed)"
+            : "(unreadable)";
 
     /// <summary>
     /// Whether the entry holds a private half. Asked by exporting it, because there is no other way

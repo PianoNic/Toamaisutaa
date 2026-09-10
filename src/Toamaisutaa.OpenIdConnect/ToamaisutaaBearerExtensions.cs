@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
 using Toamaisutaa.Abstractions;
 using Toamaisutaa.Core;
@@ -69,6 +70,14 @@ public static class ToamaisutaaBearerExtensions
         // still has to validate the ones another instance issued.
         services.TryAddSingleton<LocalSigningKeyRing>();
         services.TryAddSingleton<LocalTokenKeys>();
+
+        // The ring never throws on a bad entry - it collects one into Problems, and in a process
+        // that registered password login PasswordLoginStartupCheck is what prints them. In the
+        // resource server above, nothing did: the entry was dropped, the host started clean, and
+        // every token it was meant to accept came back 401. This check stands down when the other
+        // one is present, so the same line is never printed twice.
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IHostedService, LocalSigningKeyStartupCheck>(provider =>
+            new LocalSigningKeyStartupCheck(services, provider.GetRequiredService<LocalSigningKeyRing>())));
 
         // Registered here because signing a token needs a JWT library and Core carries none. It
         // does nothing until password login configures a signing key.
