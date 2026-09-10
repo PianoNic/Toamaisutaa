@@ -13,6 +13,13 @@ No new dependency. RFC 6238 is a keyed hash, a big-endian counter and a modulo, 
 the base class library, so there is no TOTP package here and no QR code renderer either - enrolment
 hands you an `otpauth://` URI and your application draws it.
 
+::: tip Passkeys are the other way to do this
+A [passkey](/passkeys) proves possession and verifies the person in one browser prompt, which is two
+factors without a password and without a code after it. TOTP is what to reach for when a passkey is
+not an option - an old device, a shared account, a user who will not enrol one - and the two live
+side by side.
+:::
+
 It needs somewhere to actually apply: either `AddToamaisutaaPasswordLogin`, which gives it the
 challenge step, or `AddToamaisutaaTwoFactorClaims`, which lets a policy see an enrolment on an
 identity provider's token. Registering neither is checked at startup, because otherwise users could

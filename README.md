@@ -120,6 +120,7 @@ traffic - there is no third option that does not cost a read per request.
 | [`Toamaisutaa.OpenApi`](https://www.nuget.org/packages/Toamaisutaa.OpenApi) | Opt-in `AddToamaisutaaOpenApi`, the security schemes for your OpenAPI document |
 | [`Toamaisutaa.PasswordHashing.Argon2`](https://www.nuget.org/packages/Toamaisutaa.PasswordHashing.Argon2) | Opt-in Argon2id hashing, in place of the in-box PBKDF2 |
 | [`Toamaisutaa.PasswordValidation.Hibp`](https://www.nuget.org/packages/Toamaisutaa.PasswordValidation.Hibp) | Opt-in Have I Been Pwned breach check, on top of the length rules |
+| [`Toamaisutaa.Passkeys`](https://www.nuget.org/packages/Toamaisutaa.Passkeys) | Opt-in passkeys: WebAuthn registration, and passwordless sign-in that is two factors on its own |
 
 ## Documentation
 

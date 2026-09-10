@@ -13,6 +13,7 @@ internal sealed class PasswordSignInService(
     IPasswordHasher hasher,
     IAccessTokenIssuer accessTokens,
     IUserRoleProvider roles,
+    LocalSessionIssuer sessions,
     DummyPasswordHash dummy,
     TwoFactorGate twoFactor,
     TrustedDeviceGate trustedDevices,
@@ -722,6 +723,14 @@ internal sealed class PasswordSignInService(
             cancellationToken);
     }
 
+    /// <summary>
+    /// Mints the session and puts the password path's own extras on the result.
+    /// </summary>
+    /// <remarks>
+    /// The minting itself moved to <see cref="LocalSessionIssuer"/>, because a passkey assertion
+    /// ends in the same token pair and lives in a package Core cannot reference. What stays here is
+    /// what only a password sign-in has: a recovery-code warning, and a device token to hand back.
+    /// </remarks>
     private async Task<SignInResult> IssueAsync(
         ToamaisutaaUser user,
         Guid? familyId,
@@ -736,83 +745,27 @@ internal sealed class PasswordSignInService(
         DateTimeOffset now,
         CancellationToken cancellationToken)
     {
-        var userRoles = await roles.GetRolesAsync(user, cancellationToken);
-
-        // Computed before the token rather than inside the row, because both have to carry the same
-        // value: toa_sid is how step-up finds the row this token belongs to, and a token naming a
-        // family that does not exist can elevate nothing.
-        var family = familyId ?? Guid.CreateVersion7(now);
-
-        var access = await accessTokens.IssueAsync(
-            new AccessTokenRequest
+        var issued = await sessions.IssueAsync(
+            new LocalSessionRequest
             {
                 User = user,
-                Roles = userRoles,
-                AuthenticationMethods = methods,
-                TwoFactorEnrolmentRequired = await twoFactor.MustEnrolAsync(user.Id, cancellationToken),
+                FamilyId = familyId,
+                FamilyStartedAt = familyStartedAt,
+                Methods = methods,
                 TwoFactorSource = twoFactorSource,
                 SecondFactorAt = secondFactorAt,
-                SessionId = family,
+                NewSignIn = newSignIn,
+                Client = client,
+                Now = now,
             },
             cancellationToken);
-
-        var raw = SecureTokens.Create();
-
-        await refreshTokens.CreateAsync(
-            new ToamaisutaaRefreshToken
-            {
-                Id = Guid.CreateVersion7(now),
-                UserId = user.Id,
-                FamilyId = family,
-                TokenHash = SecureTokens.HashToken(raw),
-                CreatedAt = now,
-                ExpiresAt = now + options.Value.RefreshTokenLifetime,
-                FamilyStartedAt = familyStartedAt ?? now,
-                SecurityStamp = user.SecurityStamp,
-
-                // Carried on the family so a rotation does not quietly downgrade a session that was
-                // established with a second factor into one that only ever proved a password.
-                AuthenticationMethods = string.Join(' ', methods),
-                TwoFactorSource = twoFactorSource,
-                SecondFactorAt = secondFactorAt,
-
-                UserAgent = client.UserAgent,
-                IpAddress = client.IpAddress,
-
-                // The live row of a family is always the newest one, so this is the family's own
-                // last activity without anything ever writing over a row in place.
-                LastUsedAt = now,
-            },
-            cancellationToken);
-
-        // A refresh lands here too, and it is not a sign-in: it proved nothing, it renewed
-        // something already proved. An audit table that counted rotations as sign-ins would report
-        // one every AccessTokenLifetime for anyone who left a tab open.
-        if (newSignIn)
-        {
-            await events.PublishAsync(
-                new SignInSucceeded
-                {
-                    OccurredAt = now,
-                    UserId = user.Id,
-                    AuthenticationMethods = methods,
-                    SessionId = family,
-                    TwoFactorSource = twoFactorSource,
-                },
-                cancellationToken);
-        }
 
         return new SignInResult
         {
             Outcome = SignInOutcome.Succeeded,
             RecoveryCodesRunningLow = recoveryCodesRunningLow,
             TrustedDevice = trustedDevice,
-            Tokens = new TokenPair
-            {
-                AccessToken = access.Value,
-                RefreshToken = raw,
-                ExpiresIn = (int)Math.Max(0, (access.ExpiresAt - now).TotalSeconds),
-            },
+            Tokens = issued.Tokens,
         };
     }
 

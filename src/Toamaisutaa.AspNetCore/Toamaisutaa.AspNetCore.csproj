@@ -16,4 +16,10 @@
   <ItemGroup>
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
   </ItemGroup>
+  <ItemGroup>
+    <!-- For the endpoint filters and the token response body. The passkey endpoints have to behave
+         like the ones next to them - the same stale-stamp filter, the same limiter, the same body
+         as /auth/login - and a second copy of any of those would be a second answer. -->
+    <InternalsVisibleTo Include="Toamaisutaa.Passkeys" />
+  </ItemGroup>
 </Project>

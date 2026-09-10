@@ -39,6 +39,10 @@
          /auth/password, and a validator that reaches the wire correctly in a unit test is exactly
          the shape of bug this suite exists for. -->
     <ProjectReference Include="..\Toamaisutaa.PasswordValidation.Hibp\Toamaisutaa.PasswordValidation.Hibp.csproj" />
+    <!-- An opt-in package, exercised here because a WebAuthn ceremony cannot be checked anywhere
+         else: there is no browser and no physical key, and a service-level test of one would be the
+         package agreeing with itself about bytes it produced. -->
+    <ProjectReference Include="..\Toamaisutaa.Passkeys\Toamaisutaa.Passkeys.csproj" />
   </ItemGroup>
 
 </Project>

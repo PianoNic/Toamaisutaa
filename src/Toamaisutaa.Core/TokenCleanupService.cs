@@ -8,7 +8,8 @@ namespace Toamaisutaa.Core;
 
 /// <summary>
 /// Deletes every expiring row this package writes - refresh, reset, invitation, email verification
-/// and magic-link tokens, two-factor challenges and trusted devices - once it is past its expiry. Opt-in, because a
+/// and magic-link tokens, two-factor and passkey challenges, and trusted devices - once it is past
+/// its expiry. Opt-in, because a
 /// package should not start doing background writes to someone's database without being asked -
 /// but offered, because the alternative is a table nobody thinks about until it is enormous.
 /// </summary>
@@ -71,23 +72,30 @@ internal sealed class TokenCleanupService(
         var magicLinks = scope.ServiceProvider.GetService<IMagicLinkTokenStore>();
         var removedMagicLinks = magicLinks is null ? 0 : await magicLinks.DeleteExpiredAsync(now, cancellationToken);
 
+        // Optional, because passkeys are. Every begun ceremony writes a row and every abandoned one
+        // leaves it behind, so an application whose users close the prompt without finishing
+        // accumulates these faster than anything else here.
+        var passkeyChallenges = scope.ServiceProvider.GetService<IPasskeyChallengeStore>();
+        var removedPasskeyChallenges = passkeyChallenges is null ? 0 : await passkeyChallenges.DeleteExpiredAsync(now, cancellationToken);
+
         var removed = removedRefresh + removedReset + removedChallenges + removedDevices + removedInvitations
-            + removedVerifications + removedMagicLinks;
+            + removedVerifications + removedMagicLinks + removedPasskeyChallenges;
 
         if (removed > 0)
         {
             logger.LogInformation(
                 "Removed {RefreshTokens} expired refresh token(s), {ResetTokens} expired reset token(s), {Challenges} "
                 + "expired two-factor challenge(s), {Devices} expired trusted device row(s), {Invitations} expired "
-                + "invitation token(s), {Verifications} expired email verification token(s) and {MagicLinks} expired "
-                + "magic-link token(s).",
+                + "invitation token(s), {Verifications} expired email verification token(s), {MagicLinks} expired "
+                + "magic-link token(s) and {PasskeyChallenges} expired passkey challenge(s).",
                 removedRefresh,
                 removedReset,
                 removedChallenges,
                 removedDevices,
                 removedInvitations,
                 removedVerifications,
-                removedMagicLinks);
+                removedMagicLinks,
+                removedPasskeyChallenges);
         }
     }
 }

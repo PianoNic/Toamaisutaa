@@ -23,12 +23,14 @@ public class EndpointMappingTests
         v1.MapToamaisutaaTwoFactorEndpoints("V1");
         v1.MapToamaisutaaTrustedDeviceEndpoints("V1");
         v1.MapToamaisutaaSessionEndpoints("V1");
+        v1.MapToamaisutaaPasskeyEndpoints("V1");
 
         var v2 = endpoints.MapGroup("/api/v2");
         v2.MapToamaisutaaPasswordEndpoints("V2");
         v2.MapToamaisutaaTwoFactorEndpoints("V2");
         v2.MapToamaisutaaTrustedDeviceEndpoints("V2");
         v2.MapToamaisutaaSessionEndpoints("V2");
+        v2.MapToamaisutaaPasskeyEndpoints("V2");
     }
 
     [Test]

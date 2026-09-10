@@ -25,6 +25,8 @@ public static class ToamaisutaaModelBuilderExtensions
         modelBuilder.ApplyConfiguration(new ToamaisutaaRecoveryCodeConfiguration());
         modelBuilder.ApplyConfiguration(new ToamaisutaaTwoFactorChallengeConfiguration());
         modelBuilder.ApplyConfiguration(new ToamaisutaaTrustedDeviceConfiguration());
+        modelBuilder.ApplyConfiguration(new ToamaisutaaPasskeyCredentialConfiguration());
+        modelBuilder.ApplyConfiguration(new ToamaisutaaPasskeyChallengeConfiguration());
 
         return modelBuilder;
     }

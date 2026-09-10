@@ -57,6 +57,8 @@ cannot promise.
 | `two-factor-disabled` | A confirmed second factor was turned off | |
 | `two-factor-failed` | A second factor was presented and refused | `Reason` |
 | `recovery-code-used` | A recovery code was spent | `RunningLow` |
+| `passkey-registered` | A WebAuthn credential was added to an account | `PasskeyId`, `Label` |
+| `passkey-removed` | One was deleted | `PasskeyId` |
 | `trusted-device-added` | A device was remembered | `DeviceId`, `Label` |
 | `trusted-device-revoked` | A device stopped being trusted | `DeviceId`, `Reason` |
 | `session-revoked` | A refresh family stopped being usable | `SessionId`, `Reason` |

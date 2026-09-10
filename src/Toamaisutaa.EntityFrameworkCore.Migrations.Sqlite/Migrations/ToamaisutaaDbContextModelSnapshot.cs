@@ -156,6 +156,103 @@ namespace Toamaisutaa.EntityFrameworkCore.Migrations.Sqlite.Migrations
                     b.ToTable("ToamaisutaaMagicLinkTokens", (string)null);
                 });
 
+            modelBuilder.Entity("Toamaisutaa.Abstractions.ToamaisutaaPasskeyChallenge", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("Ceremony")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<long?>("ConsumedAt")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<long>("CreatedAt")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<long>("ExpiresAt")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Options")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("TokenHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid?>("UserId")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TokenHash")
+                        .IsUnique();
+
+                    b.HasIndex("UserId");
+
+                    b.ToTable("ToamaisutaaPasskeyChallenges", (string)null);
+                });
+
+            modelBuilder.Entity("Toamaisutaa.Abstractions.ToamaisutaaPasskeyCredential", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("AaGuid")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("AttestationFormat")
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
+
+                    b.Property<long>("CreatedAt")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<byte[]>("CredentialId")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("BLOB");
+
+                    b.Property<bool>("IsBackedUp")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<bool>("IsBackupEligible")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Label")
+                        .HasMaxLength(128)
+                        .HasColumnType("TEXT");
+
+                    b.Property<long?>("LastUsedAt")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<byte[]>("PublicKey")
+                        .IsRequired()
+                        .HasMaxLength(1024)
+                        .HasColumnType("BLOB");
+
+                    b.Property<long>("SignCount")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Transports")
+                        .HasMaxLength(128)
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CredentialId")
+                        .IsUnique();
+
+                    b.HasIndex("UserId");
+
+                    b.ToTable("ToamaisutaaPasskeyCredentials", (string)null);
+                });
+
             modelBuilder.Entity("Toamaisutaa.Abstractions.ToamaisutaaPasswordCredential", b =>
                 {
                     b.Property<Guid>("UserId")
@@ -568,6 +665,23 @@ namespace Toamaisutaa.EntityFrameworkCore.Migrations.Sqlite.Migrations
                 });
 
             modelBuilder.Entity("Toamaisutaa.Abstractions.ToamaisutaaMagicLinkToken", b =>
+                {
+                    b.HasOne("Toamaisutaa.Abstractions.ToamaisutaaUser", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Toamaisutaa.Abstractions.ToamaisutaaPasskeyChallenge", b =>
+                {
+                    b.HasOne("Toamaisutaa.Abstractions.ToamaisutaaUser", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade);
+                });
+
+            modelBuilder.Entity("Toamaisutaa.Abstractions.ToamaisutaaPasskeyCredential", b =>
                 {
                     b.HasOne("Toamaisutaa.Abstractions.ToamaisutaaUser", null)
                         .WithMany()

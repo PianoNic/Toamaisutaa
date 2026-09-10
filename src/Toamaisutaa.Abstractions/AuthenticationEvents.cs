@@ -123,6 +123,28 @@ public sealed record RecoveryCodeUsed : AuthenticationEvent
     public bool RunningLow { get; init; }
 }
 
+/// <summary>A WebAuthn credential was registered against an account, so there is now a way into it
+/// that no password protects.</summary>
+public sealed record PasskeyRegistered : AuthenticationEvent
+{
+    public override string Kind => "passkey-registered";
+
+    /// <summary>The row id, which is what the user sees in their passkey list and deletes by. Never
+    /// the credential id the authenticator uses.</summary>
+    public required Guid PasskeyId { get; init; }
+
+    public string? Label { get; init; }
+}
+
+/// <summary>A WebAuthn credential was deleted. Worth a row of its own: for an account whose only
+/// credential this was, it is the moment passwordless sign-in stopped working.</summary>
+public sealed record PasskeyRemoved : AuthenticationEvent
+{
+    public override string Kind => "passkey-removed";
+
+    public required Guid PasskeyId { get; init; }
+}
+
 /// <summary>A device was trusted, so this account will skip its second factor there until the trust
 /// expires or a credential change takes it.</summary>
 public sealed record TrustedDeviceAdded : AuthenticationEvent

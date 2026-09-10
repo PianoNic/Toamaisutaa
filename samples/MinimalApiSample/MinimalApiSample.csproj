@@ -24,6 +24,7 @@
     <ProjectReference Include="..\..\src\Toamaisutaa.EntityFrameworkCore.Migrations.Sqlite\Toamaisutaa.EntityFrameworkCore.Migrations.Sqlite.csproj" />
     <ProjectReference Include="..\..\src\Toamaisutaa.PasswordHashing.Argon2\Toamaisutaa.PasswordHashing.Argon2.csproj" />
     <ProjectReference Include="..\..\src\Toamaisutaa.PasswordValidation.Hibp\Toamaisutaa.PasswordValidation.Hibp.csproj" />
+    <ProjectReference Include="..\..\src\Toamaisutaa.Passkeys\Toamaisutaa.Passkeys.csproj" />
   </ItemGroup>
 
 </Project>

@@ -60,6 +60,11 @@ builder.Services.AddToamaisutaaTwoFactor(builder.Configuration);
 // credential change takes it with them.
 builder.Services.AddToamaisutaaTrustedDevices(builder.Configuration);
 
+// Passkeys. The other half of the story the second factor tells: one browser prompt proves the
+// authenticator and the person holding it, so a passkey sign-in needs no password and no TOTP code
+// after it. The relying party is localhost here because that is where this sample is served from.
+builder.Services.AddToamaisutaaPasskeys(builder.Configuration);
+
 builder.Services.AddToamaisutaaTokenCleanup();
 
 // Nothing switches the metrics on - the meter is always there. This subscribes to it and writes
@@ -134,6 +139,12 @@ app.MapToamaisutaaTrustedDeviceEndpoints();
 // rather than per access token, because a session here is the refresh family that toa_sid names.
 // The last of the three signs out everywhere ELSE - the page you clicked it on stays signed in.
 app.MapToamaisutaaSessionEndpoints();
+
+// GET /auth/passkeys, DELETE /auth/passkeys/{id}, POST /auth/passkeys/register/begin,
+// /auth/passkeys/register/complete, /auth/passkeys/assertion/begin, /auth/passkeys/assertion/complete.
+// The assertion pair is anonymous and takes no identifier at all: the browser finds a discoverable
+// credential itself, so there is no user name box for anyone to enumerate.
+app.MapToamaisutaaPasskeyEndpoints();
 
 // Anonymous, and it has to be: the fallback policy would otherwise answer 401, which an orchestrator
 // reads as a failing probe no matter how healthy the issuer is.

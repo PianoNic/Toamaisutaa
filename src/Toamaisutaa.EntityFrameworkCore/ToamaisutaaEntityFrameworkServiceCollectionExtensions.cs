@@ -40,6 +40,10 @@ public static class ToamaisutaaEntityFrameworkServiceCollectionExtensions
 
         services.TryAddScoped<ITrustedDeviceStore, EntityFrameworkTrustedDeviceStore<TContext>>();
 
+        services.TryAddScoped<EntityFrameworkPasskeyStore<TContext>>();
+        services.TryAddScoped<IPasskeyCredentialStore>(provider => provider.GetRequiredService<EntityFrameworkPasskeyStore<TContext>>());
+        services.TryAddScoped<IPasskeyChallengeStore>(provider => provider.GetRequiredService<EntityFrameworkPasskeyStore<TContext>>());
+
         return services;
     }
 
