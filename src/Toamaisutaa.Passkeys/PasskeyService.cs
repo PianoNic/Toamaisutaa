@@ -1,6 +1,8 @@
+using System.Formats.Cbor;
 using System.Text.Json;
 using Fido2NetLib;
 using Fido2NetLib.Objects;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Toamaisutaa.Abstractions;
@@ -14,19 +16,28 @@ internal sealed class PasskeyService(
     IPasskeyChallengeStore challenges,
     IUserStore users,
     LocalSessionIssuer sessions,
+    TwoFactorGate twoFactor,
     AuthenticationEventPublisher events,
     ToamaisutaaMetrics metrics,
     IOptions<ToamaisutaaPasskeyOptions> options,
     IOptions<ToamaisutaaLocalLoginOptions> localLogin,
     TimeProvider timeProvider,
+    IServiceProvider provider,
     ILogger<PasskeyService> logger) : IPasskeyService
 {
-    public async Task<PasskeyCeremonyStarted> BeginRegistrationAsync(Guid userId, CancellationToken cancellationToken = default)
+    public async Task<PasskeyCeremonyStarted> BeginRegistrationAsync(
+        Guid userId,
+        PasskeyRegistrationProof proof,
+        CancellationToken cancellationToken = default)
     {
+        ArgumentNullException.ThrowIfNull(proof);
+
         var settings = options.Value;
 
         var user = await users.FindByIdAsync(userId, cancellationToken)
             ?? throw new InvalidOperationException($"User {userId} does not exist.");
+
+        await RequireLiveCredentialAsync(userId, proof, timeProvider.GetUtcNow(), cancellationToken);
 
         var existing = await credentials.ListAsync(userId, cancellationToken);
 
@@ -218,12 +229,11 @@ internal sealed class PasskeyService(
         }
 
         VerifyAssertionResult verified;
-        AuthenticatorData authenticatorData;
+        byte[] rawAuthenticatorData;
 
         try
         {
-            var rawAuthenticatorData = PasskeyEncoding.Decode(request.AuthenticatorData);
-            authenticatorData = AuthenticatorData.Parse(rawAuthenticatorData);
+            rawAuthenticatorData = PasskeyEncoding.Decode(request.AuthenticatorData);
 
             verified = await fido2.MakeAssertionAsync(
                 new MakeAssertionParams
@@ -266,6 +276,13 @@ internal sealed class PasskeyService(
         {
             return await RefusedAsync(SignInOutcome.InvalidPasskey, credential.UserId, now, cancellationToken);
         }
+        catch (CborContentException)
+        {
+            // Authenticator data whose extension flag is set with no CBOR behind it. The library
+            // parses that before it validates anything, and what comes out is neither of the two
+            // above - so without this an anonymous endpoint answers 500 to a malformed field.
+            return await RefusedAsync(SignInOutcome.InvalidPasskey, credential.UserId, now, cancellationToken);
+        }
 
         var user = await users.FindByIdAsync(credential.UserId, cancellationToken);
 
@@ -285,11 +302,38 @@ internal sealed class PasskeyService(
 
         metrics.TwoFactorVerified(TwoFactorSource.Passkey, succeeded: true);
 
+        // Read off the raw bytes rather than parsed a second time. The library has verified the
+        // structure by this point, and our own AuthenticatorData.Parse ahead of it - on bytes
+        // nothing had checked yet - threw a CBOR exception neither catch above covers, which left
+        // an anonymous endpoint answering 500 for authenticator data with the extension flag set.
+        // Byte 32 is the flags byte and 0x04 is UV, both fixed by the specification.
+        var userVerified = (rawAuthenticatorData[32] & (byte)AuthenticatorFlags.UV) != 0;
+
+        // Enrolment alone decides a challenge, exactly as on the password and magic-link paths: a
+        // user who turned two-factor on gets asked in every mode. A verified assertion is the two
+        // factors already and passes through; one without user verification is possession alone, and
+        // letting that mint a token pair would mean a borrowed security key beat the account's own
+        // policy.
+        if (!userVerified && await twoFactor.RequiresChallengeAsync(user.Id, cancellationToken))
+        {
+            var challenge = await twoFactor.IssueChallengeAsync(
+                user.Id,
+                now,
+                cancellationToken,
+                authenticationMethods: $"{ToamaisutaaDefaults.HardwareKeyMethod} {ToamaisutaaDefaults.UserPresenceMethod}");
+
+            logger.LogInformation(
+                "Passkey accepted for user {UserId} without user verification; a second factor is required.",
+                user.Id);
+
+            metrics.SignInCompleted(SignInOutcome.TwoFactorRequired, methods: null);
+
+            return new PasskeySignInResult { Outcome = SignInOutcome.TwoFactorRequired, Challenge = challenge };
+        }
+
         // hwk is the possession half and user is the presence half, both RFC 8176. mfa is added only
         // when the authenticator actually verified the user - a PIN or a fingerprint - because that
         // is the difference between one factor and two, and it is what the enrolment policy reads.
-        var userVerified = authenticatorData.UserVerified;
-
         List<string> methods = userVerified
             ? [ToamaisutaaDefaults.HardwareKeyMethod, ToamaisutaaDefaults.UserPresenceMethod, ToamaisutaaDefaults.MultiFactorMethod]
             : [ToamaisutaaDefaults.HardwareKeyMethod, ToamaisutaaDefaults.UserPresenceMethod];
@@ -348,6 +392,63 @@ internal sealed class PasskeyService(
             remaining);
 
         return true;
+    }
+
+    /// <summary>
+    /// Refuses to start a registration for a caller who has shown nothing but a bearer token.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Two proofs are accepted, and they are the two the rest of the package already asks for. A
+    /// second factor presented inside <c>Passkeys:RegistrationProofWindow</c> - the same
+    /// <c>toa_2fa_at</c> claim <c>RequireFreshSecondFactor</c> reads - covers a passkey sign-in and
+    /// a step-up alike. Failing that, the current password, the way <c>/auth/email</c> asks for one.
+    /// </para>
+    /// <para>
+    /// The stores are resolved here rather than injected because an account can perfectly well have
+    /// no local password at all: an external identity provider issued its token, or a passkey is the
+    /// only credential on it. Those accounts prove a second factor instead, and a constructor
+    /// dependency would turn an optional registration into a crash at the first ceremony.
+    /// </para>
+    /// </remarks>
+    private async Task RequireLiveCredentialAsync(
+        Guid userId,
+        PasskeyRegistrationProof proof,
+        DateTimeOffset now,
+        CancellationToken cancellationToken)
+    {
+        var window = options.Value.RegistrationProofWindow;
+
+        // A time ahead of now is a clock problem rather than a fresh factor, and refusing keeps a
+        // skewed issuer from being a way past this instead of into it.
+        if (proof.SecondFactorAt is { } presentedAt && presentedAt <= now && now - presentedAt <= window)
+            return;
+
+        var passwords = provider.GetService<IPasswordCredentialStore>();
+        var credential = passwords is null ? null : await passwords.FindByUserIdAsync(userId, cancellationToken);
+
+        if (credential is null)
+        {
+            logger.LogWarning(
+                "Passkey registration refused for user {UserId}: the account has no password, and no second factor was presented recently.",
+                userId);
+
+            throw new PasskeyRegistrationException(
+                "This account has no password to prove, so registering a passkey needs a second factor. Complete a "
+                + "step-up, then register while it is still fresh.");
+        }
+
+        var hasher = provider.GetService<IPasswordHasher>();
+
+        if (hasher is null || string.IsNullOrEmpty(proof.CurrentPassword)
+            || hasher.Verify(proof.CurrentPassword, credential.PasswordHash) == PasswordVerificationResult.Failed)
+        {
+            logger.LogWarning("Passkey registration refused for user {UserId}: the current password is missing or wrong.", userId);
+
+            throw new PasskeyRegistrationException(
+                "Registering a passkey needs proof of a credential this account already has. Send currentPassword, or "
+                + "complete a step-up, then register while it is still fresh.");
+        }
     }
 
     /// <summary>

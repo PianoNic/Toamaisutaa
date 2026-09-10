@@ -16,6 +16,7 @@ internal sealed class PasswordHarness
         ToamaisutaaTrustedDeviceOptions trustedDeviceOptions,
         bool withTwoFactor,
         bool withTrustedDevices,
+        bool withPasskeys,
         bool withAdminPasswordNotifier,
         bool withInvitationNotifier,
         bool withEmailVerificationNotifier,
@@ -104,6 +105,13 @@ internal sealed class PasswordHarness
 
         if (withTrustedDevices)
             provider.Add<ITrustedDeviceStore>(Devices);
+
+        // Same reasoning as the two above: the passkey package is optional, so every test that does
+        // not ask for it exercises the path where Core resolves no store at all.
+        Passkeys = new FakePasskeyStore();
+
+        if (withPasskeys)
+            provider.Add<IPasskeyCredentialStore>(Passkeys);
 
         var deviceGate = new TrustedDeviceGate(
             provider,
@@ -225,6 +233,8 @@ internal sealed class PasswordHarness
 
     internal FakeTrustedDeviceStore Devices { get; }
 
+    internal FakePasskeyStore Passkeys { get; }
+
     internal TrustedDeviceService TrustedDevices { get; }
 
     internal SessionService Sessions { get; }
@@ -275,6 +285,7 @@ internal sealed class PasswordHarness
         Action<ToamaisutaaTrustedDeviceOptions>? configureTrustedDevices = null,
         bool withTwoFactor = false,
         bool withTrustedDevices = false,
+        bool withPasskeys = false,
         bool withAdminPasswordNotifier = true,
         bool withInvitationNotifier = true,
         bool withEmailVerificationNotifier = true,
@@ -303,6 +314,7 @@ internal sealed class PasswordHarness
             trustedDevices,
             withTwoFactor,
             withTrustedDevices,
+            withPasskeys,
             withAdminPasswordNotifier,
             withInvitationNotifier,
             withEmailVerificationNotifier,

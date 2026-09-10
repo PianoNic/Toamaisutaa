@@ -1,3 +1,5 @@
+using System.Globalization;
+using System.Security.Claims;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.DependencyInjection;
@@ -65,9 +67,13 @@ public static class ToamaisutaaPasskeyEndpointExtensions
             .RequireAuthorization()
             .AddEndpointFilter<PasswordRateLimitFilter>()
             .WithName($"{endpointNamePrefix}ToamaisutaaPasskeyRegisterBegin")
-            .WithSummary("Starts a registration. Takes no body: who you are comes from your token.")
+            .WithSummary("Starts a registration. Takes proof of a credential the account already has.")
             .WithDescription(
-                "`options` goes to `navigator.credentials.create()` once its base64url fields are "
+                "Send `currentPassword`, or call this from a session that presented a second factor "
+                + "within `Passkeys:RegistrationProofWindow` - a passkey sign-in or a step-up. A "
+                + "bearer token alone is not enough: a passkey signs in on its own, so adding one "
+                + "adds a way into the account.\n\n"
+                + "`options` goes to `navigator.credentials.create()` once its base64url fields are "
                 + "decoded. `challenge` is this package's own opaque handle on the ceremony, not the "
                 + "WebAuthn challenge - hand it back to `/register/complete`.")
             .Produces<PasskeyChallengeResponse>()
@@ -79,7 +85,10 @@ public static class ToamaisutaaPasskeyEndpointExtensions
             .RequireAuthorization()
             .WithName($"{endpointNamePrefix}ToamaisutaaPasskeyRegisterComplete")
             .WithSummary("Verifies what the authenticator produced and stores the credential.")
-            .WithDescription("Registering changes no credential the account already has, so the calling token stays valid.")
+            .WithDescription(
+                "The proof was given to `/register/begin`, and the challenge it returned is what "
+                + "stands for it here. Registering changes no credential the account already has, so "
+                + "the calling token stays valid.")
             .Produces<PasskeySummary>(StatusCodes.Status201Created)
             .Produces<ValidationErrorResponse>(StatusCodes.Status400BadRequest)
             .Produces<ErrorResponse>(StatusCodes.Status401Unauthorized);
@@ -104,8 +113,14 @@ public static class ToamaisutaaPasskeyEndpointExtensions
             .WithDescription(
                 "Returns the same body `/auth/login` does. The token carries `hwk` and `user` in "
                 + "`amr`, plus `mfa` when the authenticator verified the user - which is what lets a "
-                + "passkey satisfy the two-factor policy without a TOTP code.")
+                + "passkey satisfy the two-factor policy without a TOTP code.\n\n"
+                + "An assertion the authenticator did not verify the user for proved possession "
+                + "alone, so an account with a confirmed enrolment gets the same challenge shape "
+                + "`/auth/login` answers with:\n\n"
+                + "```json\n{ \"two_factor_required\": true, \"challenge\": \"No1CXq9-...\", \"expires_in\": 300 }\n```\n\n"
+                + "Present it with a code to `/auth/2fa/verify`.")
             .Produces<TokenResponse>()
+            .Produces<TwoFactorChallengeResponse>()
             .Produces<ErrorResponse>(StatusCodes.Status401Unauthorized)
             .Produces(StatusCodes.Status429TooManyRequests);
 
@@ -135,21 +150,44 @@ public static class ToamaisutaaPasskeyEndpointExtensions
     }
 
     private static async Task<IResult> BeginRegistrationAsync(
+        PasskeyRegistrationProof? proof,
+        HttpContext context,
         ICurrentUser currentUser,
         IPasskeyService passkeys,
         CancellationToken cancellationToken)
     {
         var user = await currentUser.GetOrProvisionAsync(cancellationToken);
 
+        // The second factor comes off the caller's own token rather than the body. It is the one
+        // half of the proof a caller could otherwise assert about themselves.
+        var presented = (proof ?? new PasskeyRegistrationProof()) with { SecondFactorAt = SecondFactorAt(context.User) };
+
         try
         {
-            return Ceremony(await passkeys.BeginRegistrationAsync(user.Id, cancellationToken));
+            return Ceremony(await passkeys.BeginRegistrationAsync(user.Id, presented, cancellationToken));
         }
         catch (PasskeyRegistrationException exception)
         {
             return Results.BadRequest(new ValidationErrorResponse { Errors = [exception.Message] });
         }
     }
+
+    /// <summary>
+    /// When this session last presented a live second factor, from <c>toa_2fa_at</c>.
+    /// </summary>
+    /// <remarks>
+    /// The same claim <c>RequireFreshSecondFactor</c> reads, so "fresh" means one thing across the
+    /// package: a device-trusted sign-in reports the original challenge rather than now, and a
+    /// session that cached its way in does not count as having proved anything just now.
+    /// </remarks>
+    private static DateTimeOffset? SecondFactorAt(ClaimsPrincipal principal) =>
+        long.TryParse(
+            principal.FindFirst(ToamaisutaaDefaults.SecondFactorAtClaim)?.Value,
+            NumberStyles.Integer,
+            CultureInfo.InvariantCulture,
+            out var unixSeconds)
+            ? DateTimeOffset.FromUnixTimeSeconds(unixSeconds)
+            : null;
 
     private static async Task<IResult> CompleteRegistrationAsync(
         PasskeyRegistrationRequest request,
@@ -165,7 +203,11 @@ public static class ToamaisutaaPasskeyEndpointExtensions
         try
         {
             var registered = await passkeys.CompleteRegistrationAsync(user.Id, request, cancellationToken);
-            return Results.Created($"{user.Id}/passkeys/{registered.Id}", registered);
+
+            // No Location, matching every other 201 in the package. There is no route that serves
+            // one credential - the id in this body is for the delete and for the list - and a header
+            // naming a path nothing maps is worse than no header at all.
+            return Results.Json(registered, statusCode: StatusCodes.Status201Created);
         }
         catch (PasskeyRegistrationException exception)
         {
@@ -192,6 +234,18 @@ public static class ToamaisutaaPasskeyEndpointExtensions
                 IpAddress = context.Connection.RemoteIpAddress?.ToString(),
             },
             cancellationToken);
+
+        // Possession without user verification, on an account that has enrolled. The same second
+        // shape /auth/login answers with, for the same reason the body below is the same one: a
+        // client that had to learn a second way of being asked for a code would have two of them.
+        if (result.Outcome == SignInOutcome.TwoFactorRequired && result.Challenge is { } challenge)
+        {
+            return Results.Ok(new TwoFactorChallengeResponse
+            {
+                Challenge = challenge.Token,
+                ExpiresIn = challenge.ExpiresIn,
+            });
+        }
 
         // The same body /auth/login returns, deliberately: both end a sign-in, and a client that had
         // to parse one casing here and another there would be carrying our history rather than an API.

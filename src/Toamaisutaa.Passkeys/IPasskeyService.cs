@@ -18,7 +18,18 @@ public interface IPasskeyService
     /// Starts a registration for a user who is already signed in. Nothing is stored against the
     /// account until <see cref="CompleteRegistrationAsync"/>.
     /// </summary>
-    Task<PasskeyCeremonyStarted> BeginRegistrationAsync(Guid userId, CancellationToken cancellationToken = default);
+    /// <param name="userId">Whose account the credential would be added to.</param>
+    /// <param name="proof">
+    /// The current password, or a session that presented a second factor recently. Being signed in
+    /// is not enough on its own: a passkey signs in with no password and no code, so adding one is
+    /// adding a credential rather than changing a setting.
+    /// </param>
+    /// <param name="cancellationToken">Cancels the lookups.</param>
+    /// <exception cref="PasskeyRegistrationException">The proof is missing or wrong.</exception>
+    Task<PasskeyCeremonyStarted> BeginRegistrationAsync(
+        Guid userId,
+        PasskeyRegistrationProof proof,
+        CancellationToken cancellationToken = default);
 
     /// <summary>Verifies what the authenticator produced and stores the credential.</summary>
     Task<PasskeySummary> CompleteRegistrationAsync(
@@ -102,6 +113,13 @@ public sealed record PasskeySignInResult
     public required SignInOutcome Outcome { get; init; }
 
     public TokenPair? Tokens { get; init; }
+
+    /// <summary>
+    /// Set with <see cref="SignInOutcome.TwoFactorRequired"/>, when the assertion proved possession
+    /// alone and the account carries a confirmed enrolment. Present it with a code to
+    /// <c>/auth/2fa/verify</c>, exactly as a password sign-in's challenge is presented.
+    /// </summary>
+    public TwoFactorChallenge? Challenge { get; init; }
 
     public bool Succeeded => Outcome == SignInOutcome.Succeeded;
 }

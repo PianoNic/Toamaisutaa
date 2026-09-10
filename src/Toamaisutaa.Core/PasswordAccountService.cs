@@ -133,6 +133,7 @@ internal sealed class PasswordAccountService(
         await users.UpdateSecurityStampAsync(userId, SecureTokens.Create(), cancellationToken);
         await RevokeAllSessionsAsync(userId, "password-changed", now, cancellationToken);
         await trustedDevices.RevokeAllAsync(userId, "password-changed", now, cancellationToken);
+        await RevokeAllPasskeysAsync(userId, "password-changed", cancellationToken);
         await resetTokens.InvalidateAllForUserAsync(userId, now, cancellationToken);
 
         await events.PublishAsync(new PasswordChanged { OccurredAt = now, UserId = userId }, cancellationToken);
@@ -242,6 +243,7 @@ internal sealed class PasswordAccountService(
         await users.UpdateSecurityStampAsync(userId, SecureTokens.Create(), cancellationToken);
         await RevokeAllSessionsAsync(userId, "admin-password-set", now, cancellationToken);
         await trustedDevices.RevokeAllAsync(userId, "admin-password-set", now, cancellationToken);
+        await RevokeAllPasskeysAsync(userId, "admin-password-set", cancellationToken);
         await resetTokens.InvalidateAllForUserAsync(userId, now, cancellationToken);
         await emailVerificationTokens.InvalidateAllForUserAsync(userId, now, cancellationToken);
 
@@ -738,11 +740,41 @@ internal sealed class PasswordAccountService(
         await users.UpdateSecurityStampAsync(stored.UserId, SecureTokens.Create(), cancellationToken);
         await RevokeAllSessionsAsync(stored.UserId, "password-reset", now, cancellationToken);
         await trustedDevices.RevokeAllAsync(stored.UserId, "password-reset", now, cancellationToken);
+        await RevokeAllPasskeysAsync(stored.UserId, "password-reset", cancellationToken);
 
         await events.PublishAsync(new PasswordReset { OccurredAt = now, UserId = stored.UserId }, cancellationToken);
 
         logger.LogInformation("Password reset completed for user {UserId}; all local sessions revoked.", stored.UserId);
         return new AccountResult { Succeeded = true, UserId = stored.UserId };
+    }
+
+    /// <summary>
+    /// Deletes every passkey on the account, wherever the trusted devices go.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// A passkey signs in on its own, with no password and no code, so one registered by somebody
+    /// who should not have it is a way back into the account that outlives every other thing this
+    /// method's callers revoke. The person changing their password is doing the one thing the
+    /// package offers for exactly that, and it has to take the credentials with it.
+    /// </para>
+    /// <para>
+    /// Resolved through the provider rather than the constructor, the way the notifiers below are:
+    /// the passkey package is optional, and naming its store here would make Core require a package
+    /// that references FIDO2.
+    /// </para>
+    /// </remarks>
+    private async Task RevokeAllPasskeysAsync(Guid userId, string reason, CancellationToken cancellationToken)
+    {
+        var passkeys = serviceProvider.GetService<IPasskeyCredentialStore>();
+
+        if (passkeys is null)
+            return;
+
+        var removed = await passkeys.DeleteAllAsync(userId, cancellationToken);
+
+        if (removed > 0)
+            logger.LogInformation("Deleted {Passkeys} passkey(s) for user {UserId} on {Reason}.", removed, userId, reason);
     }
 
     /// <summary>

@@ -238,6 +238,10 @@ address belongs to whoever typed it, and changing it afterwards, is
 A password change or reset revokes every refresh token this package issued. An access token your
 identity provider issued keeps working until it expires, because we cannot revoke it.
 
+It also un-trusts every device and deletes every [passkey](/passkeys) on the account. Both are ways
+of signing in that a new password would otherwise not touch, and somebody changing their password is
+usually reacting to exactly that.
+
 ### Expired tokens accumulate unless you sweep them
 
 `AddToamaisutaaTokenCleanup()` runs a periodic delete over every expiring row this package writes -

@@ -49,6 +49,11 @@ internal sealed class EntityFrameworkPasskeyStore<TContext>(TContext context)
             .Where(credential => credential.Id == credentialId && credential.UserId == userId)
             .ExecuteDeleteAsync(cancellationToken) > 0;
 
+    public async Task<int> DeleteAllAsync(Guid userId, CancellationToken cancellationToken = default) =>
+        await context.Set<ToamaisutaaPasskeyCredential>()
+            .Where(credential => credential.UserId == userId)
+            .ExecuteDeleteAsync(cancellationToken);
+
     public async Task<int> CountAsync(Guid userId, CancellationToken cancellationToken = default) =>
         await context.Set<ToamaisutaaPasskeyCredential>()
             .CountAsync(credential => credential.UserId == userId, cancellationToken);

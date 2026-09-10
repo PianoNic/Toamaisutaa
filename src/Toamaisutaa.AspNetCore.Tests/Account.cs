@@ -9,6 +9,10 @@ namespace Toamaisutaa.AspNetCore.Tests;
 /// </summary>
 internal sealed class Account(TestApp app, string userName, string password)
 {
+    /// <summary>What every account here registers with. A constant because the endpoints that ask
+    /// for a current password need it as a default argument.</summary>
+    public const string DefaultPassword = "correct horse battery staple";
+
     public string UserName { get; } = userName;
 
     public string Password { get; } = password;
@@ -24,7 +28,7 @@ internal sealed class Account(TestApp app, string userName, string password)
 
     public static async Task<Account> RegisterAsync(TestApp app, string userName = "ada")
     {
-        var account = new Account(app, userName, "correct horse battery staple");
+        var account = new Account(app, userName, DefaultPassword);
 
         var response = await app.Client.PostJson(
             "/auth/register",

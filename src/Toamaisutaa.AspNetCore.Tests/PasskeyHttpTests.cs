@@ -1,5 +1,7 @@
 using System.Net;
 using System.Text.Json;
+using Microsoft.Extensions.DependencyInjection;
+using Toamaisutaa.Abstractions;
 
 namespace Toamaisutaa.AspNetCore.Tests;
 
@@ -25,6 +27,10 @@ public class PasskeyHttpTests
 
         await Assert.That(registered.StatusCode).IsEqualTo(HttpStatusCode.Created);
 
+        // No Location. The one this used to send was relative, began with the user id and resolved
+        // to a path nothing maps, so a client following it as RFC 9110 allows got a 404.
+        await Assert.That(registered.Headers.Contains("Location")).IsFalse();
+
         var created = await registered.Json();
         await Assert.That(created.String("label")).IsEqualTo("work laptop");
         await Assert.That(created.String("id")).IsNotNull();
@@ -39,6 +45,87 @@ public class PasskeyHttpTests
 
         // Never signed anything yet, and a list is read to decide what to delete.
         await Assert.That(entries[0].Has("lastUsedAt")).IsFalse();
+    }
+
+    /// <summary>
+    /// A passkey signs in on its own, so registering one adds a way into the account. A bearer token
+    /// is not proof of anything but a bearer token: the one lifted from a log line or a compromised
+    /// browser is exactly what the account holder is about to revoke every session over.
+    /// </summary>
+    [Test]
+    public async Task Registering_a_passkey_takes_more_than_a_bearer_token()
+    {
+        await using var app = await TestApp.StartAsync();
+        var account = await Account.RegisterAsync(app);
+
+        var nothing = await Passkeys.BeginRegistrationAsync(app, account.AccessToken, currentPassword: null);
+        await Assert.That(nothing.StatusCode).IsEqualTo(HttpStatusCode.BadRequest);
+        await Assert.That((await nothing.Json()).Strings("errors")).IsNotEmpty();
+
+        var wrong = await Passkeys.BeginRegistrationAsync(app, account.AccessToken, "not the password");
+        await Assert.That(wrong.StatusCode).IsEqualTo(HttpStatusCode.BadRequest);
+
+        // A body-less POST is the same refusal rather than a 415 or a 500: the proof is missing
+        // either way, and an endpoint that fell over on it would be a new hole in place of the old.
+        var empty = await app.Client.PostEmpty("/auth/passkeys/register/begin", account.AccessToken);
+        await Assert.That(empty.StatusCode).IsEqualTo(HttpStatusCode.BadRequest);
+
+        var listed = await (await app.Client.Get("/auth/passkeys", account.AccessToken)).Json();
+        await Assert.That(listed.EnumerateArray().ToList()).HasCount().EqualTo(0);
+    }
+
+    /// <summary>
+    /// The other proof, and the one an account with no password has: a second factor presented
+    /// within <c>Passkeys:RegistrationProofWindow</c>. It is the <c>toa_2fa_at</c> claim
+    /// <c>RequireFreshSecondFactor</c> reads, so a step-up satisfies this too.
+    /// </summary>
+    [Test]
+    public async Task A_fresh_second_factor_registers_a_passkey_without_a_password()
+    {
+        await using var app = await TestApp.StartAsync();
+        var account = await Account.RegisterAsync(app);
+        using var authenticator = new SoftwareAuthenticator();
+
+        await account.EnrolAsync();
+
+        var registered = await Passkeys.RegisterAsync(app, account.AccessToken, authenticator, currentPassword: null);
+
+        await Assert.That(registered.StatusCode).IsEqualTo(HttpStatusCode.Created);
+    }
+
+    /// <summary>
+    /// A reset is what somebody does when they think another person has been in their account, and
+    /// it ends every session, every reset link and every trusted device. A passkey registered before
+    /// it is a credential that signs in with no password at all, so leaving one standing would mean
+    /// the one remediation the package offers remediated nothing.
+    /// </summary>
+    [Test]
+    public async Task A_passkey_registered_before_a_password_reset_cannot_sign_in_after_it()
+    {
+        var issued = new List<string>();
+
+        await using var app = await TestApp.StartAsync(configureServices: services =>
+            services.AddSingleton<IPasswordResetNotifier>(new CapturingResetNotifier(issued)));
+
+        var account = await Account.RegisterAsync(app);
+        using var authenticator = new SoftwareAuthenticator();
+
+        await Passkeys.RegisterAsync(app, account.AccessToken, authenticator);
+        await Assert.That((await Passkeys.SignInAsync(app, authenticator)).StatusCode).IsEqualTo(HttpStatusCode.OK);
+
+        await Assert.That((await app.Client.PostJson("/auth/password/forgot", new { email = account.Email })).StatusCode)
+            .IsEqualTo(HttpStatusCode.NoContent);
+
+        var reset = await app.Client.PostJson(
+            "/auth/password/reset",
+            new { token = issued[^1], newPassword = "a different correct horse" });
+
+        await Assert.That(reset.StatusCode).IsEqualTo(HttpStatusCode.NoContent);
+
+        var afterwards = await Passkeys.SignInAsync(app, authenticator);
+
+        await Assert.That(afterwards.StatusCode).IsEqualTo(HttpStatusCode.Unauthorized);
+        await Assert.That((await afterwards.Json()).String("error")).IsEqualTo("invalid_grant");
     }
 
     [Test]
@@ -152,6 +239,77 @@ public class PasskeyHttpTests
 
         await Assert.That(claims.Strings("amr")).IsEquivalentTo(new[] { "hwk", "user" });
         await Assert.That(claims.Has("toa_2fa_source")).IsFalse();
+    }
+
+    /// <summary>
+    /// Enrolment alone decides a challenge - <c>TwoFactorGate</c> says so in its own summary, and
+    /// the password and magic-link paths both honour it. An assertion the authenticator did not
+    /// verify the user for proved possession and nothing else, so a borrowed security key must not
+    /// beat the second factor its owner turned on.
+    /// </summary>
+    [Test]
+    public async Task An_unverified_passkey_challenges_an_enrolled_user_instead_of_signing_them_in()
+    {
+        await using var app = await TestApp.StartAsync(
+            configure: settings => settings["Passkeys:RequireUserVerification"] = "false");
+
+        var account = await Account.RegisterAsync(app);
+        using var authenticator = new SoftwareAuthenticator();
+
+        await Passkeys.RegisterAsync(app, account.AccessToken, authenticator, userVerified: false);
+        await account.EnrolAsync();
+
+        var challenged = await Passkeys.SignInAsync(app, authenticator, userVerified: false);
+        await Assert.That(challenged.StatusCode).IsEqualTo(HttpStatusCode.OK);
+
+        // The same second shape /auth/login answers with, so a client has one branch rather than two.
+        var body = await challenged.Json();
+        await Assert.That(body.Bool("two_factor_required")).IsTrue();
+        await Assert.That(body.Has("access_token")).IsFalse();
+        await Assert.That(body.Has("refresh_token")).IsFalse();
+
+        app.Time.AdvanceToNextTotpStep();
+
+        var verified = await app.Client.PostJson(
+            "/auth/2fa/verify",
+            new { challenge = body.String("challenge"), code = Totp.Code(account.Secret!, app.Time.Now) });
+
+        await Assert.That(verified.StatusCode).IsEqualTo(HttpStatusCode.OK);
+
+        // What the passkey proved, replayed off the challenge, plus what the code proved.
+        var claims = Account.DecodeClaims((await verified.Json()).String("access_token")!);
+
+        await Assert.That(claims.Strings("amr")).IsEquivalentTo(new[] { "hwk", "user", "otp", "mfa" });
+        await Assert.That(claims.String("toa_2fa_source")).IsEqualTo("otp");
+    }
+
+    /// <summary>
+    /// Authenticator data that is valid base64url and nonsense inside has to be a 401 like every
+    /// other refusal here. The flags byte below sets the extension-data bit with no CBOR after it,
+    /// which is the shape that escaped as an unhandled exception from an anonymous endpoint.
+    /// </summary>
+    [Test]
+    public async Task Malformed_authenticator_data_is_refused_rather_than_escaping()
+    {
+        await using var app = await TestApp.StartAsync();
+        var account = await Account.RegisterAsync(app);
+        using var authenticator = new SoftwareAuthenticator();
+
+        await Passkeys.RegisterAsync(app, account.AccessToken, authenticator);
+
+        var begin = await (await app.Client.PostJson("/auth/passkeys/assertion/begin", new { })).Json();
+        var assertion = Passkeys.Fields(authenticator.Get(begin, TestApp.Origin));
+
+        // 32 bytes of relying-party hash, then UP|UV|ED, then a counter, and nothing where the
+        // extension map has to be.
+        var malformed = new byte[37];
+        malformed[32] = 0x85;
+        assertion["authenticatorData"] = SoftwareAuthenticator.Encode(malformed);
+
+        var response = await app.Client.PostJson("/auth/passkeys/assertion/complete", assertion);
+
+        await Assert.That(response.StatusCode).IsEqualTo(HttpStatusCode.Unauthorized);
+        await Assert.That((await response.Json()).String("error")).IsEqualTo("invalid_grant");
     }
 
     /// <summary>
@@ -426,17 +584,38 @@ public class PasskeyHttpTests
     }
 }
 
+/// <summary>Hands back the reset token, which is otherwise only ever seen by the notifier.</summary>
+internal sealed class CapturingResetNotifier(List<string> issued) : IPasswordResetNotifier
+{
+    public Task SendAsync(ToamaisutaaUser user, string resetToken, CancellationToken cancellationToken = default)
+    {
+        issued.Add(resetToken);
+        return Task.CompletedTask;
+    }
+}
+
 /// <summary>Drives the passkey endpoints the way a client does. Everything goes over HTTP.</summary>
 internal static class Passkeys
 {
+    /// <summary>
+    /// Starts a registration. <paramref name="currentPassword"/> is the proof the endpoint asks for,
+    /// and null is a caller presenting nothing but their bearer token.
+    /// </summary>
+    public static Task<HttpResponseMessage> BeginRegistrationAsync(
+        TestApp app,
+        string accessToken,
+        string? currentPassword = Account.DefaultPassword) =>
+        app.Client.PostJson("/auth/passkeys/register/begin", new { currentPassword }, accessToken);
+
     public static async Task<HttpResponseMessage> RegisterAsync(
         TestApp app,
         string accessToken,
         SoftwareAuthenticator authenticator,
         string? label = null,
-        bool userVerified = true)
+        bool userVerified = true,
+        string? currentPassword = Account.DefaultPassword)
     {
-        var begin = await app.Client.PostEmpty("/auth/passkeys/register/begin", accessToken);
+        var begin = await BeginRegistrationAsync(app, accessToken, currentPassword);
 
         if (begin.StatusCode != HttpStatusCode.OK)
             throw new InvalidOperationException($"Register begin failed: {begin.StatusCode} {await begin.Content.ReadAsStringAsync()}");
