@@ -59,8 +59,23 @@ single group - and merges what it finds.
 A userinfo endpoint that is down logs a warning and lets the token's own claims decide. It never
 turns a valid login into a 500.
 
-Results are cached per subject for `Oidc:UserInfoCacheDuration`. Set
-`Oidc:FetchClaimsFromUserInfo` to `false` to stop the package calling your issuer at all.
+Results are cached per subject for `Oidc:UserInfoCacheDuration`, through
+[`HybridCache`](https://learn.microsoft.com/aspnet/core/performance/caching/hybrid). Two things
+follow from that, and neither needs configuring:
+
+- Requests carrying the same token that arrive together share one userinfo call. A page reload
+  against a cold cache fires a dozen requests before any of them has answered, and that used to be
+  a dozen calls to your issuer.
+- If your application registers an `IDistributedCache` - Redis, SQL Server, whatever you already
+  run - the entry is shared across instances. Registering it is the whole configuration; there is
+  no switch here.
+
+`AddToamaisutaaBearer` registers `HybridCache` itself. Calling `AddHybridCache` yourself, with your
+own options, keeps working: the registration is additive and your options still apply.
+
+A failed read is never cached, so an issuer that comes back up is used on the very next request.
+
+Set `Oidc:FetchClaimsFromUserInfo` to `false` to stop the package calling your issuer at all.
 
 ## Claims mapping
 
