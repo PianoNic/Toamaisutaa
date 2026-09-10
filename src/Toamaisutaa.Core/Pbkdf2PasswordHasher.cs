@@ -37,8 +37,11 @@ public sealed class Pbkdf2PasswordHasher(IOptions<ToamaisutaaLocalLoginOptions> 
 
     // A stored row is ours, but a database an attacker can write is a database that can ask this
     // process to spend a minute in a key derivation. Bound what a row may request.
-    private const int MaxIterations = 50_000_000;
-    private const int MaxHashSizeBytes = 1024;
+    //
+    // Internal because PasswordLoginStartupCheck refuses configured values above them: a length or
+    // an iteration count this hasher will write but not read back produces rows nothing can verify.
+    internal const int MaxIterations = 50_000_000;
+    internal const int MaxHashSizeBytes = 1024;
 
     public string Hash(string password)
     {

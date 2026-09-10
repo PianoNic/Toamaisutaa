@@ -183,6 +183,23 @@ internal sealed class PasswordLoginStartupCheck(
 
         if (settings.HashSizeBytes < defaults.HashSizeBytes)
             problems.Add($"LocalLogin:HashSizeBytes is {settings.HashSizeBytes}; {defaults.HashSizeBytes} is the floor.");
+
+        // The ceilings are what the hashers refuse to read back out of a stored row. A value above
+        // one of them hashes without complaint and then fails to verify, which reads as a wrong
+        // password rather than as a configuration mistake.
+        if (settings.Pbkdf2Iterations > Pbkdf2PasswordHasher.MaxIterations)
+        {
+            problems.Add(
+                $"LocalLogin:Pbkdf2Iterations is {settings.Pbkdf2Iterations}; {Pbkdf2PasswordHasher.MaxIterations} is "
+                + "the highest a stored row may name, so every row written with it would fail to verify.");
+        }
+
+        if (settings.HashSizeBytes > Pbkdf2PasswordHasher.MaxHashSizeBytes)
+        {
+            problems.Add(
+                $"LocalLogin:HashSizeBytes is {settings.HashSizeBytes}; {Pbkdf2PasswordHasher.MaxHashSizeBytes} is the "
+                + "highest a stored row may carry, so every row written with it would fail to verify.");
+        }
     }
 
     private void CheckLengths(ToamaisutaaLocalLoginOptions settings, List<string> problems)
