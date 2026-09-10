@@ -57,6 +57,10 @@ public static class ToamaisutaaPasswordLoginExtensions
         // together for whoever subscribed to the name.
         services.TryAddSingleton<ToamaisutaaMetrics>();
 
+        // Added by AddToamaisutaaBearer as well, because either call may come first. The startup
+        // check below reads it, so it has to be there even when this is the first of the two.
+        services.TryAddSingleton<LocalSigningKeyRing>();
+
         services.TryAddSingleton<IPasswordHasher, Pbkdf2PasswordHasher>();
         services.TryAddSingleton<IPasswordValidator, DefaultPasswordValidator>();
         services.TryAddSingleton<IUserRoleProvider, EmptyUserRoleProvider>();
@@ -92,7 +96,8 @@ public static class ToamaisutaaPasswordLoginExtensions
                 services,
                 provider.GetRequiredService<Options.IOptions<ToamaisutaaLocalLoginOptions>>(),
                 provider.GetRequiredService<Options.IOptions<ToamaisutaaOidcOptions>>(),
-                provider.GetRequiredService<DummyPasswordHash>())));
+                provider.GetRequiredService<DummyPasswordHash>(),
+                provider.GetRequiredService<LocalSigningKeyRing>())));
 
         return services;
     }

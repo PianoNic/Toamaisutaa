@@ -33,6 +33,7 @@ dotnet run
 | `GET /api/me` | provisioning: the local row is created on the first call and read afterwards |
 | `GET /api/admin` | the `Toamaisutaa.Admin` policy from `Oidc:AdminRole` |
 | `GET /health` | the discovery probe - stop the issuer container and it turns 503 |
+| `GET /auth/.well-known/jwks.json` | the public half of the local signing key, because this sample signs asymmetrically |
 | `POST /auth/*` | local password login - see `MinimalApiSample.http` |
 
 Call `/api/me` twice and watch the SQL: the second call reads and writes nothing, because
@@ -56,6 +57,12 @@ say:
 
 Self-registration is on here because it makes the sample usable. It is off by default in the
 package.
+
+This sample signs local tokens with a P-256 key from `LocalLogin:SigningKeys` rather than the HS256
+default, so `GET /auth/.well-known/jwks.json` has something to publish. Paste an `access_token` into
+a JWT decoder: the header says `"alg": "ES256"` and a `kid` that appears in that document, which is
+everything a gateway needs to check the signature without holding anything secret. Swap the key list
+for `LocalLogin:SigningKey` and the JWKS route stops being mapped at all.
 
 ## The metrics
 

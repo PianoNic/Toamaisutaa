@@ -50,6 +50,7 @@ export default defineConfig({
             link: '/password-login',
             collapsed: true,
             items: [
+              { text: 'Signing local tokens', link: '/token-signing' },
               { text: 'Password hashing', link: '/password-hashing' },
               { text: 'Breached passwords', link: '/breached-passwords' },
               { text: 'Customizing local login', link: '/customizing-password-login' },

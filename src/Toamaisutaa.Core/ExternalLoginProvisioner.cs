@@ -60,8 +60,11 @@ internal sealed class ExternalLoginProvisioner(
 
         var local = localLoginOptions.Value;
 
-        // No signing key means password login was never registered, so no token is ours.
-        if (string.IsNullOrWhiteSpace(local.SigningKey))
+        // No signing key of either shape means password login was never registered, so no token is
+        // ours. Both are asked: a deployment that has moved to asymmetric keys drops
+        // LocalLogin:SigningKey, and reading only that one would send every locally issued token
+        // down the external-login path to be provisioned as a stranger.
+        if (string.IsNullOrWhiteSpace(local.SigningKey) && local.SigningKeys.Count == 0)
             return false;
 
         var issuer = principal.FindFirst("iss")?.Value;

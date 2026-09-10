@@ -12,24 +12,18 @@ namespace Toamaisutaa.OpenIdConnect;
 /// <remarks>
 /// The claim names are the same ones the claims mapper reads from an identity provider's token, so
 /// a locally issued token is indistinguishable to everything downstream: same policies, same
-/// <c>ICurrentUser</c>, same provisioning. Symmetric HS256, because the only thing that validates
-/// these is the process that signed them. If another service ever needs to validate them without
-/// holding the secret, that wants asymmetric keys and a JWKS endpoint, which is a different
-/// feature.
+/// <c>ICurrentUser</c>, same provisioning. HS256 from <c>LocalLogin:SigningKey</c> by default,
+/// because the only thing that validates these is usually the process that signed them; asymmetric
+/// from <c>LocalLogin:SigningKeys</c> when something else has to validate them without being handed
+/// the ability to mint them.
 /// </remarks>
 internal sealed class LocalAccessTokenIssuer(
     IOptions<ToamaisutaaLocalLoginOptions> localOptions,
     IOptions<ToamaisutaaOidcOptions> oidcOptions,
     IOptions<ToamaisutaaProvisioningOptions> provisioningOptions,
+    LocalTokenKeys keys,
     TimeProvider timeProvider) : IAccessTokenIssuer
 {
-    private readonly Lazy<SigningCredentials> _credentials = new(
-        () => new SigningCredentials(
-            LocalSigningKey.Create(localOptions.Value)
-                ?? throw new InvalidOperationException("LocalLogin:SigningKey is not configured, so no token can be signed."),
-            SecurityAlgorithms.HmacSha256),
-        LazyThreadSafetyMode.ExecutionAndPublication);
-
     private readonly JsonWebTokenHandler _handler = new();
 
     public Task<AccessToken> IssueAsync(AccessTokenRequest request, CancellationToken cancellationToken = default)
@@ -93,7 +87,9 @@ internal sealed class LocalAccessTokenIssuer(
             IssuedAt = now.UtcDateTime,
             NotBefore = now.UtcDateTime,
             Expires = expires.UtcDateTime,
-            SigningCredentials = _credentials.Value,
+            SigningCredentials = keys.Signing
+                ?? throw new InvalidOperationException(
+                    "Neither LocalLogin:SigningKey nor LocalLogin:SigningKeys is configured, so no token can be signed."),
             // A unique id per token, so a future revocation list has something to name.
             TokenType = "at+jwt",
         };
@@ -111,30 +107,4 @@ internal sealed class LocalAccessTokenIssuer(
     }
 
     private static string? NullIfBlank(string? value) => string.IsNullOrWhiteSpace(value) ? null : value;
-}
-
-/// <summary>The one place the configured key is turned into a signing key, so the key id it carries
-/// is the same everywhere.</summary>
-internal static class LocalSigningKey
-{
-    internal static SymmetricSecurityKey? Create(ToamaisutaaLocalLoginOptions options)
-    {
-        if (string.IsNullOrWhiteSpace(options.SigningKey))
-            return null;
-
-        byte[] material;
-
-        try
-        {
-            material = Convert.FromBase64String(options.SigningKey);
-        }
-        catch (FormatException)
-        {
-            return null;
-        }
-
-        return material.Length < 32
-            ? null
-            : new SymmetricSecurityKey(material) { KeyId = ToamaisutaaDefaults.LocalSigningKeyId };
-    }
 }

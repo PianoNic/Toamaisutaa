@@ -4,6 +4,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
 using Toamaisutaa.Abstractions;
+using Toamaisutaa.Core;
 using Toamaisutaa.OpenIdConnect;
 
 namespace Microsoft.Extensions.DependencyInjection;
@@ -60,6 +61,13 @@ public static class ToamaisutaaBearerExtensions
         services.TryAddSingleton<UserInfoClaimsEnricher>();
         services.AddOptions<ToamaisutaaLocalLoginOptions>();
         services.AddOptions<ToamaisutaaProvisioningOptions>();
+
+        // Singletons because importing key material allocates a key handle and both the signing and
+        // the validating path run per request. TryAdd, and AddToamaisutaaPasswordLogin adds the ring
+        // too, because either call may come first - and a resource server that never issues a token
+        // still has to validate the ones another instance issued.
+        services.TryAddSingleton<LocalSigningKeyRing>();
+        services.TryAddSingleton<LocalTokenKeys>();
 
         // Registered here because signing a token needs a JWT library and Core carries none. It
         // does nothing until password login configures a signing key.

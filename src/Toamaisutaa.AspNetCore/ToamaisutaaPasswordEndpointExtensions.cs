@@ -4,6 +4,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using Toamaisutaa.Abstractions;
 using Toamaisutaa.AspNetCore;
+using Toamaisutaa.Core;
 
 namespace Microsoft.AspNetCore.Builder;
 
@@ -61,6 +62,32 @@ public static class ToamaisutaaPasswordEndpointExtensions
             .Produces<TokenResponse>()
             .Produces<ErrorResponse>(StatusCodes.Status401Unauthorized)
             .Produces(StatusCodes.Status429TooManyRequests);
+
+        // Not mapped at all when signing is symmetric, the same reasoning self-registration uses
+        // below. An HS256 deployment has no public half, and answering an empty set would tell a
+        // gateway that this issuer publishes nothing rather than that it was never asked to - which
+        // is a 200 and a silent refusal of every token afterwards.
+        var signingKeys = endpoints.ServiceProvider.GetRequiredService<LocalSigningKeyRing>();
+
+        if (signingKeys.HasPublicKeys)
+        {
+            // Read once. The keys are fixed for the life of the process, and rebuilding the
+            // document per request would export the same parameters again on a route a gateway
+            // polls.
+            var jwks = signingKeys.PublicKeys();
+
+            group.MapGet(ToamaisutaaDefaults.JwksEndpointPattern, () => Results.Ok(jwks))
+                .AllowAnonymous()
+                .WithName($"{endpointNamePrefix}ToamaisutaaJwks")
+                .WithSummary("Publishes the public halves of the local signing keys.")
+                .WithDescription(
+                    "RFC 7517. Anonymous, because a gateway reads it before anyone has signed in. "
+                    + "Mapped only when `LocalLogin:SigningKeys` is configured - a deployment "
+                    + "signing HS256 has no public key to publish. Every configured key is here, "
+                    + "not only the active one, so a token signed before a rotation still "
+                    + "validates.")
+                .Produces<JsonWebKeySetResponse>();
+        }
 
         group.MapPost("/refresh", RefreshAsync)
             .AllowAnonymous()

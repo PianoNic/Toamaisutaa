@@ -8,10 +8,31 @@ public sealed class ToamaisutaaLocalLoginOptions
 {
     // ── Token issuance ──
 
-    /// <summary>Base64, at least 32 bytes, required. Signs the access tokens this package issues.
-    /// There is deliberately no generated fallback: a per-process key would invalidate every token
-    /// on restart and disagree between instances, silently.</summary>
+    /// <summary>Base64, at least 32 bytes. Signs the access tokens this package issues with HS256,
+    /// unless <see cref="SigningKeys"/> is set. There is deliberately no generated fallback: a
+    /// per-process key would invalidate every token on restart and disagree between instances,
+    /// silently.</summary>
     public string? SigningKey { get; set; }
+
+    /// <summary>
+    /// Asymmetric signing keys, active one first. Every entry validates; the first also signs.
+    /// Empty by default, which leaves <see cref="SigningKey"/> and HS256 in charge.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// HS256 can only be checked by a process holding the secret, so a gateway or a second service
+    /// cannot validate a token without also being handed the ability to mint one. These publish
+    /// their public halves at <c>{EndpointPrefix}/.well-known/jwks.json</c>, which is the shape
+    /// anything that already validates an identity provider's tokens knows how to read.
+    /// </para>
+    /// <para>
+    /// Rotating means putting a new entry at the front and leaving the old one behind it. Tokens
+    /// signed by a key that is no longer first keep validating until they expire, so the retired
+    /// entry can be dropped once one <see cref="AccessTokenLifetime"/> has passed. An entry that is
+    /// only ever going to validate may carry the public half alone.
+    /// </para>
+    /// </remarks>
+    public IList<ToamaisutaaSigningKeyOptions> SigningKeys { get; set; } = [];
 
     /// <summary>The <c>iss</c> of locally issued tokens, and the value that tells the rest of the
     /// package a token is ours. Changing it invalidates every token in flight.</summary>
@@ -131,6 +152,36 @@ public sealed class ToamaisutaaLocalLoginOptions
     public string EndpointPrefix { get; set; } = "/auth";
 
     public ToamaisutaaRateLimitOptions RateLimit { get; set; } = new();
+}
+
+/// <summary>
+/// One entry of <see cref="ToamaisutaaLocalLoginOptions.SigningKeys"/>: a key id, and the key
+/// material as either PEM or a JWK.
+/// </summary>
+/// <remarks>
+/// Public because it is bound from configuration, and because a key rarely lives in a settings
+/// file - an application reading one from a vault builds this list in code instead.
+/// </remarks>
+public sealed class ToamaisutaaSigningKeyOptions
+{
+    /// <summary>
+    /// What a token carries in its <c>kid</c> header, and how a validator picks this key back out
+    /// of the set. Required for <see cref="Pem"/>; optional for <see cref="Jwk"/>, which may carry
+    /// its own. Anything stable and unique will do - a date, a version, a GUID.
+    /// </summary>
+    public string? Kid { get; set; }
+
+    /// <summary>
+    /// An RSA or EC key in PEM, private half included for the active entry. Set this or
+    /// <see cref="Jwk"/>, not both.
+    /// </summary>
+    public string? Pem { get; set; }
+
+    /// <summary>
+    /// The same key as a JSON Web Key, the JSON object itself rather than a set. Set this or
+    /// <see cref="Pem"/>, not both.
+    /// </summary>
+    public string? Jwk { get; set; }
 }
 
 /// <summary>

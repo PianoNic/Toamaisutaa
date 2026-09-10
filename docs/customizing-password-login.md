@@ -31,8 +31,11 @@ replacing it, so the length rules survive.
 ## What goes in the access token is a seam too
 
 `IAccessTokenIssuer` mints the locally issued token: the claims, the lifetime, the signature.
-Replace it when you need a claim this package does not add, or an asymmetric signing key so that
-something else can validate the tokens without holding the secret.
+Replace it when you need a claim this package does not add.
+
+Asymmetric signing is not a reason to replace it any more: set `LocalLogin:SigningKeys` and the
+package signs with an RSA or EC key and publishes the public half itself - see
+[signing local tokens](/token-signing).
 
 ```csharp
 builder.Services.AddSingleton<IAccessTokenIssuer, YourTokenIssuer>();
