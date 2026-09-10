@@ -30,8 +30,10 @@ public interface ICurrentUser
     Task<ToamaisutaaUser> GetOrProvisionAsync(CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Membership as the token states it, read from the claim <c>Oidc:RoleClaim</c> names. Empty
-    /// on an anonymous request. A read of the token, not an authorization decision: it answers
+    /// Membership as the token states it, read from the claim <c>Oidc:RoleClaim</c> names and from
+    /// the role claim type the principal's own identities name - which is what <c>RequireRole</c>
+    /// reads, so the two agree. Empty on an anonymous request. A read of the token, not an
+    /// authorization decision: it answers
     /// "what does this caller carry", while <c>[Authorize]</c> answers "may this caller in".
     /// </summary>
     IReadOnlyList<string> Roles => [];

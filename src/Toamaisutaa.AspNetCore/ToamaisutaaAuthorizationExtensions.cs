@@ -53,8 +53,11 @@ public static class ToamaisutaaAuthorizationExtensions
         services.AddOptions<ToamaisutaaProvisioningOptions>();
 
         // Named so ICurrentUser.Roles reads the claim the role checks read. Left unbound here on
-        // purpose: AddToamaisutaaAuthorization binds it to configuration, and an application that
-        // calls neither still gets the default rather than a missing-options failure.
+        // purpose: the IConfiguration overload of AddToamaisutaaAuthorization binds it, and an
+        // application that hands this package no configuration at all still gets the default rather
+        // than a missing-options failure. That application is not left reading the wrong claim
+        // either, because Roles also reads each identity's own role claim type - the one
+        // RequireRole reads, whoever configured it.
         services.AddOptions<ToamaisutaaOidcOptions>();
         services.TryAddScoped<ICurrentUser, HttpContextCurrentUser>();
 
