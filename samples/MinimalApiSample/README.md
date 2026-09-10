@@ -32,6 +32,7 @@ dotnet run
 | `GET /api/app` | the runtime configuration a SPA reads before sign-in |
 | `GET /api/me` | provisioning: the local row is created on the first call and read afterwards |
 | `GET /api/admin` | the `Toamaisutaa.Admin` policy from `Oidc:AdminRole` |
+| `GET /health` | the discovery probe - stop the issuer container and it turns 503 |
 | `POST /auth/*` | local password login - see `MinimalApiSample.http` |
 
 Call `/api/me` twice and watch the SQL: the second call reads and writes nothing, because

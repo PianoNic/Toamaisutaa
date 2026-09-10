@@ -37,7 +37,7 @@ internal sealed class ConfigureToamaisutaaJwtBearerOptions(
         // Reaching the issuer at a different address than the one it stamps into tokens is normal
         // inside a container network. Discovery moves; the issuer check does not.
         if (internalAuthority is not null && !string.Equals(internalAuthority, publicAuthority, StringComparison.Ordinal))
-            options.MetadataAddress = $"{internalAuthority.TrimEnd('/')}/.well-known/openid-configuration";
+            options.MetadataAddress = DiscoveryAddress.From(internalAuthority);
 
         options.RequireHttpsMetadata = settings.RequireHttpsMetadata;
 

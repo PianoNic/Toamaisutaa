@@ -48,6 +48,11 @@ builder.Services.AddOpenApi(options => options.AddDocumentTransformer((document,
 // one handler, one scheme, and nothing downstream can tell which kind it is holding.
 builder.Services.AddToamaisutaaBearer(builder.Configuration);
 
+// Probes the issuer's discovery document, so a wrong Oidc:Authority is a red readiness check rather
+// than a 401 on every request. Start the sample without the mock issuer running and /health says so
+// in one line.
+builder.Services.AddToamaisutaaHealthChecks();
+
 // Authenticated by default, plus the "Toamaisutaa.Admin" policy because Oidc:AdminRole is set.
 builder.Services.AddToamaisutaaAuthorization(builder.Configuration);
 
@@ -118,6 +123,10 @@ app.MapToamaisutaaTwoFactorEndpoints();
 
 // GET /auth/devices, DELETE /auth/devices/{id}, DELETE /auth/devices.
 app.MapToamaisutaaTrustedDeviceEndpoints();
+
+// Anonymous, and it has to be: the fallback policy would otherwise answer 401, which an orchestrator
+// reads as a failing probe no matter how healthy the issuer is.
+app.MapHealthChecks("/health").AllowAnonymous();
 
 if (app.Environment.IsDevelopment())
 {

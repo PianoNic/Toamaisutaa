@@ -7,6 +7,9 @@ GET {{host}}/api/public
 ### What the SPA reads before anyone has signed in.
 GET {{host}}/api/app
 
+### Healthy while the issuer answers. Stop the mock-oauth2-server container and this turns 503.
+GET {{host}}/health
+
 # ───────────────────────── local password login ─────────────────────────
 
 ### Register. Only mapped because LocalLogin:AllowSelfRegistration is true.
