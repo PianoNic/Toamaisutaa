@@ -2,7 +2,7 @@ namespace Toamaisutaa.Email.Smtp;
 
 /// <summary>
 /// Everything read from the <c>Email:Smtp</c> configuration section. Binds an SMTP transport and the
-/// link a password reset email points at; nothing here is required unless
+/// links the emails it sends point at; nothing here is required unless
 /// <c>AddToamaisutaaSmtpEmail</c> is actually called.
 /// </summary>
 public sealed class ToamaisutaaSmtpEmailOptions
@@ -35,6 +35,20 @@ public sealed class ToamaisutaaSmtpEmailOptions
     /// entirely.
     /// </summary>
     public string? PasswordResetLinkTemplate { get; set; }
+
+    /// <summary>
+    /// The invitation link, with <c>{token}</c> replaced by the raw token. Required only when
+    /// <c>AddToamaisutaaSmtpInvitationEmail</c> is called and the default
+    /// <see cref="IInvitationEmailTemplate"/> is the one in use.
+    /// </summary>
+    public string? InvitationLinkTemplate { get; set; }
+
+    /// <summary>
+    /// Where someone signs in, put at the end of the admin-issued password email. Optional and
+    /// checked nowhere: a credentials email is still useful without it, and the person reading one
+    /// was usually told what they are signing in to by whoever provisioned the account.
+    /// </summary>
+    public string? SignInUrl { get; set; }
 
     public TimeSpan Timeout { get; set; } = TimeSpan.FromSeconds(30);
 }

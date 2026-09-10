@@ -9,6 +9,9 @@
 
   <ItemGroup>
     <PackageReference Include="TUnit" />
+    <!-- The shipping package needs only the abstractions. Asserting what AddToamaisutaaSmtpEmail
+         and the two opt-in calls actually register needs a container to build. -->
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" />
   </ItemGroup>
 
   <ItemGroup>

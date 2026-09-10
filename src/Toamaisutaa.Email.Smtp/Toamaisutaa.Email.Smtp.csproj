@@ -2,7 +2,7 @@
   <PropertyGroup>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
-    <Description>Opt-in SMTP implementation of IPasswordResetNotifier for Toamaisutaa. Nothing else references this package - install it only if you want Toamaisutaa to send the reset email itself instead of you writing a notifier.</Description>
+    <Description>Opt-in SMTP implementations of IPasswordResetNotifier, IInvitationNotifier and IAdminPasswordIssuedNotifier for Toamaisutaa. Nothing else references this package - install it only if you want Toamaisutaa to send those emails itself instead of you writing the notifiers.</Description>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\Toamaisutaa.Abstractions\Toamaisutaa.Abstractions.csproj" />
