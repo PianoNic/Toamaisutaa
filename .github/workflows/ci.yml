@@ -40,6 +40,11 @@ jobs:
       - name: Test the SMTP notifier
         run: dotnet run --project src/Toamaisutaa.Email.Smtp.Tests/Toamaisutaa.Email.Smtp.Tests.csproj --configuration Release --no-build
 
+      # Stubs the range API rather than calling it, so this reaches the network no more than the
+      # rest of the suite does.
+      - name: Test the breached-password check
+        run: dotnet run --project src/Toamaisutaa.PasswordValidation.Hibp.Tests/Toamaisutaa.PasswordValidation.Hibp.Tests.csproj --configuration Release --no-build
+
       # Packing on every build is the only thing that catches a broken icon path, a missing licence
       # file or a bad dependency group before a tag does. Per-project rather than per-solution: pack
       # on a solution warns for every project that is deliberately not packable, and that warning

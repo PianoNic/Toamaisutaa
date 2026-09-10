@@ -17,7 +17,8 @@ internal sealed class PasswordHarness
         bool withTwoFactor,
         bool withTrustedDevices,
         bool withAdminPasswordNotifier,
-        bool withInvitationNotifier)
+        bool withInvitationNotifier,
+        IPasswordValidator? validator)
     {
         TrustedDeviceOptions = trustedDeviceOptions;
 
@@ -107,7 +108,7 @@ internal sealed class PasswordHarness
             Passwords,
             Passwords,
             Hasher,
-            new DefaultPasswordValidator(wrapped),
+            validator ?? new DefaultPasswordValidator(wrapped),
             Notifier,
             SignIn,
             deviceGate,
@@ -199,7 +200,8 @@ internal sealed class PasswordHarness
         bool withTwoFactor = false,
         bool withTrustedDevices = false,
         bool withAdminPasswordNotifier = true,
-        bool withInvitationNotifier = true)
+        bool withInvitationNotifier = true,
+        IPasswordValidator? validator = null)
     {
         // Iterations far below the production floor: these tests run many derivations and the floor
         // is a startup check, not a property of the hasher.
@@ -223,7 +225,8 @@ internal sealed class PasswordHarness
             withTwoFactor,
             withTrustedDevices,
             withAdminPasswordNotifier,
-            withInvitationNotifier);
+            withInvitationNotifier,
+            validator);
     }
 
     /// <summary>A registered local account, as self-registration would have produced it.</summary>

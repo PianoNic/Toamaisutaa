@@ -75,7 +75,8 @@ public sealed class ToamaisutaaLocalLoginOptions
     // ── Passwords ──
 
     /// <summary>A length floor and nothing else, per NIST: no composition rules, no forced
-    /// rotation. Add a breach-list check by registering your own <see cref="IPasswordValidator"/>.</summary>
+    /// rotation. Add a breach-list check with <c>Toamaisutaa.PasswordValidation.Hibp</c>, which
+    /// wraps this rather than replacing it, or your own <see cref="IPasswordValidator"/>.</summary>
     public int MinimumPasswordLength { get; set; } = 8;
 
     /// <summary>

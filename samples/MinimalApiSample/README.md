@@ -57,6 +57,16 @@ say:
 Self-registration is on here because it makes the sample usable. It is off by default in the
 package.
 
+## The breach check
+
+`Toamaisutaa.PasswordValidation.Hibp` is registered, so try registering with `password` and watch it
+come back `400` with `That password has appeared in a known data breach.` - on top of the length
+floor, not in place of it, so `short` still comes back with the length message instead.
+
+It is the one part of this sample that talks to something outside the machine. Take the network away
+and registration still works: the log says the check could not be reached and the password goes
+through, which is the whole point of it failing open.
+
 ## No identity provider at all
 
 The whole point of local login is a deployment that cannot run one. Clear the authority and it still
