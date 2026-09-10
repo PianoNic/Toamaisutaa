@@ -58,6 +58,7 @@ export default defineConfig({
           },
           { text: 'Two-factor authentication', link: '/two-factor' },
           { text: 'Trusted devices', link: '/trusted-devices' },
+          { text: 'Audit events', link: '/audit-events' },
         ],
       },
       {

@@ -15,6 +15,7 @@ internal sealed class TwoFactorService(
     ISecretProtector protector,
     TwoFactorVerifier verifier,
     TrustedDeviceGate trustedDevices,
+    AuthenticationEventPublisher events,
     IOptions<ToamaisutaaTwoFactorOptions> options,
     TimeProvider timeProvider,
     ILogger<TwoFactorService> logger) : ITwoFactorService
@@ -122,6 +123,8 @@ internal sealed class TwoFactorService(
         var codes = await IssueRecoveryCodesAsync(userId, now, cancellationToken);
         await BumpSecurityStampAsync(userId, "two-factor-enabled", now, cancellationToken);
 
+        await events.PublishAsync(new TwoFactorEnrolled { OccurredAt = now, UserId = userId }, cancellationToken);
+
         logger.LogInformation("Two-factor authentication is now enabled for user {UserId}.", userId);
 
         return new TwoFactorEnrolmentCompleted { RecoveryCodes = codes };
@@ -129,16 +132,25 @@ internal sealed class TwoFactorService(
 
     public async Task<TwoFactorResult> DisableAsync(Guid userId, string proof, CancellationToken cancellationToken = default)
     {
+        var now = timeProvider.GetUtcNow();
         var verification = await verifier.VerifyAsync(userId, proof, requireConfirmed: true, cancellationToken);
 
         if (!verification.Succeeded)
-            return TwoFactorResult.Failure("That code is not right.");
+        {
+            await events.PublishAsync(
+                new TwoFactorFailed { OccurredAt = now, UserId = userId, Reason = SignInOutcome.InvalidTwoFactorCode },
+                cancellationToken);
 
-        var now = timeProvider.GetUtcNow();
+            return TwoFactorResult.Failure("That code is not right.");
+        }
+
+        await PublishRecoveryCodeUseAsync(userId, verification, now, cancellationToken);
 
         await recoveryCodes.ReplaceAllAsync(userId, [], cancellationToken);
         await enrolments.DeleteAsync(userId, cancellationToken);
         await BumpSecurityStampAsync(userId, "two-factor-disabled", now, cancellationToken);
+
+        await events.PublishAsync(new TwoFactorDisabled { OccurredAt = now, UserId = userId }, cancellationToken);
 
         logger.LogWarning("Two-factor authentication was disabled for user {UserId}, and every local session was revoked.", userId);
 
@@ -147,12 +159,20 @@ internal sealed class TwoFactorService(
 
     public async Task<TwoFactorEnrolmentCompleted> RegenerateRecoveryCodesAsync(Guid userId, string proof, CancellationToken cancellationToken = default)
     {
+        var now = timeProvider.GetUtcNow();
         var verification = await verifier.VerifyAsync(userId, proof, requireConfirmed: true, cancellationToken);
 
         if (!verification.Succeeded)
-            throw new TwoFactorEnrolmentException("That code is not right.");
+        {
+            await events.PublishAsync(
+                new TwoFactorFailed { OccurredAt = now, UserId = userId, Reason = SignInOutcome.InvalidTwoFactorCode },
+                cancellationToken);
 
-        var now = timeProvider.GetUtcNow();
+            throw new TwoFactorEnrolmentException("That code is not right.");
+        }
+
+        await PublishRecoveryCodeUseAsync(userId, verification, now, cancellationToken);
+
         var codes = await IssueRecoveryCodesAsync(userId, now, cancellationToken);
 
         await BumpSecurityStampAsync(userId, "recovery-codes-regenerated", now, cancellationToken);
@@ -197,5 +217,27 @@ internal sealed class TwoFactorService(
         await users.UpdateSecurityStampAsync(userId, SecureTokens.Create(), cancellationToken);
         await refreshTokens.RevokeAllForUserAsync(userId, reason, now, cancellationToken);
         await trustedDevices.RevokeAllAsync(userId, reason, now, cancellationToken);
+
+        await events.PublishAsync(
+            new SessionRevoked { OccurredAt = now, UserId = userId, Reason = reason },
+            cancellationToken);
+    }
+
+    /// <summary>
+    /// The proof these endpoints ask for can be a recovery code, and one spent to disable a second
+    /// factor is the same fact as one spent to sign in: the authenticator is gone.
+    /// </summary>
+    private async Task PublishRecoveryCodeUseAsync(
+        Guid userId,
+        TwoFactorVerification verification,
+        DateTimeOffset now,
+        CancellationToken cancellationToken)
+    {
+        if (!verification.UsedRecoveryCode)
+            return;
+
+        await events.PublishAsync(
+            new RecoveryCodeUsed { OccurredAt = now, UserId = userId, RunningLow = verification.RecoveryCodesRunningLow },
+            cancellationToken);
     }
 }

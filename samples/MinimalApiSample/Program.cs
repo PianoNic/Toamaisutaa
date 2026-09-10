@@ -79,6 +79,12 @@ builder.Services.AddAuthorizationBuilder()
 // one writes the link to the log, which is all a sample needs.
 builder.Services.AddSingleton<IPasswordResetNotifier, LoggingPasswordResetNotifier>();
 
+// Every security-relevant outcome, handed to whatever you register: sign-ins, lockouts, password
+// changes, two-factor and device events, refresh-token reuse. This one writes a line; a real one
+// writes a row. Nothing published ever carries a secret, which is what makes it safe to keep for as
+// long as an audit table is kept.
+builder.Services.AddToamaisutaaAuthenticationEventSink<LoggingAuditSink>();
+
 // Toamaisutaa's own endpoints already answer 401 for a stale security stamp. This covers YOUR
 // endpoints: anything calling ICurrentUser.GetOrProvisionAsync can meet a token that was issued
 // before a credential changed, and without this it surfaces as a 500 for something the client only
@@ -247,6 +253,31 @@ internal sealed class MetricsToTheLog(ILogger<MetricsToTheLog> logger) : IHosted
             described.Append(described.Length == 0 ? " " : ", ").Append(tag.Key).Append('=').Append(tag.Value);
 
         logger.LogInformation("{Instrument} {Value}{Tags}", instrument.Name, value, described.ToString());
+    }
+}
+
+/// <summary>
+/// Stands in for the audit table an application would keep - the gate master's ledger, in a sample
+/// that has no table to write to.
+/// </summary>
+/// <remarks>
+/// Deliberately dull, and it prints the same fields for every event: the point of a ledger is that
+/// somebody can read a year of it. A real one switches on the event type for the extras -
+/// <c>SignInFailed.Reason</c>, <c>SessionRevoked.Reason</c>, <c>TrustedDeviceRevoked.DeviceId</c> -
+/// and writes a row rather than a line.
+/// </remarks>
+internal sealed class LoggingAuditSink(ILogger<LoggingAuditSink> logger) : IAuthenticationEventSink
+{
+    public Task HandleAsync(AuthenticationEvent authenticationEvent, CancellationToken cancellationToken = default)
+    {
+        logger.LogInformation(
+            "Audit: {Kind} for user {UserId} at {OccurredAt} [{Methods}].",
+            authenticationEvent.Kind,
+            authenticationEvent.UserId,
+            authenticationEvent.OccurredAt,
+            string.Join(' ', authenticationEvent.AuthenticationMethods));
+
+        return Task.CompletedTask;
     }
 }
 

@@ -40,6 +40,28 @@ public static class ToamaisutaaCoreServiceCollectionExtensions
     }
 
     /// <summary>
+    /// Registers a sink that is handed every security-relevant outcome - sign-ins, lockouts,
+    /// password changes, two-factor and device events - so an application can write an audit table
+    /// instead of scraping its logs for one.
+    /// </summary>
+    /// <remarks>
+    /// Additive, not TryAdd: call it once per sink and all of them are invoked, in registration
+    /// order. Scoped, so a sink can take the same unit of work the request is already using.
+    /// Nothing else needs switching on, and a sink that throws is logged and stepped over rather
+    /// than allowed to fail the request that produced the event.
+    /// </remarks>
+    public static IServiceCollection AddToamaisutaaAuthenticationEventSink<TSink>(this IServiceCollection services)
+        where TSink : class, IAuthenticationEventSink
+    {
+        ArgumentNullException.ThrowIfNull(services);
+
+        services.AddScoped<IAuthenticationEventSink, TSink>();
+        services.TryAddScoped<AuthenticationEventPublisher>();
+
+        return services;
+    }
+
+    /// <summary>
     /// Runs a periodic sweep of expired refresh, password-reset and invitation rows, plus the
     /// two-factor challenge and trusted-device rows when those are configured. Opt-in: without it
     /// those tables only grow, and with it this package writes to the database on a timer, which is

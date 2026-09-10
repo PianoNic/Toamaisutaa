@@ -5,6 +5,7 @@ namespace Toamaisutaa.Core;
 
 internal sealed class TrustedDeviceService(
     ITrustedDeviceStore devices,
+    AuthenticationEventPublisher events,
     TimeProvider timeProvider,
     ILogger<TrustedDeviceService> logger) : ITrustedDeviceService
 {
@@ -43,16 +44,36 @@ internal sealed class TrustedDeviceService(
         if (!active.Any(device => device.FamilyId == deviceId))
             return false;
 
-        await devices.RevokeFamilyAsync(deviceId, "revoked-by-user", timeProvider.GetUtcNow(), cancellationToken);
+        var now = timeProvider.GetUtcNow();
+
+        await devices.RevokeFamilyAsync(deviceId, "revoked-by-user", now, cancellationToken);
         logger.LogInformation("User {UserId} revoked trusted device {FamilyId}.", userId, deviceId);
+
+        await events.PublishAsync(
+            new TrustedDeviceRevoked
+            {
+                OccurredAt = now,
+                UserId = userId,
+                DeviceId = deviceId,
+                Reason = "revoked-by-user",
+            },
+            cancellationToken);
 
         return true;
     }
 
     public async Task<int> RevokeAllAsync(Guid userId, CancellationToken cancellationToken = default)
     {
-        var revoked = await devices.RevokeAllForUserAsync(userId, "revoked-by-user", timeProvider.GetUtcNow(), cancellationToken);
+        var now = timeProvider.GetUtcNow();
+        var revoked = await devices.RevokeAllForUserAsync(userId, "revoked-by-user", now, cancellationToken);
         logger.LogInformation("User {UserId} revoked every trusted device: {Count} row(s).", userId, revoked);
+
+        if (revoked > 0)
+        {
+            await events.PublishAsync(
+                new TrustedDeviceRevoked { OccurredAt = now, UserId = userId, Reason = "revoked-by-user" },
+                cancellationToken);
+        }
 
         return revoked;
     }

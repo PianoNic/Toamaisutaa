@@ -113,7 +113,7 @@ internal sealed class TwoFactorGate(
                 stored.Purpose,
                 purpose);
 
-            return ChallengeRedemption.Failed(SignInOutcome.InvalidChallenge);
+            return ChallengeRedemption.Failed(SignInOutcome.InvalidChallenge, stored.UserId);
         }
 
         if (purpose == TwoFactorChallengePurpose.StepUp && stored.FamilyId != familyId)
@@ -122,17 +122,17 @@ internal sealed class TwoFactorGate(
                 "Step-up challenge for user {UserId} was presented by a different session than the one that asked for it.",
                 stored.UserId);
 
-            return ChallengeRedemption.Failed(SignInOutcome.InvalidChallenge);
+            return ChallengeRedemption.Failed(SignInOutcome.InvalidChallenge, stored.UserId);
         }
 
         if (stored.ConsumedAt is not null)
         {
             logger.LogWarning("Two-factor challenge for user {UserId} was presented again after being spent.", stored.UserId);
-            return ChallengeRedemption.Failed(SignInOutcome.ChallengeAlreadyUsed);
+            return ChallengeRedemption.Failed(SignInOutcome.ChallengeAlreadyUsed, stored.UserId);
         }
 
         if (stored.ExpiresAt <= now)
-            return ChallengeRedemption.Failed(SignInOutcome.ChallengeExpired);
+            return ChallengeRedemption.Failed(SignInOutcome.ChallengeExpired, stored.UserId);
 
         // The challenge can outlive what it was challenging: disabling requires proof, so an
         // attacker cannot do this, but the account holder can - from a second device, while this
@@ -147,14 +147,14 @@ internal sealed class TwoFactorGate(
                 stored.UserId);
 
             await challenges.MarkConsumedAsync(stored.Id, now, cancellationToken);
-            return ChallengeRedemption.Failed(SignInOutcome.InvalidChallenge);
+            return ChallengeRedemption.Failed(SignInOutcome.InvalidChallenge, stored.UserId);
         }
 
         var verifier = Required<TwoFactorVerifier>();
         var verification = await verifier.VerifyAsync(stored.UserId, code, requireConfirmed: true, cancellationToken);
 
         if (!verification.Succeeded)
-            return ChallengeRedemption.Failed(SignInOutcome.InvalidTwoFactorCode);
+            return ChallengeRedemption.Failed(SignInOutcome.InvalidTwoFactorCode, stored.UserId);
 
         // Spent the moment it works, and only when it works: consuming it on a wrong code would
         // mean one mistyped digit sends the person back to the login form.
@@ -179,11 +179,14 @@ internal readonly record struct ChallengeRedemption
 {
     internal SignInOutcome Outcome { get; init; }
 
-    internal Guid UserId { get; init; }
+    /// <summary>Null only when the challenge itself was unknown, which is the one failure here that
+    /// names nobody. Every other one is attributable, and an audit sink is told who.</summary>
+    internal Guid? UserId { get; init; }
 
     internal bool UsedRecoveryCode { get; init; }
 
     internal bool RecoveryCodesRunningLow { get; init; }
 
-    internal static ChallengeRedemption Failed(SignInOutcome outcome) => new() { Outcome = outcome };
+    internal static ChallengeRedemption Failed(SignInOutcome outcome, Guid? userId = null) =>
+        new() { Outcome = outcome, UserId = userId };
 }
