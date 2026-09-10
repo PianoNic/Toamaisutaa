@@ -27,7 +27,8 @@ outlives a rename, and a column value is forever in a way a type name is not.
 about the consumer's infrastructure, and this package has no business making it. What it does
 guarantee is that a sink cannot fail the request: exceptions are caught and logged, `catch (Exception
 ex) when (ex is not OperationCanceledException)`, matching what `RequestPasswordResetAsync` already
-does with a notifier. A cancelled request is already over, so cancellation is not swallowed.
+does with a notifier. A cancelled request is already over, so cancellation is not swallowed. (That
+filter was wrong for the reason recorded under "What changed afterwards" below.)
 
 **A refresh publishes no `SignInSucceeded`.** `IssueAsync` is shared by sign-in and rotation, so it
 takes an explicit `newSignIn` rather than inferring it from `familyId is null`. Counting rotations
@@ -65,3 +66,39 @@ Nothing published carries a password, a TOTP secret, a recovery code, a reset or
 a refresh token. The unknown-identifier event deliberately does not carry the identifier that was
 tried either: people type their password into the user name box, and an audit table outlives every
 rotation anyone remembers to perform.
+
+## What changed afterwards
+
+Issue #105, from a review of the publish path.
+
+**The cancellation filter reads the token, not the type.** `catch (Exception ex) when (ex is not
+OperationCanceledException)` answers "was this cancelled?" with the exception's type, and
+`TaskCanceledException` is what `HttpClient` raises on its own hundred-second timeout and what a
+provider raises on a command timeout. A sink posting to an audit API that had stopped answering
+therefore failed the sign-in it was auditing - after the refresh row was written and the access
+token minted, so the session existed server-side and the caller got a 500 - which is the outage the
+absorb-and-log design exists to survive. The filter is now
+`|| !cancellationToken.IsCancellationRequested`, the form `HibpPasswordValidator` already used for
+the same question. The two notifier catches in `PasswordAccountService` had it too, and there a
+timing-out relay put back the 500-for-a-real-address, 204-for-an-unknown-one oracle those catches
+exist to erase.
+
+**Sinks are built inside the try.** `IEnumerable<IAuthenticationEventSink>` is materialised by
+dependency injection when the publisher is resolved, which is before any request reaches
+`PublishAsync`, so a sink whose constructor validated a connection string and found it wrong failed
+every request through the endpoints that resolve a publisher. The publisher now takes
+`IEnumerable<AuthenticationEventSinkRegistration>` - a type and a factory, neither of which
+constructs anything - and calls the factory inside the same try that already caught `HandleAsync`.
+A consumer resolving `IAuthenticationEventSink` themselves still gets the sink, and the sink is
+still scoped, so it is built once per request and only if an event is published.
+
+**`EmailChanged` exists.** `VerifyEmailAsync` moved the login identifier, the normalized identifier
+and the profile address and published nothing, so an audit table fed by a sink held a row for every
+password change and lockout and none for the change that moves where every later reset link and
+magic link is sent. It carries `PreviousEmail` and `Email`, because the old address is the half that
+cannot be read off the account afterwards. `RequestEmailChangeAsync` still publishes nothing, for
+the reason beginning an enrolment does not: until the link is redeemed the account is unchanged.
+
+**Four publish sites had no test.** The two in `CompleteStepUpAsync` and the two in
+`TwoFactorService.DisableAsync` could all be deleted with both suites green. They have Core tests
+now, each watched failing with its own site removed.

@@ -46,16 +46,24 @@ public static class ToamaisutaaCoreServiceCollectionExtensions
     /// </summary>
     /// <remarks>
     /// Additive, not TryAdd: call it once per sink and all of them are invoked, in registration
-    /// order. Scoped, so a sink can take the same unit of work the request is already using.
-    /// Nothing else needs switching on, and a sink that throws is logged and stepped over rather
-    /// than allowed to fail the request that produced the event.
+    /// order. Scoped, so a sink can take the same unit of work the request is already using, and
+    /// built on the first event of the request rather than on every request that resolves a
+    /// service. Nothing else needs switching on, and a sink that throws is logged and stepped over
+    /// rather than allowed to fail the request that produced the event - including a sink that
+    /// throws from its own constructor.
     /// </remarks>
     public static IServiceCollection AddToamaisutaaAuthenticationEventSink<TSink>(this IServiceCollection services)
         where TSink : class, IAuthenticationEventSink
     {
         ArgumentNullException.ThrowIfNull(services);
 
-        services.AddScoped<IAuthenticationEventSink, TSink>();
+        // TryAdd on the sink itself, so a consumer who registered it with a lifetime of their own
+        // keeps it. The interface registration is what a consumer resolving sinks directly reads;
+        // the publisher reads the registration instead, so building the sink happens inside its try
+        // rather than while dependency injection is materialising an enumerable.
+        services.TryAddScoped<TSink>();
+        services.AddScoped<IAuthenticationEventSink>(provider => provider.GetRequiredService<TSink>());
+        services.AddScoped(provider => new AuthenticationEventSinkRegistration(typeof(TSink), provider.GetRequiredService<TSink>));
         services.TryAddScoped<AuthenticationEventPublisher>();
 
         return services;

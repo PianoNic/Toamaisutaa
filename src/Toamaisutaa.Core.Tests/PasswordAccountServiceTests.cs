@@ -164,6 +164,22 @@ public class PasswordAccountServiceTests
         await Assert.That(harness.Passwords.ResetTokens.Count).IsEqualTo(1);
     }
 
+    // A mail API that stops answering surfaces as TaskCanceledException from HttpClient's own
+    // timeout, with nobody having cancelled anything. Reading that as "the caller went away" is how
+    // the 500-for-a-real-address oracle comes back.
+    [Test]
+    public async Task ANotifierThatTimesOutIsReportedRatherThanRaised()
+    {
+        var harness = PasswordHarness.Create();
+        await harness.RegisterAsync();
+        harness.Notifier.ThrowOnSend = new TaskCanceledException("The request was canceled due to the configured HttpClient.Timeout of 100 seconds elapsing.");
+
+        var outcome = await harness.Accounts.RequestPasswordResetAsync("nic@example.com");
+
+        await Assert.That(outcome).IsEqualTo(PasswordResetRequestOutcome.NotificationFailed);
+        await Assert.That(harness.Passwords.ResetTokens.Count).IsEqualTo(1);
+    }
+
     [Test]
     public async Task AnUnknownAddressIsSilent()
     {

@@ -63,8 +63,12 @@ internal sealed class PasswordHarness
 
         // The recorder goes second on purpose, so a test about a sink that throws also proves the
         // next one still gets the event.
+        var recorder = new AuthenticationEventSinkRegistration(typeof(RecordingEventSink), () => Events);
+
         var publisher = new AuthenticationEventPublisher(
-            withThrowingEventSink ? [new ThrowingEventSink(), Events] : [Events],
+            withThrowingEventSink
+                ? [new AuthenticationEventSinkRegistration(typeof(ThrowingEventSink), () => new ThrowingEventSink()), recorder]
+                : [recorder],
             NullLogger<AuthenticationEventPublisher>.Instance);
 
         var provider = new FakeServiceProvider();

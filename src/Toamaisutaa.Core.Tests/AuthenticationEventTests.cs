@@ -192,6 +192,30 @@ public class AuthenticationEventTests
         await Assert.That(harness.Events.OfKind<PasswordChanged>()).IsEmpty();
     }
 
+    // ── The address ──
+
+    /// <summary>
+    /// The change that moves the recovery mailbox: every later reset link and magic link goes
+    /// wherever this left the account. The old address is carried because it is the half an
+    /// investigation cannot read off the account afterwards.
+    /// </summary>
+    [Test]
+    public async Task Redeeming_a_verification_link_publishes_where_the_address_moved_from_and_to()
+    {
+        var harness = PasswordHarness.Create();
+        var user = await harness.RegisterAsync();
+
+        await harness.Accounts.RequestEmailChangeAsync(user.Id, "somebody.else@example.com", Password);
+        await harness.Accounts.VerifyEmailAsync(harness.EmailVerificationNotifier.Sent[^1].Token);
+
+        var changed = harness.Events.Single<EmailChanged>();
+
+        await Assert.That(changed.UserId).IsEqualTo(user.Id);
+        await Assert.That(changed.PreviousEmail).IsEqualTo("nic@example.com");
+        await Assert.That(changed.Email).IsEqualTo("somebody.else@example.com");
+        await Assert.That(changed.Kind).IsEqualTo("email-changed");
+    }
+
     // ── Two-factor ──
 
     [Test]
@@ -230,6 +254,89 @@ public class AuthenticationEventTests
 
         await Assert.That(failure.Reason).IsEqualTo(SignInOutcome.InvalidTwoFactorCode);
         await Assert.That(failure.UserId).IsEqualTo(user.Id);
+    }
+
+    /// <summary>Turning a second factor off is the request an attacker holding a stolen access
+    /// token makes, so the refusals on the way there are the ones an alert wants.</summary>
+    [Test]
+    public async Task A_wrong_proof_for_disabling_a_second_factor_publishes_a_failure()
+    {
+        var harness = PasswordHarness.Create(withTwoFactor: true);
+        var user = await harness.RegisterAsync();
+
+        await harness.EnrolAsync(user.Id);
+
+        var result = await harness.TwoFactor.DisableAsync(user.Id, "000000");
+
+        await Assert.That(result.Succeeded).IsFalse();
+
+        var failure = harness.Events.Single<TwoFactorFailed>();
+
+        await Assert.That(failure.UserId).IsEqualTo(user.Id);
+        await Assert.That(failure.Reason).IsEqualTo(SignInOutcome.InvalidTwoFactorCode);
+        await Assert.That(harness.Events.OfKind<TwoFactorDisabled>()).IsEmpty();
+    }
+
+    /// <summary>The proof these endpoints accept can be a recovery code, and one spent to turn the
+    /// second factor off says the same thing as one spent to sign in.</summary>
+    [Test]
+    public async Task A_recovery_code_spent_to_disable_a_second_factor_is_published_as_one()
+    {
+        var harness = PasswordHarness.Create(withTwoFactor: true);
+        var user = await harness.RegisterAsync();
+
+        var (_, codes) = await harness.EnrolAsync(user.Id);
+
+        var result = await harness.TwoFactor.DisableAsync(user.Id, codes[0]);
+
+        await Assert.That(result.Succeeded).IsTrue();
+
+        var used = harness.Events.Single<RecoveryCodeUsed>();
+
+        await Assert.That(used.UserId).IsEqualTo(user.Id);
+        await Assert.That(harness.Events.Single<TwoFactorDisabled>().UserId).IsEqualTo(user.Id);
+    }
+
+    /// <summary>
+    /// Step-up counts against the same lockout a password does, and publishes the same pair: the
+    /// refusal every time, the lock once as it goes on.
+    /// </summary>
+    [Test]
+    public async Task A_wrong_step_up_code_publishes_the_failure_and_the_lockout_it_crosses()
+    {
+        var harness = PasswordHarness.Create(options => options.MaxFailedAttempts = 2, withTwoFactor: true);
+        var user = await harness.RegisterAsync();
+        var (secret, _) = await harness.EnrolAsync(user.Id);
+
+        var started = await harness.SignInAsync("pianonic", Password);
+        harness.Clock.Now = harness.Clock.Now.AddSeconds(30);
+        await harness.VerifyAsync(started.Challenge!.Token, harness.CurrentCode(secret));
+
+        var sessionId = harness.Issuer.Issued[^1].SessionId!.Value;
+
+        for (var attempt = 0; attempt < 2; attempt++)
+        {
+            var challenge = await harness.SignIn.BeginStepUpAsync(new StepUpRequest { UserId = user.Id, SessionId = sessionId });
+
+            await harness.SignIn.CompleteStepUpAsync(new StepUpVerificationRequest
+            {
+                UserId = user.Id,
+                SessionId = sessionId,
+                ChallengeToken = challenge.Challenge!.Token,
+                Code = "000000",
+            });
+        }
+
+        var failures = harness.Events.OfKind<TwoFactorFailed>();
+
+        await Assert.That(failures.Count).IsEqualTo(2);
+        await Assert.That(failures[0].UserId).IsEqualTo(user.Id);
+        await Assert.That(failures[0].Reason).IsEqualTo(SignInOutcome.InvalidTwoFactorCode);
+
+        var lockout = harness.Events.Single<AccountLockedOut>();
+
+        await Assert.That(lockout.UserId).IsEqualTo(user.Id);
+        await Assert.That(lockout.LockedOutUntil).IsEqualTo(harness.Clock.GetUtcNow() + harness.Options.LockoutDuration);
     }
 
     /// <summary>Worth an alert rather than a row: the authenticator is gone, or somebody else has

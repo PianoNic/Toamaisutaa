@@ -37,8 +37,9 @@ internal sealed class AuditSink(AppDbContext db) : IAuthenticationEventSink
 }
 ```
 
-Sinks are registered scoped, so a sink can take the same unit of work the request is already using.
-Register as many as you like: all of them are called, in registration order.
+Sinks are registered scoped, so a sink can take the same unit of work the request is already using,
+and built on the first event of that request rather than on every request that happens to touch an
+authentication service. Register as many as you like: all of them are called, in registration order.
 
 ## What is published
 
@@ -53,6 +54,7 @@ cannot promise.
 | `account-locked-out` | The failed attempt that crossed the threshold | `LockedOutUntil` |
 | `password-changed` | A password was set with proof of the old one, or by an administrator | `SetByAdministrator` |
 | `password-reset` | A password was set by spending a reset token | |
+| `email-changed` | A verification link was redeemed, so the address is now the one it named | `PreviousEmail`, `Email` |
 | `two-factor-enrolled` | An enrolment was confirmed with a working code | |
 | `two-factor-disabled` | A confirmed second factor was turned off | |
 | `two-factor-failed` | A second factor was presented and refused | `Reason` |
@@ -66,6 +68,10 @@ cannot promise.
 
 `SessionId` is the refresh family, which is also what the access token carries as `toa_sid`, so a
 `sign-in-succeeded` row and the `session-revoked` row that ends it line up on one value.
+
+`email-changed` carries both addresses because the old one is the half that cannot be read off the
+account afterwards, and it is the one change that moves where every later reset link and magic link
+is sent. `PreviousEmail` equal to `Email` is the first verification of the address already on file.
 
 A `Reason` on a revocation is the same string written to the revoked row - `signed-out`,
 `password-changed`, `security-stamp-changed`, `refresh-token-reuse`, `device-limit-reached`,
@@ -92,7 +98,11 @@ token, or a refresh token. The user id, the `amr` values and the time are enough
 happened, and an audit table usually outlives every key rotation anyone remembers to perform.
 
 **A sink that throws never fails the request.** The exception is logged and the next sink still gets
-the event. Auditing that turns a correct sign-in into a 500 is worse than no auditing.
+the event. Auditing that turns a correct sign-in into a 500 is worse than no auditing. That covers a
+sink whose own HTTP call or database command times out - those arrive as `TaskCanceledException`
+without anything having cancelled the request, and only the request's own cancellation is let
+through - and a sink that throws from its constructor, which is why sinks are built when the first
+event of a request is published rather than when the services around them are resolved.
 
 **Delivery is in-process and best effort.** There is no retry and no queue. A sink that must not
 lose an event should write it somewhere durable itself - a row in the same transaction, an outbox -
