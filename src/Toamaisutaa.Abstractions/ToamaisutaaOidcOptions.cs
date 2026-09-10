@@ -45,6 +45,14 @@ public sealed class ToamaisutaaOidcOptions
 
     public TimeSpan UserInfoCacheDuration { get; set; } = TimeSpan.FromMinutes(5);
 
+    /// <summary>Off by default. Turning it on lets the userinfo cache use whatever
+    /// <c>IDistributedCache</c> the application registered as a second level, so a scaled-out
+    /// deployment warms the entry once rather than once per instance. It also puts claims the
+    /// package treats as authorization input - and whatever else userinfo returns, which is usually
+    /// an email and a name - into a store this package does not own, alongside every other tenant
+    /// of that store. That is a decision to make rather than a side effect of having Redis.</summary>
+    public bool ShareUserInfoCacheAcrossInstances { get; set; }
+
     // ── Served to the SPA by the configuration endpoint ──
 
     public string Scope { get; set; } = "openid profile email roles";

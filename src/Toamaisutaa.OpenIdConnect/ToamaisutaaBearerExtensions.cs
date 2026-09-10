@@ -51,9 +51,10 @@ public static class ToamaisutaaBearerExtensions
 
     private static AuthenticationBuilder AddBearerCore(IServiceCollection services)
     {
-        // Userinfo claims live here. An application that has registered an IDistributedCache gets a
-        // shared second level for free; one that has not keeps a memory cache and the stampede
-        // protection, which is the half that matters on a cold start.
+        // Userinfo claims live here, for the stampede protection: a cold start fires a dozen
+        // requests carrying one token before any of them has answered. A registered
+        // IDistributedCache is used as a second level only when Oidc:ShareUserInfoCacheAcrossInstances
+        // says so, because these entries decide authorization.
         services.AddHybridCache();
         services.AddHttpClient(ToamaisutaaDefaults.UserInfoHttpClientName);
 

@@ -1,9 +1,11 @@
+using System.Collections.Concurrent;
 using System.Net;
 using System.Security.Claims;
 using System.Text;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.Extensions.Caching.Hybrid;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -139,20 +141,116 @@ public class UserInfoCacheTests
         await Assert.That(Roles(context)).IsEmpty();
     }
 
-    private static UserInfoClaimsEnricher Enricher(HttpMessageHandler handler)
+    /// <summary>
+    /// An application registers an <c>IDistributedCache</c> for its own reasons. That is not a
+    /// statement that this package may keep the claims it decides authorization on in it, so
+    /// nothing goes near it until the option says so.
+    /// </summary>
+    [Test]
+    public async Task Claims_never_reach_a_distributed_cache_by_default()
     {
-        var cache = new ServiceCollection()
+        var userInfo = new CountingUserInfo(RolesBody);
+        userInfo.Release.SetResult();
+
+        var shared = new RecordingDistributedCache();
+        var enricher = Enricher(userInfo, shared);
+
+        await enricher.EnrichAsync(Context("sub-1"));
+
+        // The write does not have to finish before the caller does, so give it the chance to
+        // happen rather than passing on timing.
+        await Task.Delay(250);
+
+        // HybridCache reads a housekeeping key of its own out of L2 whatever the entry flags say.
+        // What must not be there is this package's entry.
+        await Assert.That(shared.Reads.Where(Ours)).IsEmpty();
+        await Assert.That(shared.Writes.Where(Ours)).IsEmpty();
+    }
+
+    [Test]
+    public async Task Opting_in_serves_a_second_instance_without_calling_userinfo()
+    {
+        var shared = new RecordingDistributedCache();
+
+        var first = new CountingUserInfo(RolesBody);
+        first.Release.SetResult();
+        await Enricher(first, shared, Sharing("admin-api")).EnrichAsync(Context("sub-1"));
+
+        await WaitUntil(() => shared.Writes.Any(Ours));
+
+        var second = new CountingUserInfo(RolesBody);
+        second.Release.SetResult();
+        var context = Context("sub-1");
+
+        // A second instance: its own HybridCache, so its own empty first level, and only the shared
+        // store between them.
+        await Enricher(second, shared, Sharing("admin-api")).EnrichAsync(context);
+
+        await Assert.That(second.Calls).IsEqualTo(0);
+        await Assert.That(Roles(context)).IsEquivalentTo(new[] { "admin", "staff" });
+    }
+
+    /// <summary>
+    /// What the key has to name. An admin API and a public API against one issuer, sharing one
+    /// Redis, hold different audiences and therefore see different claims for one subject. The
+    /// scheme name is "Bearer" in both, so a key of scheme and subject alone would let whichever
+    /// fetched first decide for the other.
+    /// </summary>
+    [Test]
+    public async Task Two_audiences_against_one_issuer_do_not_share_an_entry()
+    {
+        var shared = new RecordingDistributedCache();
+
+        var admin = new CountingUserInfo(RolesBody);
+        admin.Release.SetResult();
+        await Enricher(admin, shared, Sharing("admin-api")).EnrichAsync(Context("sub-1"));
+
+        await WaitUntil(() => shared.Writes.Any(Ours));
+
+        var other = new CountingUserInfo("""{"roles":["staff"]}""");
+        other.Release.SetResult();
+        var context = Context("sub-1");
+
+        await Enricher(other, shared, Sharing("public-api")).EnrichAsync(context);
+
+        await Assert.That(other.Calls).IsEqualTo(1);
+        await Assert.That(Roles(context)).IsEquivalentTo(new[] { "staff" });
+    }
+
+    private static UserInfoClaimsEnricher Enricher(
+        HttpMessageHandler handler,
+        IDistributedCache? distributed = null,
+        ToamaisutaaOidcOptions? settings = null)
+    {
+        var services = new ServiceCollection();
+
+        if (distributed is not null)
+            services.AddSingleton(distributed);
+
+        var cache = services
             .AddHybridCache()
             .Services
             .BuildServiceProvider()
             .GetRequiredService<HybridCache>();
 
         return new UserInfoClaimsEnricher(
-            Options.Create(new ToamaisutaaOidcOptions()),
+            Options.Create(settings ?? new ToamaisutaaOidcOptions()),
             new OneHandlerFactory(handler),
             cache,
             NullLoggerFactory.Instance);
     }
+
+    /// <summary>Keys this package wrote, as opposed to HybridCache's own.</summary>
+    private static bool Ours(string key) => key.StartsWith("toamaisutaa:userinfo:", StringComparison.Ordinal);
+
+    /// <summary>A service that has opted into the shared cache, identified the way a deployment
+    /// is: by issuer and by the audience it accepts.</summary>
+    private static ToamaisutaaOidcOptions Sharing(string audience) => new()
+    {
+        Authority = "https://issuer.test",
+        ClientId = audience,
+        ShareUserInfoCacheAcrossInstances = true,
+    };
 
     /// <summary>A validated bearer token, reduced to the three things the enricher reads off it:
     /// the subject, the raw token, and where the issuer says userinfo lives.</summary>
@@ -215,6 +313,63 @@ public class UserInfoCacheTests
             {
                 Content = new StringContent(body, Encoding.UTF8, "application/json"),
             };
+        }
+    }
+
+    /// <summary>
+    /// The consumer's own distributed cache, and a record of what this package did to it.
+    /// </summary>
+    /// <remarks>
+    /// A dictionary rather than <c>AddDistributedMemoryCache()</c>: HybridCache recognises
+    /// <c>MemoryDistributedCache</c> as its own first level in other clothes and declines to use it
+    /// as a second one, so that arrangement records nothing and proves nothing.
+    /// </remarks>
+    private sealed class RecordingDistributedCache : IDistributedCache
+    {
+        private readonly ConcurrentDictionary<string, byte[]> _entries = new(StringComparer.Ordinal);
+        private readonly ConcurrentQueue<string> _reads = new();
+        private readonly ConcurrentQueue<string> _writes = new();
+
+        public IReadOnlyCollection<string> Reads => _reads;
+
+        public IReadOnlyCollection<string> Writes => _writes;
+
+        public byte[]? Get(string key)
+        {
+            _reads.Enqueue(key);
+
+            return _entries.TryGetValue(key, out var value) ? value : null;
+        }
+
+        public Task<byte[]?> GetAsync(string key, CancellationToken token = default) =>
+            Task.FromResult(Get(key));
+
+        public void Set(string key, byte[] value, DistributedCacheEntryOptions options)
+        {
+            _writes.Enqueue(key);
+            _entries[key] = value;
+        }
+
+        public Task SetAsync(string key, byte[] value, DistributedCacheEntryOptions options, CancellationToken token = default)
+        {
+            Set(key, value, options);
+
+            return Task.CompletedTask;
+        }
+
+        public void Refresh(string key)
+        {
+        }
+
+        public Task RefreshAsync(string key, CancellationToken token = default) => Task.CompletedTask;
+
+        public void Remove(string key) => _entries.TryRemove(key, out _);
+
+        public Task RemoveAsync(string key, CancellationToken token = default)
+        {
+            Remove(key);
+
+            return Task.CompletedTask;
         }
     }
 

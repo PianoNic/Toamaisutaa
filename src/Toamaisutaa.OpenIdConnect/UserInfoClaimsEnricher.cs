@@ -23,9 +23,10 @@ namespace Toamaisutaa.OpenIdConnect;
 /// Cached through <see cref="HybridCache"/>. The reason is the cold start: a browser reload fires a
 /// dozen requests carrying the same token at once, and a plain memory cache is empty for all of
 /// them, so the issuer takes a dozen userinfo calls to answer one page. HybridCache runs the first
-/// and joins the rest to it. Second, it writes through to an <c>IDistributedCache</c> if the
-/// consumer has registered one, so a scaled-out deployment warms the entry once rather than once
-/// per instance - and that costs nothing here, because it is their registration that decides.
+/// and joins the rest to it. The second level is left switched off unless
+/// <see cref="ToamaisutaaOidcOptions.ShareUserInfoCacheAcrossInstances"/> asks for it: these entries
+/// decide authorization, and a registered <c>IDistributedCache</c> is not on its own a statement
+/// that they belong in it.
 /// </remarks>
 internal sealed class UserInfoClaimsEnricher(
     IOptions<ToamaisutaaOidcOptions> options,
@@ -89,13 +90,21 @@ internal sealed class UserInfoClaimsEnricher(
             return [];
         }
 
-        var duration = options.Value.UserInfoCacheDuration;
+        var settings = options.Value;
+        var duration = settings.UserInfoCacheDuration;
 
         return await cache.GetOrCreateAsync(
-            CacheKey(context, accessToken),
+            CacheKey(settings, context, accessToken),
             (Enricher: this, Endpoint: endpoint, AccessToken: accessToken),
             static (state, cancellation) => state.Enricher.ReadAsync(state.Endpoint, state.AccessToken, cancellation),
-            new HybridCacheEntryOptions { Expiration = duration, LocalCacheExpiration = duration },
+            new HybridCacheEntryOptions
+            {
+                Expiration = duration,
+                LocalCacheExpiration = duration,
+                Flags = settings.ShareUserInfoCacheAcrossInstances
+                    ? HybridCacheEntryFlags.None
+                    : HybridCacheEntryFlags.DisableDistributedCache,
+            },
             cancellationToken: cancellationToken);
     }
 
@@ -125,16 +134,36 @@ internal sealed class UserInfoClaimsEnricher(
     /// served to another. Falls back to a SHA-256 of the token when the principal somehow has no
     /// subject, which is still collision-free.
     /// </summary>
-    private static string CacheKey(TokenValidatedContext context, string accessToken)
+    private static string CacheKey(ToamaisutaaOidcOptions settings, TokenValidatedContext context, string accessToken)
     {
+        var scope = ScopeDigest(settings);
+
         var subject = context.Principal?.FindFirst("sub")?.Value
             ?? context.Principal?.FindFirst(ClaimTypes.NameIdentifier)?.Value;
 
         if (subject is not null)
-            return $"toamaisutaa:userinfo:{context.Scheme.Name}:sub:{subject}";
+            return $"toamaisutaa:userinfo:{context.Scheme.Name}:{scope}:sub:{subject}";
 
         var digest = Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(accessToken)));
-        return $"toamaisutaa:userinfo:{context.Scheme.Name}:tok:{digest}";
+        return $"toamaisutaa:userinfo:{context.Scheme.Name}:{scope}:tok:{digest}";
+    }
+
+    /// <summary>
+    /// Which deployment the entry belongs to: the issuer it was read from, and the audiences this
+    /// service accepts. The scheme name is "Bearer" for every consumer of the package, so without
+    /// this the key is the subject alone - and two services against one issuer, holding different
+    /// scopes and sharing one distributed cache, would serve each other's claims for that subject.
+    /// Hashed rather than spelled out because an authority is a URL and a cache key is not.
+    /// </summary>
+    private static string ScopeDigest(ToamaisutaaOidcOptions settings)
+    {
+        var audiences = settings.ValidAudiences.Count > 0
+            ? string.Join(',', settings.ValidAudiences.Order(StringComparer.Ordinal))
+            : settings.ClientId;
+
+        var identity = $"{settings.Authority}\n{audiences}";
+
+        return Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(identity)));
     }
 
     private static async Task<string?> EndpointAsync(TokenValidatedContext context, CancellationToken cancellationToken)
