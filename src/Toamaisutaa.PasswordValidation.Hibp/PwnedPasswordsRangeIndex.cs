@@ -29,9 +29,7 @@ internal sealed class PwnedPasswordsRangeIndex(
         var prefix = hash[..PrefixLength];
         var suffix = hash[PrefixLength..];
 
-        using var request = new HttpRequestMessage(
-            HttpMethod.Get,
-            new Uri(new Uri(settings.ApiBaseAddress), $"range/{prefix}"));
+        using var request = new HttpRequestMessage(HttpMethod.Get, Range(settings.ApiBaseAddress, prefix));
 
         request.Headers.TryAddWithoutValidation("User-Agent", settings.UserAgent);
 
@@ -66,5 +64,19 @@ internal sealed class PwnedPasswordsRangeIndex(
         }
 
         return 0;
+    }
+
+    /// <summary>Where the prefix is looked up, keeping every segment of the configured address.</summary>
+    /// <remarks>
+    /// Resolving a relative path against a base address replaces its last segment, so a mirror
+    /// configured as <c>https://mirror.internal/pwned</c> would be asked for
+    /// <c>https://mirror.internal/range/{prefix}</c>. That 404s, the validator fails open, and the
+    /// deployment believes it is checking breaches while accepting every password.
+    /// </remarks>
+    private static Uri Range(string baseAddress, string prefix)
+    {
+        var root = baseAddress.EndsWith('/') ? baseAddress : baseAddress + "/";
+
+        return new Uri(new Uri(root), $"range/{prefix}");
     }
 }

@@ -39,6 +39,25 @@ public class HibpStartupCheckTests
             .Throws<InvalidOperationException>();
     }
 
+    // Both parse as absolute URIs and neither is something HttpClient can send, so every lookup
+    // would fail open and read as the corpus being unreachable rather than as a setting.
+    [Test]
+    [Arguments("file:///srv/pwned/")]
+    [Arguments("ftp://mirror.internal/pwned/")]
+    public async Task RefusesToStartWithABaseAddressThatIsNotHttp(string address)
+    {
+        await Assert.That(() => Check(options => options.ApiBaseAddress = address).StartAsync(CancellationToken.None))
+            .Throws<InvalidOperationException>();
+    }
+
+    // The trailing slash is the range index's business, not a reason to refuse to start: a mirror
+    // written down without one is looked up with every segment it was given.
+    [Test]
+    public async Task StartsWithAMirrorAddressThatHasNoTrailingSlash()
+    {
+        await Check(options => options.ApiBaseAddress = "https://mirror.internal/pwned").StartAsync(CancellationToken.None);
+    }
+
     [Test]
     public async Task RefusesToStartWithATimeoutOfZero()
     {

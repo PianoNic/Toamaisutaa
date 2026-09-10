@@ -35,6 +35,28 @@ internal sealed class FakeInnerValidator(params string[] errors) : IPasswordVali
     }
 }
 
+/// <summary>Something the container builds once per scope, named so the instance a validator was
+/// handed can be told from the one the scope asking for it holds.</summary>
+internal sealed class ScopedDependency
+{
+    public string Id { get; } = Guid.NewGuid().ToString();
+}
+
+/// <summary>What the container disposed. Nothing built by hand ever reaches it.</summary>
+internal sealed class DisposalLog
+{
+    public List<string> Disposed { get; } = [];
+}
+
+/// <summary>A validator of somebody's own, registered scoped, holding something that only exists
+/// inside a scope. Its one error names that something, so a captured instance is visible.</summary>
+internal sealed class ScopedInnerValidator(ScopedDependency dependency, DisposalLog log) : IPasswordValidator, IDisposable
+{
+    public IReadOnlyList<string> Validate(string password) => [dependency.Id];
+
+    public void Dispose() => log.Disposed.Add(dependency.Id);
+}
+
 /// <summary>A corpus with no network behind it: a fixed answer, or a fixed failure.</summary>
 internal sealed class FakeBreachedPasswordIndex(int count, Exception? throws = null) : IBreachedPasswordIndex
 {

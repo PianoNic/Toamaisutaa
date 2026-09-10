@@ -1,7 +1,8 @@
-# Toamaisutaa.PasswordValidation.Hibp: two decisions worth the record
+﻿# Toamaisutaa.PasswordValidation.Hibp: the decisions worth the record
 
-Written after implementing issue #69. The package itself is documented for consumers at
-`docs/breached-passwords.md`; this is the part a consumer never needs and a maintainer does.
+Written after implementing issue #69, and added to as the package was corrected. The package itself
+is documented for consumers at `docs/breached-passwords.md`; this is the part a consumer never needs
+and a maintainer does.
 
 ---
 
@@ -75,6 +76,50 @@ This makes both registration orders work, and for a reason worth stating because
 The `Remove` matters on its own: leaving the wrapped descriptor in the collection would put two
 registrations of one service in the container and make which one you get a question about ordering.
 `LeavesExactlyOneValidatorRegistered` covers it, and was watched failing.
+
+## 3. The wrapped validator goes back into the container, it is not rebuilt by hand
+
+Rebuilding the descriptor by hand was wrong in a way that took a while to surface. The wrapper was
+registered with `AddSingleton`, so the `IServiceProvider` its factory received was the root
+provider, and `ResolveInner` never read `descriptor.Lifetime`. A validator of somebody's own
+registered `AddScoped` was therefore built once, from the root, for the life of the process:
+
+- with scope validation on, the first password answers 500 naming *their* scoped dependency, with
+  nothing to say that installing this package caused it;
+- with it off, that dependency is captured and shared across every concurrent request;
+- and `ActivatorUtilities.CreateInstance` registers nothing for disposal, so an `IDisposable`
+  validator was never disposed.
+
+The descriptor now goes back into the collection under a key of its own, and the wrapper is
+registered with the lifetime that descriptor carried:
+
+```csharp
+var innerKey = new object();
+var inner = InnerDescriptor(existing, innerKey);
+services.Add(inner);
+services.Add(new ServiceDescriptor(typeof(IPasswordValidator), provider => new HibpPasswordValidator(
+    provider.GetRequiredKeyedService<IPasswordValidator>(innerKey), ...), inner.Lifetime));
+```
+
+The container builds the wrapped validator, from the scope that asked for it, and disposes it. The
+key is a fresh `object` per call rather than a constant, so a second registration wraps the first
+wrapper instead of resolving itself, and the search for the descriptor to wrap ignores keyed ones -
+somebody else's keyed validator is theirs. `LeavesExactlyOneValidatorRegistered` now counts unkeyed
+registrations, which is what "the one everybody resolves" meant all along.
+
+## 4. A base address without a trailing slash is not a configuration error
+
+`new Uri(new Uri(baseAddress), "range/{prefix}")` is relative resolution, so it replaces the last
+path segment: a mirror configured as `https://mirror.internal/pwned` was asked for
+`https://mirror.internal/range/{prefix}`. That 404s, the fail-open handler accepts the password, and
+the warning names the address as configured rather than the one that was requested - so a deployment
+that thinks it checks breaches accepts `password`, and the only evidence points at the wrong URL.
+
+Two options: refuse to start on the slashless form, or keep the path. Keeping it won. There is no
+second reading of `https://mirror.internal/pwned` - nobody means "drop `/pwned`" - so refusing to
+start would be the package insisting on a punctuation mark it can supply itself. The startup check
+does now insist on `http` or `https`, because `file:` and `ftp:` parse as absolute URIs and then
+fail every lookup on a scheme `HttpClient` will not send, and there the intent really is unusable.
 
 ---
 
