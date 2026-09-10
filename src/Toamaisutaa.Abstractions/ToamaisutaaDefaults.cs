@@ -10,6 +10,15 @@ public static class ToamaisutaaDefaults
     /// <summary>Named <c>HttpClient</c> the userinfo enrichment resolves.</summary>
     public const string UserInfoHttpClientName = "toamaisutaa-userinfo";
 
+    /// <summary>Named <c>HttpClient</c> the discovery health check resolves. Separate from the
+    /// userinfo one so a handler or a proxy can be put on the probe without touching the path a
+    /// signed-in request takes.</summary>
+    public const string DiscoveryHttpClientName = "toamaisutaa-discovery";
+
+    /// <summary>Name the discovery health check is registered under, and the name a health report
+    /// prints it as.</summary>
+    public const string DiscoveryHealthCheckName = "toamaisutaa-oidc-discovery";
+
     /// <summary>Where the SPA's runtime configuration is served from.</summary>
     public const string ConfigurationEndpointPattern = "/api/app";
 

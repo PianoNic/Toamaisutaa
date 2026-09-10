@@ -60,6 +60,29 @@ public sealed class ToamaisutaaOidcOptions
     /// <summary>Bearer token read from the query string, for handshakes that cannot carry a
     /// header.</summary>
     public ToamaisutaaQueryTokenOptions QueryToken { get; set; } = new();
+
+    /// <summary>What the discovery health check probes with, when one is registered.</summary>
+    public ToamaisutaaDiscoveryHealthCheckOptions HealthCheck { get; set; } = new();
+}
+
+/// <summary>
+/// Tunes the health check <c>AddToamaisutaaHealthChecks()</c> registers. Nested under <c>Oidc</c>
+/// rather than given a section of its own, because what it probes is decided by
+/// <see cref="ToamaisutaaOidcOptions.Authority"/> and
+/// <see cref="ToamaisutaaOidcOptions.InternalAuthority"/> and nothing else.
+/// </summary>
+public sealed class ToamaisutaaDiscoveryHealthCheckOptions
+{
+    /// <summary>How long a successful fetch is trusted before the check reaches for the issuer
+    /// again. Readiness probes run every few seconds and there are usually several replicas, so
+    /// fetching on every probe would put a steady load on the issuer for an answer that changes
+    /// rarely. Answered from the last result in between.</summary>
+    public TimeSpan RefreshInterval { get; set; } = TimeSpan.FromMinutes(5);
+
+    /// <summary>How long a single fetch is given before it counts as unreachable. Short on purpose:
+    /// a probe that hangs is a probe that times out at whatever the orchestrator decides, which
+    /// tells nobody which of the two was slow.</summary>
+    public TimeSpan Timeout { get; set; } = TimeSpan.FromSeconds(5);
 }
 
 /// <summary>

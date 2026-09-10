@@ -36,6 +36,8 @@ Everything binds from the `Oidc` section.
 | `Oidc:RequireAdminRoleGlobally` | `false` | Puts the admin role in the fallback policy |
 | `Oidc:QueryToken:IncludePaths:0` | | Path prefixes where `?access_token=` is honoured, for SignalR |
 | `Oidc:QueryToken:ExcludePaths:0` | | Carved back out of the above |
+| `Oidc:HealthCheck:RefreshInterval` | `00:05:00` | How long the health check trusts a successful fetch |
+| `Oidc:HealthCheck:Timeout` | `00:00:05` | How long one fetch is given before it counts as unreachable |
 
 ## The role claim is the thing that catches people
 
@@ -76,6 +78,54 @@ own options, keeps working: the registration is additive and your options still 
 A failed read is never cached, so an issuer that comes back up is used on the very next request.
 
 Set `Oidc:FetchClaimsFromUserInfo` to `false` to stop the package calling your issuer at all.
+
+## Health check
+
+A wrong `Oidc:Authority` or an unreachable `Oidc:InternalAuthority` is invisible until the first
+request carrying a token, and then it is a 401 - which reads as "my login is broken" rather than "the
+issuer was never reachable from this container". `AddToamaisutaaHealthChecks()` turns it into a
+failing probe at deploy time instead.
+
+```csharp
+builder.Services.AddToamaisutaaBearer(builder.Configuration);
+builder.Services.AddToamaisutaaHealthChecks();
+
+// Anonymous, and it has to be - the fallback policy would otherwise answer 401, and an
+// orchestrator reads that as a failing probe no matter how healthy the issuer is.
+app.MapHealthChecks("/health").AllowAnonymous();
+```
+
+The check fetches the same `.well-known/openid-configuration` the bearer handler uses, including
+`Oidc:InternalAuthority` when discovery is pointed somewhere other than the public issuer:
+
+| Result | When | Status code from `MapHealthChecks` |
+|---|---|---|
+| Healthy | The document was fetched, and carries an `issuer` and a `jwks_uri` | 200 |
+| Degraded | The issuer stopped answering, but a document fetched earlier is still being served | 200 |
+| Unhealthy | No document has ever been fetched, or no issuer is configured at all | 503 |
+
+Degraded rather than unhealthy for a cached document is the point of the distinction. The handler
+keeps validating tokens against the keys it already holds, so taking the instance out of rotation
+would break something that still works - but you want to know before the issuer rotates its signing
+keys.
+
+A 200 that is not a discovery document counts as a failure. A reverse proxy that has lost its route
+answers a sign-in page with one, and the handler needs the keys rather than the status.
+
+It is registered as `toamaisutaa-oidc-discovery` and tagged `toamaisutaa`, `oidc` and `ready`, so a
+readiness endpoint can select it without naming it:
+
+```csharp
+app.MapHealthChecks("/ready", new HealthCheckOptions { Predicate = check => check.Tags.Contains("ready") })
+    .AllowAnonymous();
+```
+
+A successful fetch is trusted for `Oidc:HealthCheck:RefreshInterval`, and probes in between are
+answered from it. Readiness probes run every few seconds across every replica, and fetching on each
+one would put a steady load on the issuer for an answer that changes rarely.
+
+To put a proxy or a handler on the probe without touching the path a signed-in request takes,
+configure the named client `toamaisutaa-discovery`.
 
 ## Claims mapping
 
