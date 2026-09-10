@@ -7,9 +7,10 @@ using Toamaisutaa.Abstractions;
 namespace Toamaisutaa.Core;
 
 /// <summary>
-/// Deletes refresh and reset tokens that are past their expiry. Opt-in, because a package should
-/// not start doing background writes to someone's database without being asked - but offered,
-/// because the alternative is a table nobody thinks about until it is enormous.
+/// Deletes every expiring row this package writes - refresh, reset and invitation tokens,
+/// two-factor challenges and trusted devices - once it is past its expiry. Opt-in, because a
+/// package should not start doing background writes to someone's database without being asked -
+/// but offered, because the alternative is a table nobody thinks about until it is enormous.
 /// </summary>
 internal sealed class TokenCleanupService(
     IServiceScopeFactory scopeFactory,
@@ -37,7 +38,10 @@ internal sealed class TokenCleanupService(
         while (await timer.WaitForNextTickAsync(stoppingToken));
     }
 
-    private async Task CleanupAsync(CancellationToken cancellationToken)
+    /// <summary>One sweep. Internal rather than private because the host decides when
+    /// <see cref="ExecuteAsync"/> first runs its body, which makes start-then-stop a race the tests
+    /// lose; they run a sweep directly instead.</summary>
+    internal async Task CleanupAsync(CancellationToken cancellationToken)
     {
         await using var scope = scopeFactory.CreateAsyncScope();
 
@@ -56,15 +60,22 @@ internal sealed class TokenCleanupService(
         var devices = scope.ServiceProvider.GetService<ITrustedDeviceStore>();
         var removedDevices = devices is null ? 0 : await devices.DeleteExpiredAsync(now, cancellationToken);
 
-        if (removedRefresh + removedReset + removedChallenges + removedDevices > 0)
+        // Optional for the same reason as the two above: this service is registered on its own and
+        // does not require the password-login stores to be present.
+        var invitations = scope.ServiceProvider.GetService<IInvitationTokenStore>();
+        var removedInvitations = invitations is null ? 0 : await invitations.DeleteExpiredAsync(now, cancellationToken);
+
+        if (removedRefresh + removedReset + removedChallenges + removedDevices + removedInvitations > 0)
         {
             logger.LogInformation(
                 "Removed {RefreshTokens} expired refresh token(s), {ResetTokens} expired reset token(s), {Challenges} "
-                + "expired two-factor challenge(s) and {Devices} expired trusted device row(s).",
+                + "expired two-factor challenge(s), {Devices} expired trusted device row(s) and {Invitations} expired "
+                + "invitation token(s).",
                 removedRefresh,
                 removedReset,
                 removedChallenges,
-                removedDevices);
+                removedDevices,
+                removedInvitations);
         }
     }
 }
