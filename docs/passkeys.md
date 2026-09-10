@@ -41,6 +41,7 @@ password - it replaces the password *and* the code after it. That is why a passk
 | `Origins` | none | The full origins a ceremony may come from. Several is normal: the site, staging, and whatever port the client dev server is on |
 | `RequireUserVerification` | `true` | The authenticator must verify the user, not merely notice a touch |
 | `ChallengeLifetime` | 5 minutes | How long a begun ceremony stays completable |
+| `RegistrationProofWindow` | 5 minutes | How recently the caller must have presented a second factor for that to stand in for their current password |
 | `TimeoutMilliseconds` | 60000 | What the browser is told to wait. Advisory; the server's deadline is the one above |
 | `MaxCredentialsPerUser` | 10 | 0 for unlimited |
 | `EndpointPrefix` | `/passkeys` | Composed onto `LocalLogin:EndpointPrefix` |
@@ -82,7 +83,8 @@ Both `begin` endpoints answer the same shape:
 ```js
 const begin = await (await fetch('/auth/passkeys/register/begin', {
   method: 'POST',
-  headers: { Authorization: `Bearer ${accessToken}` },
+  headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+  body: JSON.stringify({ currentPassword }),
 })).json();
 
 const created = await navigator.credentials.create({
@@ -103,8 +105,24 @@ await fetch('/auth/passkeys/register/complete', {
 });
 ```
 
-`201` with the credential as the user will see it in their list. Registering changes no credential
-the account already has, so the token that called it keeps working.
+`201` with the credential as the user will see it in their list, and no `Location` header: there is
+no route that serves one credential, and the id in the body is what the delete takes. Registering
+changes no credential the account already has, so the token that called it keeps working.
+
+::: warning A bearer token is not enough to register one
+`/register/begin` wants proof that the caller holds a credential the account already has -
+`currentPassword`, or a session that presented a second factor within `RegistrationProofWindow`. A
+passkey signs in with no password and no code, so adding one is adding a way into the account, which
+puts it alongside disabling the second factor rather than alongside reading a list.
+
+A stolen access token would otherwise buy a permanent one. `400` with `errors` when the proof is
+missing or wrong; `/register/complete` asks for nothing further, because the challenge it redeems
+was only issued against a proof that held.
+
+**An account with no password** - one an identity provider owns, or one whose only credential is
+already a passkey - proves a second factor instead: sign in with a passkey, or complete
+`/auth/2fa/step-up`, then register while `toa_2fa_at` is still inside the window.
+:::
 
 Every binary field is base64url in both directions. Standard base64 and padding either way are
 accepted too, because the encoding happens in whatever your client is written in and they do not
@@ -171,8 +189,17 @@ satisfies it outright:
   not told to go and set up an authenticator app as well.
 
 An assertion without user verification - only possible with `RequireUserVerification` off - proves
-possession alone. It signs in, it carries `hwk user` and no `mfa`, and the enforcement above applies
-to it exactly as it does to a password.
+possession alone, and the enforcement above applies to it exactly as it does to a password:
+
+- An account with **no** confirmed TOTP enrolment signs in. The token carries `hwk user` and no
+  `mfa`, and `toa_2fa_required` appears under `RequiredForAll` as it would on any other first factor.
+- An account **with** one is challenged. `/assertion/complete` answers the same shape `/auth/login`
+  does - `{ "two_factor_required": true, "challenge": "...", "expires_in": 300 }` - and the code goes
+  to `/auth/2fa/verify`. The finished token carries `hwk user otp mfa`: what the authenticator proved,
+  replayed off the challenge, plus what the code proved.
+
+Enrolment alone decides that, in every enforcement mode. Somebody who turned a second factor on is
+asked for it, and one borrowed security key with no PIN is not the way around it.
 
 ## What is stored
 
@@ -197,6 +224,18 @@ one shot, so a failed one is not a typo.
 `DELETE /auth/passkeys/{id}`, with the id from the list - never the credential id the authenticator
 uses. `404` covers both a passkey that does not exist and one belonging to somebody else, so the
 endpoint cannot be used to find out which ids are real.
+
+### And by a password reset
+
+Setting a password deletes every passkey on the account, wherever it is set from: `/auth/password`,
+`/auth/password/reset` and the administrator's `/auth/users/{userId}/password`. It is the same list
+the sessions and the trusted devices are on, and for the same reason - somebody doing any of those
+is reacting to another person having had access, and a credential that signs in with no password at
+all would outlive the one remediation the package offers.
+
+Say so on the reset screen. Re-registering is one prompt on the device that still holds the
+credential, and the alternative is a reset that ends every session while leaving whatever somebody
+else registered exactly where it was.
 
 ::: warning The last passkey on a passwordless account
 Nothing stops a user deleting their only credential. If they have no password either, that is the

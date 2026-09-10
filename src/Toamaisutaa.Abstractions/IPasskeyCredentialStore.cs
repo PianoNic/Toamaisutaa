@@ -36,6 +36,15 @@ public interface IPasskeyCredentialStore
     /// answer, so that this cannot be used to discover another account's credential ids.</summary>
     Task<bool> DeleteAsync(Guid userId, Guid credentialId, CancellationToken cancellationToken = default);
 
+    /// <summary>Deletes every credential on the account and answers how many there were.</summary>
+    /// <remarks>
+    /// Called wherever trusted devices are revoked - a password reset, a password change, an
+    /// administrator setting one. A passkey is a way into the account rather than a convenience on
+    /// top of one, so a remediation that ends every session and leaves a credential standing has not
+    /// remediated anything. The count is what the log line needs; which rows went is not.
+    /// </remarks>
+    Task<int> DeleteAllAsync(Guid userId, CancellationToken cancellationToken = default);
+
     Task<int> CountAsync(Guid userId, CancellationToken cancellationToken = default);
 }
 

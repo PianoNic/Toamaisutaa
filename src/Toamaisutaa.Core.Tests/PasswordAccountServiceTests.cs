@@ -326,4 +326,45 @@ public class PasswordAccountServiceTests
 
         await Assert.That(result.Outcome).IsEqualTo(SignInOutcome.Succeeded);
     }
+
+    /// <summary>
+    /// A passkey signs in with no password and no code, so a new password that left one standing
+    /// would leave the way in that the person setting it is most likely reacting to. Every path that
+    /// revokes the trusted devices takes the credentials too.
+    /// </summary>
+    [Test]
+    public async Task SettingAPasswordAnyWayDeletesThePasskeys()
+    {
+        var harness = PasswordHarness.Create(withPasskeys: true);
+        var user = await harness.RegisterAsync();
+
+        harness.Passkeys.Add(user.Id);
+        await harness.Accounts.SetPasswordAsync(user.Id, Password, "a whole new password");
+        await Assert.That(harness.Passkeys.Credentials).IsEmpty();
+
+        harness.Passkeys.Add(user.Id);
+        await harness.Accounts.RequestPasswordResetAsync("nic@example.com");
+        await harness.Accounts.ResetPasswordAsync(harness.Notifier.Sent[^1].Token, "another password entirely");
+        await Assert.That(harness.Passkeys.Credentials).IsEmpty();
+
+        harness.Passkeys.Add(user.Id);
+        await harness.Accounts.AdminSetPasswordAsync(user.Id, "one the administrator picked");
+        await Assert.That(harness.Passkeys.Credentials).IsEmpty();
+    }
+
+    /// <summary>
+    /// The passkey package is optional, and Core resolves its store through the provider rather than
+    /// the constructor. With nothing registered a reset has to be a reset, not a crash.
+    /// </summary>
+    [Test]
+    public async Task AResetWorksWithNoPasskeyStoreRegistered()
+    {
+        var harness = PasswordHarness.Create();
+        await harness.RegisterAsync();
+
+        await harness.Accounts.RequestPasswordResetAsync("nic@example.com");
+        var result = await harness.Accounts.ResetPasswordAsync(harness.Notifier.Sent.Single().Token, "a whole new password");
+
+        await Assert.That(result.Succeeded).IsTrue();
+    }
 }

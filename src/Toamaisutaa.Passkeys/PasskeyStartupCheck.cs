@@ -100,6 +100,13 @@ internal sealed class PasskeyStartupCheck(
         if (settings.ChallengeLifetime <= TimeSpan.Zero)
             problems.Add("Passkeys:ChallengeLifetime must be positive, or no ceremony could ever be completed.");
 
+        if (settings.RegistrationProofWindow <= TimeSpan.Zero)
+        {
+            problems.Add(
+                "Passkeys:RegistrationProofWindow must be positive, or a second factor could never stand in for the "
+                + "current password and an account without a password could never register a credential.");
+        }
+
         if (settings.MaxCredentialsPerUser < 0)
             problems.Add($"Passkeys:MaxCredentialsPerUser is {settings.MaxCredentialsPerUser}; use 0 for unlimited.");
     }

@@ -3,6 +3,35 @@ using System.Text.Json.Serialization;
 namespace Toamaisutaa.Passkeys;
 
 /// <summary>
+/// What <c>/register/begin</c> asks for before it will start a ceremony: proof that whoever is
+/// calling holds a credential this account already has.
+/// </summary>
+/// <remarks>
+/// A bearer token is not that proof. A passkey signs in on its own, so adding one is adding a way
+/// into the account - which puts this alongside changing an email address or disabling the second
+/// factor rather than alongside reading a list, and a token lifted from a log line or a compromised
+/// browser must not be enough to do it.
+/// </remarks>
+public sealed record PasskeyRegistrationProof
+{
+    /// <summary>The account's current password. Optional only in the sense that a session which
+    /// presented a second factor within <c>Passkeys:RegistrationProofWindow</c> needs no
+    /// password.</summary>
+    [JsonPropertyName("currentPassword")]
+    public string? CurrentPassword { get; init; }
+
+    /// <summary>
+    /// When the calling session last presented a live second factor, read from <c>toa_2fa_at</c>.
+    /// </summary>
+    /// <remarks>
+    /// Filled in by the endpoint from the caller's own token, and ignored by the serialiser, so a
+    /// caller cannot put a time in the body and vouch for themselves.
+    /// </remarks>
+    [JsonIgnore]
+    public DateTimeOffset? SecondFactorAt { get; init; }
+}
+
+/// <summary>
 /// What <c>navigator.credentials.create()</c> produced, flattened to base64url strings.
 /// </summary>
 /// <remarks>

@@ -42,13 +42,28 @@ public sealed class ToamaisutaaPasskeyOptions
     /// <see cref="Abstractions.TwoFactorEnforcement.RequiredForAll"/> without a TOTP code on top.
     /// Turning it off leaves possession alone, so the resulting token carries no <c>mfa</c> and
     /// those policies start failing - which is correct, and is why turning it off is a decision
-    /// rather than a tuning knob.
+    /// rather than a tuning knob. An unverified assertion for an account with a confirmed TOTP
+    /// enrolment stops for that code, the same as a password would.
     /// </remarks>
     public bool RequireUserVerification { get; set; } = true;
 
     /// <summary>How long a begun ceremony stays completable. Short, because the browser prompt is
     /// already open when it starts.</summary>
     public TimeSpan ChallengeLifetime { get; set; } = TimeSpan.FromMinutes(5);
+
+    /// <summary>
+    /// How recently the calling session must have presented a live second factor for that to stand
+    /// in for the current password when registering a credential.
+    /// </summary>
+    /// <remarks>
+    /// Registering a passkey adds a way of signing in, so a bearer token on its own must not be
+    /// enough: a token lifted from a log line or a compromised browser would otherwise buy an
+    /// attacker a credential that outlives every session the account holder can revoke. The caller
+    /// sends their current password, or arrives on a session whose <c>toa_2fa_at</c> falls inside
+    /// this window - the same claim <c>RequireFreshSecondFactor</c> reads, so "fresh" means one
+    /// thing across the package.
+    /// </remarks>
+    public TimeSpan RegistrationProofWindow { get; set; } = TimeSpan.FromMinutes(5);
 
     /// <summary>
     /// What the browser is told to wait, in milliseconds, before it gives up on its own prompt.
