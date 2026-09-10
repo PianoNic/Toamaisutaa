@@ -35,8 +35,8 @@ and Entra are a configuration change rather than a code change.
 - **Query-string tokens for named paths**, because SignalR's browser transport cannot set a header.
   Opt-in per path prefix rather than globally.
 - **A health check for the discovery document**, so a wrong authority fails a probe at deploy time
-  rather than 401ing every request afterwards. `AddToamaisutaaHealthChecks()`, and it reports
-  degraded rather than unhealthy while a cached document is still validating tokens.
+  rather than 401ing every request afterwards. `AddToamaisutaaHealthChecks()`, and an issuer that
+  goes away after a successful fetch is degraded for a bounded window before it is unhealthy.
 
 This package does not perform an interactive login. It is a resource server: the browser gets its
 tokens from the identity provider, and this validates them.

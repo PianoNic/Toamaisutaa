@@ -12,10 +12,19 @@ namespace Toamaisutaa.OpenIdConnect;
 /// </summary>
 /// <remarks>
 /// <para>
-/// A singleton, because the last successful fetch has to outlive a single probe. The handler keeps
-/// serving a cached document when a refresh fails, so "cached, and older than the refresh interval"
-/// is a different answer from "never reached at all" - the first is degraded and still validating
-/// tokens, the second cannot validate anything. Telling those apart is the reason this holds state.
+/// A singleton, because the last successful fetch has to outlive a single probe. A handler that has
+/// loaded the document keeps validating tokens against it when a refresh fails, so "this process
+/// fetched it minutes ago" is a different answer from "it was never reached at all" - the first is
+/// degraded, the second cannot be anything but unhealthy. Telling those apart is why this holds
+/// state, and <c>Oidc:HealthCheck:DegradedFor</c> is what stops the first answer outliving its own
+/// evidence.
+/// </para>
+/// <para>
+/// What is reported is what this check fetched, never what the bearer handler holds. The handler's
+/// document lives in <c>JwtBearerOptions.ConfigurationManager</c>, on its own refresh interval, and
+/// is loaded lazily on the first request carrying a token - so a process that has only served
+/// anonymous traffic has none. Nothing here can see it, and a message that claimed to would be
+/// read at 2am as fact.
 /// </para>
 /// <para>
 /// A plaintext metadata address under <c>Oidc:RequireHttpsMetadata</c> is deliberately not reported
@@ -71,10 +80,22 @@ internal sealed class DiscoveryHealthCheck(
                 data: Data(address, null));
         }
 
+        var age = now - cached.At;
+
+        if (age >= settings.HealthCheck.DegradedFor)
+        {
+            return HealthCheckResult.Unhealthy(
+                $"Could not reach {address}: {failure}. This process last fetched the document {Elapsed(age)} ago, "
+                + $"past the {settings.HealthCheck.DegradedFor} in Oidc:HealthCheck:DegradedFor, so the issuer has "
+                + "been unreachable long enough that a handler here cannot be assumed to still validate tokens.",
+                data: Data(address, cached));
+        }
+
         return HealthCheckResult.Degraded(
-            $"Could not reach {address}: {failure}. The bearer handler is still serving the document fetched "
-            + $"{Elapsed(now - cached.At)} ago, past the {settings.HealthCheck.RefreshInterval} refresh interval, so "
-            + "tokens keep validating until the issuer rotates its signing keys.",
+            $"Could not reach {address}: {failure}. This process last fetched the document {Elapsed(age)} ago, past "
+            + $"the {settings.HealthCheck.RefreshInterval} refresh interval, so a handler that loaded it keeps "
+            + $"validating tokens until the issuer rotates its signing keys. Unhealthy once that fetch is "
+            + $"{settings.HealthCheck.DegradedFor} old.",
             data: Data(address, cached));
     }
 

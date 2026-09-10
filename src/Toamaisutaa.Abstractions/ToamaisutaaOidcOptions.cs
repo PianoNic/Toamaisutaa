@@ -83,6 +83,14 @@ public sealed class ToamaisutaaDiscoveryHealthCheckOptions
     /// a probe that hangs is a probe that times out at whatever the orchestrator decides, which
     /// tells nobody which of the two was slow.</summary>
     public TimeSpan Timeout { get; set; } = TimeSpan.FromSeconds(5);
+
+    /// <summary>How long an unreachable issuer stays degraded, measured from the last fetch that
+    /// succeeded. Past it the check reports unhealthy. Degraded answers 200, so without a bound one
+    /// successful fetch would keep an instance in rotation for the life of the process however long
+    /// the issuer stayed gone. Three refresh intervals by default: long enough to ride out an
+    /// identity provider restart, short enough to be out of rotation well before signing keys
+    /// rotate. <see cref="TimeSpan.Zero"/> reports unhealthy on the first failure.</summary>
+    public TimeSpan DegradedFor { get; set; } = TimeSpan.FromMinutes(15);
 }
 
 /// <summary>

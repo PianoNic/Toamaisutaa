@@ -38,6 +38,7 @@ Everything binds from the `Oidc` section.
 | `Oidc:QueryToken:ExcludePaths:0` | | Carved back out of the above |
 | `Oidc:HealthCheck:RefreshInterval` | `00:05:00` | How long the health check trusts a successful fetch |
 | `Oidc:HealthCheck:Timeout` | `00:00:05` | How long one fetch is given before it counts as unreachable |
+| `Oidc:HealthCheck:DegradedFor` | `00:15:00` | How long after the last successful fetch an unreachable issuer stays degraded |
 
 ## The role claim is the thing that catches people
 
@@ -101,13 +102,23 @@ The check fetches the same `.well-known/openid-configuration` the bearer handler
 | Result | When | Status code from `MapHealthChecks` |
 |---|---|---|
 | Healthy | The document was fetched, and carries an `issuer` and a `jwks_uri` | 200 |
-| Degraded | The issuer stopped answering, but a document fetched earlier is still being served | 200 |
-| Unhealthy | No document has ever been fetched, or no issuer is configured at all | 503 |
+| Degraded | The issuer stopped answering, and this process fetched the document less than `Oidc:HealthCheck:DegradedFor` ago | 200 |
+| Unhealthy | The issuer stopped answering and the last fetch is older than that, no document has ever been fetched, or no issuer is configured at all | 503 |
 
-Degraded rather than unhealthy for a cached document is the point of the distinction. The handler
-keeps validating tokens against the keys it already holds, so taking the instance out of rotation
-would break something that still works - but you want to know before the issuer rotates its signing
-keys.
+Degraded rather than unhealthy for a recent fetch is the point of the distinction. A handler that
+loaded the document keeps validating tokens against the keys it already holds, so taking the
+instance out of rotation would break something that still works - but you want to know before the
+issuer rotates its signing keys.
+
+That answer is bounded, because degraded is a 200 and a 200 keeps the instance in the load balancer.
+`Oidc:HealthCheck:DegradedFor` is how long the last successful fetch counts for; past it the check
+reports unhealthy, on the grounds that an issuer nobody here has reached for a quarter of an hour is
+no longer evidence of anything. Set it to `00:00:00` to report unhealthy on the first failure.
+
+What the check reports is what the check itself fetched. It has its own client and its own refresh
+interval, and cannot see the document the bearer handler holds - that one lives in the handler's
+`ConfigurationManager` and is loaded lazily on the first request carrying a token, so a process that
+has only served anonymous traffic has none at all.
 
 A 200 that is not a discovery document counts as a failure. A reverse proxy that has lost its route
 answers a sign-in page with one, and the handler needs the keys rather than the status.

@@ -24,11 +24,13 @@ public class DiscoveryHealthCheckHttpTests
 {
     private const string Issuer = "https://id.example.test";
 
-    // Written out rather than read from ToamaisutaaDefaults: both are names a consumer configures
-    // against - one selects the entry in a health report, the other is where a handler is attached
-    // to the probe - and an assertion that reads them from the package agrees with a rename.
+    // Written out rather than read from ToamaisutaaDefaults: all three are names a consumer
+    // configures against - one selects the entry in a health report, one is where a handler is
+    // attached to the probe, one is what a readiness endpoint filters on - and an assertion that
+    // reads them from the package agrees with a rename.
     private const string CheckName = "toamaisutaa-oidc-discovery";
     private const string HttpClientName = "toamaisutaa-discovery";
+    private const string ReadyTag = "ready";
 
     /// <summary>
     /// Stands in for the issuer. A stub handler rather than a second host: the failures worth
@@ -68,6 +70,11 @@ public class DiscoveryHealthCheckHttpTests
                 // answer 401, and an orchestrator reads that as a failing probe.
                 endpoints.MapHealthChecks("/health").AllowAnonymous();
                 endpoints.MapHealthChecks("/health/detail", new HealthCheckOptions { ResponseWriter = WriteEntries }).AllowAnonymous();
+
+                // The endpoint docs/oidc.md hands consumers, copied rather than referenced.
+                endpoints.MapHealthChecks(
+                    "/ready",
+                    new HealthCheckOptions { Predicate = check => check.Tags.Contains(ReadyTag) }).AllowAnonymous();
             },
             configure: settings =>
             {
@@ -205,6 +212,67 @@ public class DiscoveryHealthCheckHttpTests
         await Assert.That(response.StatusCode).IsEqualTo(HttpStatusCode.OK);
         await Assert.That(await response.Content.ReadAsStringAsync()).IsEqualTo("Degraded");
         await Assert.That(issuer.Requests).IsEqualTo(2);
+    }
+
+    /// <summary>
+    /// The other end of the same distinction. Degraded is a 200 and a 200 keeps the instance in the
+    /// load balancer, so a fetch that succeeded once must not keep it there for the life of the
+    /// process while every request carrying a token 401s.
+    /// </summary>
+    [Test]
+    public async Task A_cached_document_older_than_the_degraded_window_answers_503_and_Unhealthy()
+    {
+        var issuer = new FakeIssuer();
+        await using var app = await StartAsync(
+            issuer,
+            settings => settings["Oidc:HealthCheck:DegradedFor"] = "00:05:00");
+
+        await app.Client.Get("/health");
+        issuer.Respond = () => throw new HttpRequestException("Connection refused");
+        app.Time.Advance(TimeSpan.FromMinutes(6));
+
+        var response = await app.Client.Get("/health");
+
+        await Assert.That(response.StatusCode).IsEqualTo(HttpStatusCode.ServiceUnavailable);
+        await Assert.That(await response.Content.ReadAsStringAsync()).IsEqualTo("Unhealthy");
+    }
+
+    /// <summary>The knob is named in the message, because it is the one thing an operator reading
+    /// this can act on without going and finding the source.</summary>
+    [Test]
+    public async Task Dropping_out_of_the_degraded_window_names_the_setting_that_decided_it()
+    {
+        var issuer = new FakeIssuer();
+        await using var app = await StartAsync(
+            issuer,
+            settings => settings["Oidc:HealthCheck:DegradedFor"] = "00:05:00");
+
+        await app.Client.Get("/health");
+        issuer.Respond = () => throw new HttpRequestException("Connection refused");
+        app.Time.Advance(TimeSpan.FromMinutes(6));
+
+        var entry = (await (await app.Client.Get("/health/detail")).Json()).GetProperty(CheckName);
+
+        await Assert.That(entry.String("status")).IsEqualTo("Unhealthy");
+        await Assert.That(entry.String("description")).Contains("Oidc:HealthCheck:DegradedFor");
+    }
+
+    /// <summary>
+    /// The readiness endpoint the docs hand out, and the reason it is worth a test of its own: an
+    /// empty selection aggregates to Healthy and answers 200, so a renamed or dropped tag produces a
+    /// probe that is green because it is checking nothing. Against an unreachable issuer a 200 can
+    /// only mean the predicate matched no registration.
+    /// </summary>
+    [Test]
+    public async Task A_readiness_endpoint_selecting_the_ready_tag_answers_503_and_Unhealthy()
+    {
+        var issuer = new FakeIssuer { Respond = () => throw new HttpRequestException("Connection refused") };
+        await using var app = await StartAsync(issuer);
+
+        var response = await app.Client.Get("/ready");
+
+        await Assert.That(response.StatusCode).IsEqualTo(HttpStatusCode.ServiceUnavailable);
+        await Assert.That(await response.Content.ReadAsStringAsync()).IsEqualTo("Unhealthy");
     }
 
     [Test]
