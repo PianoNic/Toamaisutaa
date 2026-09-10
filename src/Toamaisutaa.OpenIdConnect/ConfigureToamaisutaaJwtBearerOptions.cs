@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using Microsoft.IdentityModel.Tokens;
 using Toamaisutaa.Abstractions;
 
 namespace Toamaisutaa.OpenIdConnect;
@@ -80,8 +81,8 @@ internal sealed class ConfigureToamaisutaaJwtBearerOptions(
 
     /// <summary>
     /// Teaches the one handler to accept tokens this package issued, alongside the identity
-    /// provider's. The handler merges its discovery document's issuer and keys into whatever is set
-    /// here, so both shapes validate in a single pass and nothing downstream can tell them apart.
+    /// provider's. The handler keeps its discovery document alongside whatever is set here, so both
+    /// shapes validate in a single pass and nothing downstream can tell them apart.
     /// </summary>
     /// <remarks>
     /// <para>
@@ -111,15 +112,30 @@ internal sealed class ConfigureToamaisutaaJwtBearerOptions(
         // answer is treated as "did not resolve" and every configured key is tried instead, which
         // puts the local keys back in front of a token whose kid names none of them - and the
         // resolver below is the whole defence against one issuer's tokens being validated with the
-        // other's key. The non-local branch hands back the identity provider's keys explicitly, so
-        // nothing it relied on is lost.
+        // other's key.
         options.TokenValidationParameters.TryAllIssuerSigningKeys = false;
 
-        options.TokenValidationParameters.IssuerSigningKeyResolver = (_, securityToken, keyId, parameters) =>
-            string.Equals(securityToken?.Issuer, local.Issuer, StringComparison.Ordinal)
-                ? localKeys.Resolve(keyId)
-                : parameters.IssuerSigningKeys?.Where(key => !localKeys.Owns(key.KeyId)) ?? [];
+        // ...UsingConfiguration, and that is not a detail. When the handler builds a configuration
+        // manager for an Authority it hands the discovery keys to the validator as the
+        // BaseConfiguration below rather than merging them into IssuerSigningKeys, so the resolver
+        // that only sees IssuerSigningKeys has nothing to answer an identity provider's token with.
+        // With the fallback above switched off, that empty answer is a refusal.
+        options.TokenValidationParameters.IssuerSigningKeyResolverUsingConfiguration =
+            (_, securityToken, keyId, parameters, configuration) =>
+                string.Equals(securityToken?.Issuer, local.Issuer, StringComparison.Ordinal)
+                    ? localKeys.Resolve(keyId)
+                    : IssuerKeys(parameters, configuration);
     }
+
+    /// <summary>
+    /// Every key the identity provider offers and none of ours: discovery keys arrive as the
+    /// configuration, a key set an application configured by hand arrives as
+    /// <c>IssuerSigningKeys</c>, and both are read so neither shape is silently unsupported.
+    /// </summary>
+    private IEnumerable<SecurityKey> IssuerKeys(TokenValidationParameters parameters, BaseConfiguration? configuration) =>
+        (parameters.IssuerSigningKeys ?? [])
+            .Concat(configuration?.SigningKeys ?? [])
+            .Where(key => !localKeys.Owns(key.KeyId));
 
     /// <summary>
     /// Browsers cannot set an Authorization header on a WebSocket handshake, so SignalR passes the

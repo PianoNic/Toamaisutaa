@@ -172,6 +172,29 @@ public class LocalSigningKeyRingTests
         await Assert.That(ring.Active.Algorithm).IsEqualTo("ES256");
     }
 
+    /// <summary>
+    /// secp256k1 is one letter away from the <c>prime256v1</c> the docs hand out, imports from a PEM
+    /// exactly as readily, and is 256 bits - so a ring reading the algorithm off the key size alone
+    /// called it ES256 and published its point under <c>crv: P-256</c>, a point on a curve nothing
+    /// that reads the document is on. The JWK path has always refused it; this is the PEM path.
+    /// </summary>
+    [Test]
+    public async Task Refuses_an_EC_key_on_a_curve_no_JWS_algorithm_names()
+    {
+        using var key = ECDsa.Create(ECCurve.CreateFromValue("1.3.132.0.10"));
+
+        using var ring = Ring(new ToamaisutaaSigningKeyOptions { Kid = "k1", Pem = key.ExportPkcs8PrivateKeyPem() });
+
+        await Assert.That(ring.Keys).IsEmpty();
+        await Assert.That(ring.Active).IsNull();
+        await Assert.That(ring.Problems.Single()).Contains("no JWS algorithm names");
+
+        // Which curve, because that is the whole answer for whoever is holding the key file. Matched
+        // on the tail: the platform's crypto backend decides whether it is spelled secP256k1 or
+        // secp256k1.
+        await Assert.That(ring.Problems.Single()).Contains("256k1");
+    }
+
     [Test]
     public async Task Refuses_an_RSA_key_below_the_floor()
     {
