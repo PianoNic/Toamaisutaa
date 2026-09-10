@@ -19,6 +19,9 @@
          [9.0.0, 9.0.999], so it cannot coexist with the rest of this solution. Swap it when Pomelo
          ships for EF 10 - it is a provider package and a regenerated migration, nothing more. -->
     <PackageVersion Include="MySql.EntityFrameworkCore" Version="10.0.9" />
+    <!-- Ships out of dotnet/extensions, which numbers its own line - 10.10.0 is the current build
+         of the .NET 10 branch, not a major ahead of the 10.0.10 packages below. -->
+    <PackageVersion Include="Microsoft.Extensions.Caching.Hybrid" Version="10.10.0" />
     <PackageVersion Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.10" />
     <PackageVersion Include="Microsoft.Extensions.Hosting.Abstractions" Version="10.0.10" />
     <PackageVersion Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.10" />

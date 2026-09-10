@@ -4,7 +4,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
-using Microsoft.Extensions.Caching.Memory;
+using Microsoft.Extensions.Caching.Hybrid;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.JsonWebTokens;
@@ -19,10 +19,18 @@ namespace Toamaisutaa.OpenIdConnect;
 /// minimal; Okta and Entra leave groups out to bound token size. This layer validates the access
 /// token, so without this those deployments could never satisfy a role requirement.
 /// </summary>
+/// <remarks>
+/// Cached through <see cref="HybridCache"/>. The reason is the cold start: a browser reload fires a
+/// dozen requests carrying the same token at once, and a plain memory cache is empty for all of
+/// them, so the issuer takes a dozen userinfo calls to answer one page. HybridCache runs the first
+/// and joins the rest to it. Second, it writes through to an <c>IDistributedCache</c> if the
+/// consumer has registered one, so a scaled-out deployment warms the entry once rather than once
+/// per instance - and that costs nothing here, because it is their registration that decides.
+/// </remarks>
 internal sealed class UserInfoClaimsEnricher(
     IOptions<ToamaisutaaOidcOptions> options,
     IHttpClientFactory httpClientFactory,
-    IMemoryCache cache,
+    HybridCache cache,
     ILoggerFactory loggerFactory)
 {
     private readonly ILogger _logger = loggerFactory.CreateLogger("Toamaisutaa.Auth");
@@ -45,11 +53,17 @@ internal sealed class UserInfoClaimsEnricher(
         {
             var claims = await FetchAsync(context, accessToken, context.HttpContext.RequestAborted);
 
-            foreach (var (type, value) in claims)
+            foreach (var claim in claims)
             {
-                if (!identity.HasClaim(type, value))
-                    identity.AddClaim(new Claim(type, value));
+                if (!identity.HasClaim(claim.Type, claim.Value))
+                    identity.AddClaim(new Claim(claim.Type, claim.Value));
             }
+        }
+        catch (UserInfoUnavailableException)
+        {
+            // Already logged with its status where it happened. It leaves the cache factory as an
+            // exception rather than as an empty claim set because an empty claim set would be
+            // stored, and one 503 would then read as "this user has no groups" until it expired.
         }
         catch (Exception exception) when (exception is HttpRequestException or TaskCanceledException or JsonException or InvalidOperationException)
         {
@@ -59,16 +73,15 @@ internal sealed class UserInfoClaimsEnricher(
         }
     }
 
-    private async Task<IReadOnlyList<(string Type, string Value)>> FetchAsync(
+    /// <summary>
+    /// The endpoint is resolved outside the cache: an issuer that publishes none is a permanent
+    /// answer that no expiry should be attached to, and the configuration manager caches it anyway.
+    /// </summary>
+    private async Task<UserInfoClaim[]> FetchAsync(
         TokenValidatedContext context,
         string accessToken,
         CancellationToken cancellationToken)
     {
-        var key = CacheKey(context, accessToken);
-
-        if (cache.TryGetValue<IReadOnlyList<(string, string)>>(key, out var cached) && cached is not null)
-            return cached;
-
         var endpoint = await EndpointAsync(context, cancellationToken);
         if (endpoint is null)
         {
@@ -76,6 +89,18 @@ internal sealed class UserInfoClaimsEnricher(
             return [];
         }
 
+        var duration = options.Value.UserInfoCacheDuration;
+
+        return await cache.GetOrCreateAsync(
+            CacheKey(context, accessToken),
+            (Enricher: this, Endpoint: endpoint, AccessToken: accessToken),
+            static (state, cancellation) => state.Enricher.ReadAsync(state.Endpoint, state.AccessToken, cancellation),
+            new HybridCacheEntryOptions { Expiration = duration, LocalCacheExpiration = duration },
+            cancellationToken: cancellationToken);
+    }
+
+    private async ValueTask<UserInfoClaim[]> ReadAsync(string endpoint, string accessToken, CancellationToken cancellationToken)
+    {
         var http = httpClientFactory.CreateClient(ToamaisutaaDefaults.UserInfoHttpClientName);
 
         using var request = new HttpRequestMessage(HttpMethod.Get, endpoint);
@@ -86,13 +111,12 @@ internal sealed class UserInfoClaimsEnricher(
         if (!response.IsSuccessStatusCode)
         {
             _logger.LogWarning("userinfo answered {Status}; deciding on the token's own claims.", (int)response.StatusCode);
-            return [];
+            throw new UserInfoUnavailableException();
         }
 
         var claims = ClaimsJsonFlattener.Parse(await response.Content.ReadAsStringAsync(cancellationToken));
 
-        cache.Set(key, claims, options.Value.UserInfoCacheDuration);
-        return claims;
+        return [.. claims.Select(claim => new UserInfoClaim(claim.Type, claim.Value))];
     }
 
     /// <summary>
@@ -135,4 +159,8 @@ internal sealed class UserInfoClaimsEnricher(
             ? header["Bearer ".Length..].Trim()
             : null;
     }
+
+    /// <summary>Carries nothing and is never seen outside this class - it exists only to leave the
+    /// cache factory without a value to store.</summary>
+    private sealed class UserInfoUnavailableException : Exception;
 }

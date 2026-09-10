@@ -13,5 +13,12 @@
   <ItemGroup>
     <!-- Not part of the shared framework: JwtBearer has shipped as a package since ASP.NET Core 3.0. -->
     <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" />
+    <!-- Also not in the shared framework. Caches userinfo claims: it gives the stampede protection
+         IMemoryCache has no answer for, and picks up a consumer's IDistributedCache with no code
+         here. Microsoft.Extensions.*, so the layering rule holds. -->
+    <PackageReference Include="Microsoft.Extensions.Caching.Hybrid" />
+  </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="Toamaisutaa.AspNetCore.Tests" />
   </ItemGroup>
 </Project>

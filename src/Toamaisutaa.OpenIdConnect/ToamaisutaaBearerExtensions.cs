@@ -50,7 +50,10 @@ public static class ToamaisutaaBearerExtensions
 
     private static AuthenticationBuilder AddBearerCore(IServiceCollection services)
     {
-        services.AddMemoryCache();
+        // Userinfo claims live here. An application that has registered an IDistributedCache gets a
+        // shared second level for free; one that has not keeps a memory cache and the stampede
+        // protection, which is the half that matters on a cold start.
+        services.AddHybridCache();
         services.AddHttpClient(ToamaisutaaDefaults.UserInfoHttpClientName);
 
         services.TryAddSingleton(TimeProvider.System);
