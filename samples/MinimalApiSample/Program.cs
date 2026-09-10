@@ -141,7 +141,17 @@ app.MapGet("/api/me", async (ICurrentUser currentUser, CancellationToken cancell
     return Results.Ok(new
     {
         Local = new { user.Id, user.UserName, user.DisplayName, user.Email, user.CreatedAt, user.UpdatedAt },
-        FromToken = new { currentUser.Subject, Actor = currentUser.Name },
+        FromToken = new
+        {
+            currentUser.Subject,
+            Actor = currentUser.Name,
+            // Whatever Oidc:RoleClaim names, on a token from either issuer. Empty on a local account
+            // until an IUserRoleProvider says otherwise - see /api/admin below.
+            currentUser.Roles,
+            IsGateMaster = currentUser.IsInRole("gate-master"),
+            // Anything else the token carries, without going back to HttpContext for it.
+            SecondFactor = currentUser.FindClaim(ToamaisutaaDefaults.TwoFactorSourceClaim),
+        },
     });
 })
 .WithName("Me");

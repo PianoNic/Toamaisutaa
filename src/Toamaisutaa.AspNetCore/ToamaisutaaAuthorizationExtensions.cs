@@ -51,6 +51,11 @@ public static class ToamaisutaaAuthorizationExtensions
 
         services.AddHttpContextAccessor();
         services.AddOptions<ToamaisutaaProvisioningOptions>();
+
+        // Named so ICurrentUser.Roles reads the claim the role checks read. Left unbound here on
+        // purpose: AddToamaisutaaAuthorization binds it to configuration, and an application that
+        // calls neither still gets the default rather than a missing-options failure.
+        services.AddOptions<ToamaisutaaOidcOptions>();
         services.TryAddScoped<ICurrentUser, HttpContextCurrentUser>();
 
         return services;
