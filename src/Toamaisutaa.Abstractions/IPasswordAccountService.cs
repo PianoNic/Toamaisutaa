@@ -60,6 +60,19 @@ public interface IPasswordAccountService
     Task<AccountResult> VerifyEmailAsync(string verificationToken, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Issues a magic-link token and hands it to <see cref="IMagicLinkNotifier"/>. A silent no-op
+    /// for an unknown address, for an account an identity provider owns, and for an address nobody
+    /// has verified. Never reveals which case it was.
+    /// </summary>
+    /// <remarks>
+    /// The verified-address rule is not an option and does not have one. Every other token this
+    /// package mails leads somewhere that asks for a password next; this one is exchanged for a
+    /// session, so sending it to an address that is a typo, or that somebody else now owns, hands
+    /// them the account.
+    /// </remarks>
+    Task<MagicLinkRequestOutcome> RequestMagicLinkAsync(string email, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Reserves an account with nothing but an email - no user name, no credential - and hands an
     /// invitation token to <see cref="IInvitationNotifier"/>. Never returned from this call.
     /// </summary>
@@ -94,6 +107,30 @@ public enum PasswordResetRequestOutcome
     /// the account is local, and the option was switched on over an existing database.
     /// </summary>
     EmailNotVerified,
+}
+
+/// <summary>For the log, not for the caller. Every one of these answers 204, the same as
+/// <see cref="PasswordResetRequestOutcome"/> and for the same reason.</summary>
+public enum MagicLinkRequestOutcome
+{
+    Sent,
+    UnknownEmail,
+
+    /// <summary>The account exists but is owned by an identity provider. Signing in here would step
+    /// around the provider that owns the account. Grep for this when someone reports that no mail
+    /// arrived.</summary>
+    NoLocalCredential,
+
+    /// <summary>
+    /// Nobody has proven this address, so a link that is itself a session may not be sent to it.
+    /// Grep for this when someone reports that no mail arrived and the account is local: the way
+    /// forward is <c>/auth/email</c>.
+    /// </summary>
+    EmailNotVerified,
+
+    /// <summary>The token was issued and stored, but <see cref="IMagicLinkNotifier"/> threw. Grep
+    /// for this when someone reports that no mail arrived and the address is verified.</summary>
+    NotificationFailed,
 }
 
 public sealed record AccountResult

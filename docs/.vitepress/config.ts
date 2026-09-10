@@ -57,6 +57,7 @@ export default defineConfig({
               { text: 'Customizing local login', link: '/customizing-password-login' },
               { text: 'Provisioning accounts', link: '/provisioning-accounts' },
               { text: 'Email verification', link: '/email-verification' },
+              { text: 'Magic-link sign-in', link: '/magic-link' },
             ],
           },
           { text: 'Two-factor authentication', link: '/two-factor' },

@@ -90,6 +90,11 @@ public sealed class ToamaisutaaTwoFactorChallengeConfiguration : IEntityTypeConf
         // a column on the refresh token rather than a table of their own.
         builder.Property(challenge => challenge.FamilyId);
 
+        // The same 128 the refresh token's own methods column uses, and required for the same
+        // reason: the property is a non-null string, empty when a step-up challenge has nothing to
+        // say here.
+        builder.Property(challenge => challenge.AuthenticationMethods).HasMaxLength(128).IsRequired();
+
         builder.HasIndex(challenge => challenge.TokenHash).IsUnique();
         builder.HasIndex(challenge => challenge.UserId);
 

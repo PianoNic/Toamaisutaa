@@ -129,6 +129,38 @@ namespace Toamaisutaa.EntityFrameworkCore.Migrations.SqlServer.Migrations
                     b.ToTable("ToamaisutaaInvitationTokens", (string)null);
                 });
 
+            modelBuilder.Entity("Toamaisutaa.Abstractions.ToamaisutaaMagicLinkToken", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<long?>("ConsumedAt")
+                        .HasColumnType("bigint");
+
+                    b.Property<long>("CreatedAt")
+                        .HasColumnType("bigint");
+
+                    b.Property<long>("ExpiresAt")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("TokenHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TokenHash")
+                        .IsUnique();
+
+                    b.HasIndex("UserId");
+
+                    b.ToTable("ToamaisutaaMagicLinkTokens", (string)null);
+                });
+
             modelBuilder.Entity("Toamaisutaa.Abstractions.ToamaisutaaPasswordCredential", b =>
                 {
                     b.Property<Guid>("UserId")
@@ -395,6 +427,11 @@ namespace Toamaisutaa.EntityFrameworkCore.Migrations.SqlServer.Migrations
                     b.Property<Guid>("Id")
                         .HasColumnType("uniqueidentifier");
 
+                    b.Property<string>("AuthenticationMethods")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
                     b.Property<long?>("ConsumedAt")
                         .HasColumnType("bigint");
 
@@ -528,6 +565,15 @@ namespace Toamaisutaa.EntityFrameworkCore.Migrations.SqlServer.Migrations
                 });
 
             modelBuilder.Entity("Toamaisutaa.Abstractions.ToamaisutaaInvitationToken", b =>
+                {
+                    b.HasOne("Toamaisutaa.Abstractions.ToamaisutaaUser", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Toamaisutaa.Abstractions.ToamaisutaaMagicLinkToken", b =>
                 {
                     b.HasOne("Toamaisutaa.Abstractions.ToamaisutaaUser", null)
                         .WithMany()

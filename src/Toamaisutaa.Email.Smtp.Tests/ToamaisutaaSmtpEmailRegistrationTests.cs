@@ -20,6 +20,7 @@ public class ToamaisutaaSmtpEmailRegistrationTests
             options.PasswordResetLinkTemplate = "https://app.example.com/reset?token={token}";
             options.InvitationLinkTemplate = "https://app.example.com/invite?token={token}";
             options.EmailVerificationLinkTemplate = "https://app.example.com/verify?token={token}";
+            options.MagicLinkTemplate = "https://app.example.com/signin?token={token}";
         });
 
         return services;
@@ -37,7 +38,28 @@ public class ToamaisutaaSmtpEmailRegistrationTests
         await Assert.That(provider.GetService<IPasswordResetNotifier>()).IsNotNull();
         await Assert.That(provider.GetService<IInvitationNotifier>()).IsNull();
         await Assert.That(provider.GetService<IEmailVerificationNotifier>()).IsNull();
+        await Assert.That(provider.GetService<IMagicLinkNotifier>()).IsNull();
         await Assert.That(provider.GetService<IAdminPasswordIssuedNotifier>()).IsNull();
+    }
+
+    [Test]
+    public async Task MagicLinkRegistersTheSmtpNotifier()
+    {
+        using var provider = Services().AddToamaisutaaSmtpMagicLink().BuildServiceProvider();
+
+        await Assert.That(provider.GetService<IMagicLinkNotifier>()).IsTypeOf<SmtpMagicLinkNotifier>();
+        await Assert.That(provider.GetService<IMagicLinkEmailTemplate>()).IsTypeOf<DefaultMagicLinkEmailTemplate>();
+    }
+
+    [Test]
+    public async Task AMagicLinkNotifierTheConsumerRegisteredWins()
+    {
+        var services = Services();
+        services.AddSingleton<IMagicLinkNotifier, FakeMagicLinkNotifier>();
+
+        using var provider = services.AddToamaisutaaSmtpMagicLink().BuildServiceProvider();
+
+        await Assert.That(provider.GetService<IMagicLinkNotifier>()).IsTypeOf<FakeMagicLinkNotifier>();
     }
 
     [Test]
@@ -120,6 +142,12 @@ public class ToamaisutaaSmtpEmailRegistrationTests
     private sealed class FakeEmailVerificationNotifier : IEmailVerificationNotifier
     {
         public Task SendAsync(ToamaisutaaUser user, string email, string verificationToken, CancellationToken cancellationToken = default) =>
+            Task.CompletedTask;
+    }
+
+    private sealed class FakeMagicLinkNotifier : IMagicLinkNotifier
+    {
+        public Task SendAsync(ToamaisutaaUser user, string magicLinkToken, CancellationToken cancellationToken = default) =>
             Task.CompletedTask;
     }
 

@@ -35,6 +35,8 @@ and all three are checked at startup rather than at the first request.
 | POST | `/auth/password/reset` | 204 or 400 |
 | POST | `/auth/email` | 204, 400, or 409. Authenticated. Only mapped when an `IEmailVerificationNotifier` is registered |
 | POST | `/auth/email/verify` | 204, 400, or 409. Only mapped when an `IEmailVerificationNotifier` is registered |
+| POST | `/auth/magic-link` | 204, always. Only mapped when an `IMagicLinkNotifier` is registered |
+| POST | `/auth/magic-link/verify` | 200 with a token pair, 200 with a two-factor challenge, or 401. Only mapped when an `IMagicLinkNotifier` is registered |
 | POST | `/auth/users` | 201, 400, or 409. Authenticated. Only mapped when an `IAdminPasswordIssuedNotifier` is registered |
 | POST | `/auth/users/{userId}/password` | 204 or 400. Authenticated. Only mapped when an `IAdminPasswordIssuedNotifier` is registered |
 | POST | `/auth/invitations` | 201 or 400. Authenticated. Only mapped when an `IInvitationNotifier` is registered |
@@ -238,7 +240,7 @@ identity provider issued keeps working until it expires, because we cannot revok
 ### Expired tokens accumulate unless you sweep them
 
 `AddToamaisutaaTokenCleanup()` runs a periodic delete over every expiring row this package writes -
-refresh tokens, reset tokens, invitation tokens, email verification tokens, and the two-factor
+refresh tokens, reset tokens, invitation tokens, email verification tokens, magic-link tokens, and the two-factor
 challenge and trusted-device rows when those are configured. Without it, plan to call `DeleteExpiredAsync` on each of those
 stores from your own scheduler.
 
@@ -331,6 +333,7 @@ hands you - rather than expecting to construct one.
 | `LocalLogin:PasswordResetTokenLifetime` | `01:00:00` | Single use |
 | `LocalLogin:InvitationTokenLifetime` | `7.00:00:00` | Single use |
 | `LocalLogin:EmailVerificationTokenLifetime` | `1.00:00:00` | Single use |
+| `LocalLogin:MagicLinkTokenLifetime` | `00:15:00` | Single use. See [magic-link sign-in](/magic-link) |
 | `LocalLogin:RequireVerifiedEmailForPasswordReset` | `false` | See [email verification](/email-verification#requiring-a-verified-address-before-a-password-reset) before turning it on |
 | `LocalLogin:AllowSelfRegistration` | `false` | When false the endpoint is not mapped at all |
 | `LocalLogin:EndpointPrefix` | `/auth` | |

@@ -183,6 +183,41 @@ public static class ToamaisutaaPasswordEndpointExtensions
                 .Produces<ValidationErrorResponse>(StatusCodes.Status409Conflict);
         }
 
+        // Same reasoning again: no IMagicLinkNotifier, nowhere for the token to go, no endpoints.
+        if (endpoints.ServiceProvider.GetService<IMagicLinkNotifier>() is not null)
+        {
+            group.MapPost("/magic-link", RequestMagicLinkAsync)
+                .AllowAnonymous()
+                .AddEndpointFilter<PasswordRateLimitFilter>()
+                .WithName($"{endpointNamePrefix}ToamaisutaaMagicLink")
+                .WithSummary("Requests a single-use sign-in link.")
+                .WithDescription(
+                    "Always 204 - for an unknown address, for an account an identity provider owns, and for an "
+                    + "address nobody has verified alike. The log says which. A link is only ever sent to a verified "
+                    + "address, because redeeming one is a sign-in rather than a step towards one.")
+                .Produces(StatusCodes.Status204NoContent)
+                .Produces(StatusCodes.Status429TooManyRequests);
+
+            group.MapPost("/magic-link/verify", VerifyMagicLinkAsync)
+                .AllowAnonymous()
+                .AddEndpointFilter<PasswordRateLimitFilter>()
+                .WithName($"{endpointNamePrefix}ToamaisutaaVerifyMagicLink")
+                .WithSummary("Redeems a sign-in link for a token pair, or asks for a second factor.")
+                // The same two success shapes /auth/login has, and for the same reason: one status
+                // code can declare one schema, so the branch is spelled out here.
+                .WithDescription(
+                    "**Two success shapes, both 200.** Usually a token pair, with `amr` carrying `email` rather than "
+                    + "`pwd` - no password was typed. For a user with a confirmed second factor it is instead a "
+                    + "challenge and no tokens:\n\n"
+                    + "```json\n{ \"two_factor_required\": true, \"challenge\": \"No1CXq9-...\", \"expires_in\": 300 }\n```\n\n"
+                    + "Present it with a code to `/auth/2fa/verify`, the same endpoint a password sign-in uses. A "
+                    + "trusted device does not skip that challenge here.")
+                .Produces<TwoFactorChallengeResponse>()
+                .Produces<TokenResponse>()
+                .Produces<ErrorResponse>(StatusCodes.Status401Unauthorized)
+                .Produces(StatusCodes.Status429TooManyRequests);
+        }
+
         // Not mapped at all when no IAdminPasswordIssuedNotifier is registered, the same reasoning
         // as self-registration above: an application that never provisions accounts for someone else
         // should not see endpoints that would only ever throw.
@@ -458,6 +493,50 @@ public static class ToamaisutaaPasswordEndpointExtensions
         return result.Conflict
             ? Results.Json(new ValidationErrorResponse { Errors = result.Errors }, statusCode: StatusCodes.Status409Conflict)
             : Results.BadRequest(new ValidationErrorResponse { Errors = result.Errors });
+    }
+
+    private static async Task<IResult> RequestMagicLinkAsync(
+        MagicLinkRequest request,
+        IPasswordAccountService accounts,
+        CancellationToken cancellationToken)
+    {
+        if (request is not null && !string.IsNullOrEmpty(request.Email))
+            await accounts.RequestMagicLinkAsync(request.Email, cancellationToken);
+
+        // Unknown address, no local credential, an unverified address and a link on its way are one
+        // answer. The log tells them apart.
+        return Results.NoContent();
+    }
+
+    private static async Task<IResult> VerifyMagicLinkAsync(
+        VerifyMagicLinkRequest request,
+        HttpContext context,
+        IPasswordSignInService signIn,
+        CancellationToken cancellationToken)
+    {
+        if (request is null || string.IsNullOrEmpty(request.Token))
+            return SignInFailed();
+
+        var result = await signIn.VerifyMagicLinkAsync(
+            new MagicLinkSignInRequest
+            {
+                Token = request.Token,
+                UserAgent = context.Request.Headers.UserAgent.ToString(),
+                IpAddress = context.Connection.RemoteIpAddress?.ToString(),
+            },
+            cancellationToken);
+
+        // The same second success shape /auth/login has, finished at the same /auth/2fa/verify.
+        if (result.Outcome == SignInOutcome.TwoFactorRequired && result.Challenge is { } challenge)
+        {
+            return Results.Ok(new TwoFactorChallengeResponse
+            {
+                Challenge = challenge.Token,
+                ExpiresIn = challenge.ExpiresIn,
+            });
+        }
+
+        return result.Succeeded ? SignInSucceeded(result) : SignInFailed();
     }
 
     private static async Task<IResult> CreateUserAsync(

@@ -2,30 +2,30 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
-using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using Toamaisutaa.EntityFrameworkCore;
 
 #nullable disable
 
-namespace Toamaisutaa.EntityFrameworkCore.Migrations.Postgres.Migrations
+namespace Toamaisutaa.EntityFrameworkCore.Migrations.MySql.Migrations
 {
     [DbContext(typeof(ToamaisutaaDbContext))]
-    partial class ToamaisutaaDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260910175302_AddMagicLinks")]
+    partial class AddMagicLinks
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
                 .HasAnnotation("ProductVersion", "10.0.10")
-                .HasAnnotation("Relational:MaxIdentifierLength", 63);
-
-            NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
+                .HasAnnotation("Relational:MaxIdentifierLength", 64);
 
             modelBuilder.Entity("Toamaisutaa.Abstractions.ToamaisutaaEmailVerificationToken", b =>
                 {
                     b.Property<Guid>("Id")
-                        .HasColumnType("uuid");
+                        .HasColumnType("char(36)");
 
                     b.Property<long?>("ConsumedAt")
                         .HasColumnType("bigint");
@@ -36,7 +36,7 @@ namespace Toamaisutaa.EntityFrameworkCore.Migrations.Postgres.Migrations
                     b.Property<string>("Email")
                         .IsRequired()
                         .HasMaxLength(256)
-                        .HasColumnType("character varying(256)");
+                        .HasColumnType("varchar(256)");
 
                     b.Property<long>("ExpiresAt")
                         .HasColumnType("bigint");
@@ -44,10 +44,10 @@ namespace Toamaisutaa.EntityFrameworkCore.Migrations.Postgres.Migrations
                     b.Property<string>("TokenHash")
                         .IsRequired()
                         .HasMaxLength(64)
-                        .HasColumnType("character varying(64)");
+                        .HasColumnType("varchar(64)");
 
                     b.Property<Guid>("UserId")
-                        .HasColumnType("uuid");
+                        .HasColumnType("char(36)");
 
                     b.HasKey("Id");
 
@@ -62,14 +62,14 @@ namespace Toamaisutaa.EntityFrameworkCore.Migrations.Postgres.Migrations
             modelBuilder.Entity("Toamaisutaa.Abstractions.ToamaisutaaExternalLogin", b =>
                 {
                     b.Property<Guid>("Id")
-                        .HasColumnType("uuid");
+                        .HasColumnType("char(36)");
 
                     b.Property<long>("CreatedAt")
                         .HasColumnType("bigint");
 
                     b.Property<string>("Issuer")
                         .HasMaxLength(512)
-                        .HasColumnType("character varying(512)");
+                        .HasColumnType("varchar(512)");
 
                     b.Property<long?>("LastSignInAt")
                         .HasColumnType("bigint");
@@ -77,15 +77,15 @@ namespace Toamaisutaa.EntityFrameworkCore.Migrations.Postgres.Migrations
                     b.Property<string>("ProviderKey")
                         .IsRequired()
                         .HasMaxLength(128)
-                        .HasColumnType("character varying(128)");
+                        .HasColumnType("varchar(128)");
 
                     b.Property<string>("Subject")
                         .IsRequired()
                         .HasMaxLength(256)
-                        .HasColumnType("character varying(256)");
+                        .HasColumnType("varchar(256)");
 
                     b.Property<Guid>("UserId")
-                        .HasColumnType("uuid");
+                        .HasColumnType("char(36)");
 
                     b.HasKey("Id");
 
@@ -100,7 +100,7 @@ namespace Toamaisutaa.EntityFrameworkCore.Migrations.Postgres.Migrations
             modelBuilder.Entity("Toamaisutaa.Abstractions.ToamaisutaaInvitationToken", b =>
                 {
                     b.Property<Guid>("Id")
-                        .HasColumnType("uuid");
+                        .HasColumnType("char(36)");
 
                     b.Property<long?>("ConsumedAt")
                         .HasColumnType("bigint");
@@ -114,10 +114,10 @@ namespace Toamaisutaa.EntityFrameworkCore.Migrations.Postgres.Migrations
                     b.Property<string>("TokenHash")
                         .IsRequired()
                         .HasMaxLength(64)
-                        .HasColumnType("character varying(64)");
+                        .HasColumnType("varchar(64)");
 
                     b.Property<Guid>("UserId")
-                        .HasColumnType("uuid");
+                        .HasColumnType("char(36)");
 
                     b.HasKey("Id");
 
@@ -132,7 +132,7 @@ namespace Toamaisutaa.EntityFrameworkCore.Migrations.Postgres.Migrations
             modelBuilder.Entity("Toamaisutaa.Abstractions.ToamaisutaaMagicLinkToken", b =>
                 {
                     b.Property<Guid>("Id")
-                        .HasColumnType("uuid");
+                        .HasColumnType("char(36)");
 
                     b.Property<long?>("ConsumedAt")
                         .HasColumnType("bigint");
@@ -146,10 +146,10 @@ namespace Toamaisutaa.EntityFrameworkCore.Migrations.Postgres.Migrations
                     b.Property<string>("TokenHash")
                         .IsRequired()
                         .HasMaxLength(64)
-                        .HasColumnType("character varying(64)");
+                        .HasColumnType("varchar(64)");
 
                     b.Property<Guid>("UserId")
-                        .HasColumnType("uuid");
+                        .HasColumnType("char(36)");
 
                     b.HasKey("Id");
 
@@ -164,20 +164,20 @@ namespace Toamaisutaa.EntityFrameworkCore.Migrations.Postgres.Migrations
             modelBuilder.Entity("Toamaisutaa.Abstractions.ToamaisutaaPasswordCredential", b =>
                 {
                     b.Property<Guid>("UserId")
-                        .HasColumnType("uuid");
+                        .HasColumnType("char(36)");
 
                     b.Property<long>("CreatedAt")
                         .HasColumnType("bigint");
 
                     b.Property<string>("Email")
                         .HasMaxLength(256)
-                        .HasColumnType("character varying(256)");
+                        .HasColumnType("varchar(256)");
 
                     b.Property<long?>("EmailConfirmedAt")
                         .HasColumnType("bigint");
 
                     b.Property<int>("FailedAttemptCount")
-                        .HasColumnType("integer");
+                        .HasColumnType("int");
 
                     b.Property<long?>("FirstFailedAttemptAt")
                         .HasColumnType("bigint");
@@ -187,17 +187,17 @@ namespace Toamaisutaa.EntityFrameworkCore.Migrations.Postgres.Migrations
 
                     b.Property<string>("NormalizedEmail")
                         .HasMaxLength(256)
-                        .HasColumnType("character varying(256)");
+                        .HasColumnType("varchar(256)");
 
                     b.Property<string>("NormalizedUserName")
                         .IsRequired()
                         .HasMaxLength(256)
-                        .HasColumnType("character varying(256)");
+                        .HasColumnType("varchar(256)");
 
                     b.Property<string>("PasswordHash")
                         .IsRequired()
                         .HasMaxLength(512)
-                        .HasColumnType("character varying(512)");
+                        .HasColumnType("varchar(512)");
 
                     b.Property<long>("UpdatedAt")
                         .HasColumnType("bigint");
@@ -205,7 +205,7 @@ namespace Toamaisutaa.EntityFrameworkCore.Migrations.Postgres.Migrations
                     b.Property<string>("UserName")
                         .IsRequired()
                         .HasMaxLength(256)
-                        .HasColumnType("character varying(256)");
+                        .HasColumnType("varchar(256)");
 
                     b.HasKey("UserId");
 
@@ -221,7 +221,7 @@ namespace Toamaisutaa.EntityFrameworkCore.Migrations.Postgres.Migrations
             modelBuilder.Entity("Toamaisutaa.Abstractions.ToamaisutaaPasswordResetToken", b =>
                 {
                     b.Property<Guid>("Id")
-                        .HasColumnType("uuid");
+                        .HasColumnType("char(36)");
 
                     b.Property<long?>("ConsumedAt")
                         .HasColumnType("bigint");
@@ -235,10 +235,10 @@ namespace Toamaisutaa.EntityFrameworkCore.Migrations.Postgres.Migrations
                     b.Property<string>("TokenHash")
                         .IsRequired()
                         .HasMaxLength(64)
-                        .HasColumnType("character varying(64)");
+                        .HasColumnType("varchar(64)");
 
                     b.Property<Guid>("UserId")
-                        .HasColumnType("uuid");
+                        .HasColumnType("char(36)");
 
                     b.HasKey("Id");
 
@@ -253,12 +253,12 @@ namespace Toamaisutaa.EntityFrameworkCore.Migrations.Postgres.Migrations
             modelBuilder.Entity("Toamaisutaa.Abstractions.ToamaisutaaRecoveryCode", b =>
                 {
                     b.Property<Guid>("Id")
-                        .HasColumnType("uuid");
+                        .HasColumnType("char(36)");
 
                     b.Property<string>("CodeHash")
                         .IsRequired()
                         .HasMaxLength(64)
-                        .HasColumnType("character varying(64)");
+                        .HasColumnType("varchar(64)");
 
                     b.Property<long?>("ConsumedAt")
                         .HasColumnType("bigint");
@@ -267,7 +267,7 @@ namespace Toamaisutaa.EntityFrameworkCore.Migrations.Postgres.Migrations
                         .HasColumnType("bigint");
 
                     b.Property<Guid>("UserId")
-                        .HasColumnType("uuid");
+                        .HasColumnType("char(36)");
 
                     b.HasKey("Id");
 
@@ -279,12 +279,12 @@ namespace Toamaisutaa.EntityFrameworkCore.Migrations.Postgres.Migrations
             modelBuilder.Entity("Toamaisutaa.Abstractions.ToamaisutaaRefreshToken", b =>
                 {
                     b.Property<Guid>("Id")
-                        .HasColumnType("uuid");
+                        .HasColumnType("char(36)");
 
                     b.Property<string>("AuthenticationMethods")
                         .IsRequired()
                         .HasMaxLength(128)
-                        .HasColumnType("character varying(128)");
+                        .HasColumnType("varchar(128)");
 
                     b.Property<long>("CreatedAt")
                         .HasColumnType("bigint");
@@ -293,14 +293,14 @@ namespace Toamaisutaa.EntityFrameworkCore.Migrations.Postgres.Migrations
                         .HasColumnType("bigint");
 
                     b.Property<Guid>("FamilyId")
-                        .HasColumnType("uuid");
+                        .HasColumnType("char(36)");
 
                     b.Property<long>("FamilyStartedAt")
                         .HasColumnType("bigint");
 
                     b.Property<string>("IpAddress")
                         .HasMaxLength(64)
-                        .HasColumnType("character varying(64)");
+                        .HasColumnType("varchar(64)");
 
                     b.Property<long>("LastUsedAt")
                         .HasColumnType("bigint");
@@ -310,7 +310,7 @@ namespace Toamaisutaa.EntityFrameworkCore.Migrations.Postgres.Migrations
 
                     b.Property<string>("RevokedReason")
                         .HasMaxLength(64)
-                        .HasColumnType("character varying(64)");
+                        .HasColumnType("varchar(64)");
 
                     b.Property<long?>("RotatedAt")
                         .HasColumnType("bigint");
@@ -321,23 +321,23 @@ namespace Toamaisutaa.EntityFrameworkCore.Migrations.Postgres.Migrations
                     b.Property<string>("SecurityStamp")
                         .IsRequired()
                         .HasMaxLength(128)
-                        .HasColumnType("character varying(128)");
+                        .HasColumnType("varchar(128)");
 
                     b.Property<string>("TokenHash")
                         .IsRequired()
                         .HasMaxLength(64)
-                        .HasColumnType("character varying(64)");
+                        .HasColumnType("varchar(64)");
 
                     b.Property<string>("TwoFactorSource")
                         .HasMaxLength(32)
-                        .HasColumnType("character varying(32)");
+                        .HasColumnType("varchar(32)");
 
                     b.Property<string>("UserAgent")
                         .HasMaxLength(256)
-                        .HasColumnType("character varying(256)");
+                        .HasColumnType("varchar(256)");
 
                     b.Property<Guid>("UserId")
-                        .HasColumnType("uuid");
+                        .HasColumnType("char(36)");
 
                     b.HasKey("Id");
 
@@ -354,7 +354,7 @@ namespace Toamaisutaa.EntityFrameworkCore.Migrations.Postgres.Migrations
             modelBuilder.Entity("Toamaisutaa.Abstractions.ToamaisutaaTrustedDevice", b =>
                 {
                     b.Property<Guid>("Id")
-                        .HasColumnType("uuid");
+                        .HasColumnType("char(36)");
 
                     b.Property<long>("CreatedAt")
                         .HasColumnType("bigint");
@@ -363,18 +363,18 @@ namespace Toamaisutaa.EntityFrameworkCore.Migrations.Postgres.Migrations
                         .HasColumnType("bigint");
 
                     b.Property<Guid>("FamilyId")
-                        .HasColumnType("uuid");
+                        .HasColumnType("char(36)");
 
                     b.Property<long>("FamilyStartedAt")
                         .HasColumnType("bigint");
 
                     b.Property<string>("IpAddress")
                         .HasMaxLength(64)
-                        .HasColumnType("character varying(64)");
+                        .HasColumnType("varchar(64)");
 
                     b.Property<string>("Label")
                         .HasMaxLength(128)
-                        .HasColumnType("character varying(128)");
+                        .HasColumnType("varchar(128)");
 
                     b.Property<long>("LastUsedAt")
                         .HasColumnType("bigint");
@@ -384,7 +384,7 @@ namespace Toamaisutaa.EntityFrameworkCore.Migrations.Postgres.Migrations
 
                     b.Property<string>("RevokedReason")
                         .HasMaxLength(64)
-                        .HasColumnType("character varying(64)");
+                        .HasColumnType("varchar(64)");
 
                     b.Property<long?>("RotatedAt")
                         .HasColumnType("bigint");
@@ -395,19 +395,19 @@ namespace Toamaisutaa.EntityFrameworkCore.Migrations.Postgres.Migrations
                     b.Property<string>("SecurityStamp")
                         .IsRequired()
                         .HasMaxLength(128)
-                        .HasColumnType("character varying(128)");
+                        .HasColumnType("varchar(128)");
 
                     b.Property<string>("TokenHash")
                         .IsRequired()
                         .HasMaxLength(64)
-                        .HasColumnType("character varying(64)");
+                        .HasColumnType("varchar(64)");
 
                     b.Property<string>("UserAgent")
                         .HasMaxLength(256)
-                        .HasColumnType("character varying(256)");
+                        .HasColumnType("varchar(256)");
 
                     b.Property<Guid>("UserId")
-                        .HasColumnType("uuid");
+                        .HasColumnType("char(36)");
 
                     b.HasKey("Id");
 
@@ -424,12 +424,12 @@ namespace Toamaisutaa.EntityFrameworkCore.Migrations.Postgres.Migrations
             modelBuilder.Entity("Toamaisutaa.Abstractions.ToamaisutaaTwoFactorChallenge", b =>
                 {
                     b.Property<Guid>("Id")
-                        .HasColumnType("uuid");
+                        .HasColumnType("char(36)");
 
                     b.Property<string>("AuthenticationMethods")
                         .IsRequired()
                         .HasMaxLength(128)
-                        .HasColumnType("character varying(128)");
+                        .HasColumnType("varchar(128)");
 
                     b.Property<long?>("ConsumedAt")
                         .HasColumnType("bigint");
@@ -441,18 +441,18 @@ namespace Toamaisutaa.EntityFrameworkCore.Migrations.Postgres.Migrations
                         .HasColumnType("bigint");
 
                     b.Property<Guid?>("FamilyId")
-                        .HasColumnType("uuid");
+                        .HasColumnType("char(36)");
 
                     b.Property<int>("Purpose")
-                        .HasColumnType("integer");
+                        .HasColumnType("int");
 
                     b.Property<string>("TokenHash")
                         .IsRequired()
                         .HasMaxLength(64)
-                        .HasColumnType("character varying(64)");
+                        .HasColumnType("varchar(64)");
 
                     b.Property<Guid>("UserId")
-                        .HasColumnType("uuid");
+                        .HasColumnType("char(36)");
 
                     b.HasKey("Id");
 
@@ -467,34 +467,34 @@ namespace Toamaisutaa.EntityFrameworkCore.Migrations.Postgres.Migrations
             modelBuilder.Entity("Toamaisutaa.Abstractions.ToamaisutaaUser", b =>
                 {
                     b.Property<Guid>("Id")
-                        .HasColumnType("uuid");
+                        .HasColumnType("char(36)");
 
                     b.Property<long>("CreatedAt")
                         .HasColumnType("bigint");
 
                     b.Property<string>("DisplayName")
                         .HasMaxLength(256)
-                        .HasColumnType("character varying(256)");
+                        .HasColumnType("varchar(256)");
 
                     b.Property<string>("Email")
                         .HasMaxLength(256)
-                        .HasColumnType("character varying(256)");
+                        .HasColumnType("varchar(256)");
 
                     b.Property<string>("PictureUrl")
                         .HasMaxLength(2048)
-                        .HasColumnType("character varying(2048)");
+                        .HasColumnType("varchar(2048)");
 
                     b.Property<string>("SecurityStamp")
                         .IsRequired()
                         .HasMaxLength(128)
-                        .HasColumnType("character varying(128)");
+                        .HasColumnType("varchar(128)");
 
                     b.Property<long>("UpdatedAt")
                         .HasColumnType("bigint");
 
                     b.Property<string>("UserName")
                         .HasMaxLength(256)
-                        .HasColumnType("character varying(256)");
+                        .HasColumnType("varchar(256)");
 
                     b.HasKey("Id");
 
@@ -506,7 +506,7 @@ namespace Toamaisutaa.EntityFrameworkCore.Migrations.Postgres.Migrations
             modelBuilder.Entity("Toamaisutaa.Abstractions.ToamaisutaaUserTwoFactor", b =>
                 {
                     b.Property<Guid>("UserId")
-                        .HasColumnType("uuid");
+                        .HasColumnType("char(36)");
 
                     b.Property<long?>("ConfirmedAt")
                         .HasColumnType("bigint");
@@ -517,7 +517,7 @@ namespace Toamaisutaa.EntityFrameworkCore.Migrations.Postgres.Migrations
                     b.Property<string>("EncryptionKeyVersion")
                         .IsRequired()
                         .HasMaxLength(64)
-                        .HasColumnType("character varying(64)");
+                        .HasColumnType("varchar(64)");
 
                     b.Property<long?>("LastUsedStep")
                         .HasColumnType("bigint");
@@ -525,17 +525,17 @@ namespace Toamaisutaa.EntityFrameworkCore.Migrations.Postgres.Migrations
                     b.Property<byte[]>("SecretCiphertext")
                         .IsRequired()
                         .HasMaxLength(256)
-                        .HasColumnType("bytea");
+                        .HasColumnType("varbinary(256)");
 
                     b.Property<byte[]>("SecretNonce")
                         .IsRequired()
                         .HasMaxLength(32)
-                        .HasColumnType("bytea");
+                        .HasColumnType("varbinary(32)");
 
                     b.Property<byte[]>("SecretTag")
                         .IsRequired()
                         .HasMaxLength(32)
-                        .HasColumnType("bytea");
+                        .HasColumnType("varbinary(32)");
 
                     b.Property<long>("UpdatedAt")
                         .HasColumnType("bigint");

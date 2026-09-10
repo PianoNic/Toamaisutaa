@@ -58,6 +58,19 @@ public static class ToamaisutaaDefaults
     /// <summary>The value in <c>amr</c> that means a second factor was actually presented.</summary>
     public const string MultiFactorMethod = "mfa";
 
+    /// <summary>
+    /// The value in <c>amr</c> for a sign-in proved by an emailed link rather than a password.
+    /// </summary>
+    /// <remarks>
+    /// The one <c>amr</c> value here that the RFC 8176 registry does not define - it has nothing for
+    /// possession of a mailbox - and it is spelled the way identity providers offering emailed
+    /// sign-in already spell it, so a policy reading <c>amr</c> sees one value rather than two.
+    /// Unprefixed for that reason, unlike the <c>toa_</c> claims: this is a value inside a standard
+    /// claim, not a claim of ours. A policy that means "a password was typed" should read
+    /// <c>pwd</c> and will not find it here, which is the point.
+    /// </remarks>
+    public const string MagicLinkMethod = "email";
+
     /// <summary>Carries <see cref="ToamaisutaaUser.SecurityStamp"/> on a locally issued token.</summary>
     public const string SecurityStampClaim = "toa_stamp";
 

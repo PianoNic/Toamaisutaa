@@ -13,6 +13,10 @@ internal sealed class Account(TestApp app, string userName, string password)
 
     public string Password { get; } = password;
 
+    /// <summary>The address this account registered with. Unverified until
+    /// <see cref="VerifyEmailAsync"/> says otherwise.</summary>
+    public string Email { get; } = $"{userName}@example.com";
+
     public string AccessToken { get; private set; } = default!;
 
     /// <summary>Base32 TOTP secret, once enrolled.</summary>
@@ -31,6 +35,39 @@ internal sealed class Account(TestApp app, string userName, string password)
 
         account.AccessToken = (await response.Json()).String("access_token")!;
         return account;
+    }
+
+    /// <summary>
+    /// Proves the address this account registered with, which is what a magic link needs before one
+    /// will be sent. Asking to change to the address already held is the documented way to do it.
+    /// </summary>
+    public async Task VerifyEmailAsync()
+    {
+        var request = await app.Client.PostJson(
+            "/auth/email",
+            new { newEmail = Email, currentPassword = Password },
+            AccessToken);
+
+        if (request.StatusCode != HttpStatusCode.NoContent)
+            throw new InvalidOperationException($"Email change failed: {request.StatusCode} {await request.Content.ReadAsStringAsync()}");
+
+        var verify = await app.Client.PostJson(
+            "/auth/email/verify",
+            new { token = app.IssuedEmailVerifications[^1].Token });
+
+        if (verify.StatusCode != HttpStatusCode.NoContent)
+            throw new InvalidOperationException($"Email verification failed: {verify.StatusCode} {await verify.Content.ReadAsStringAsync()}");
+    }
+
+    /// <summary>Asks for a sign-in link and hands back the raw token the notifier was given.</summary>
+    public async Task<string> RequestMagicLinkAsync()
+    {
+        var response = await app.Client.PostJson("/auth/magic-link", new { email = Email });
+
+        if (response.StatusCode != HttpStatusCode.NoContent)
+            throw new InvalidOperationException($"Magic-link request failed: {response.StatusCode} {await response.Content.ReadAsStringAsync()}");
+
+        return app.IssuedMagicLinks[^1].Token;
     }
 
     public Task<HttpResponseMessage> LoginAsync(string? deviceToken = null) =>

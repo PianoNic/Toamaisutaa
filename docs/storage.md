@@ -132,6 +132,7 @@ Three things the EF implementations do that yours must also do, because `Core` r
 | `ToamaisutaaPasswordResetTokens` | Single-use reset tokens, hashed |
 | `ToamaisutaaInvitationTokens` | Single-use invitation tokens, hashed |
 | `ToamaisutaaEmailVerificationTokens` | Single-use email verification tokens, hashed, each naming the address it proves |
+| `ToamaisutaaMagicLinkTokens` | Single-use emailed sign-in tokens, hashed |
 | `ToamaisutaaUserTwoFactors` | One TOTP enrolment per user, its secret encrypted at rest |
 | `ToamaisutaaRecoveryCodes` | Hashed single-use recovery codes |
 | `ToamaisutaaTwoFactorChallenges` | Half-finished sign-ins waiting on a second factor |

@@ -7,8 +7,8 @@ using Toamaisutaa.Abstractions;
 namespace Toamaisutaa.Core;
 
 /// <summary>
-/// Deletes every expiring row this package writes - refresh, reset, invitation and email
-/// verification tokens, two-factor challenges and trusted devices - once it is past its expiry. Opt-in, because a
+/// Deletes every expiring row this package writes - refresh, reset, invitation, email verification
+/// and magic-link tokens, two-factor challenges and trusted devices - once it is past its expiry. Opt-in, because a
 /// package should not start doing background writes to someone's database without being asked -
 /// but offered, because the alternative is a table nobody thinks about until it is enormous.
 /// </summary>
@@ -68,18 +68,26 @@ internal sealed class TokenCleanupService(
         var verifications = scope.ServiceProvider.GetService<IEmailVerificationTokenStore>();
         var removedVerifications = verifications is null ? 0 : await verifications.DeleteExpiredAsync(now, cancellationToken);
 
-        if (removedRefresh + removedReset + removedChallenges + removedDevices + removedInvitations + removedVerifications > 0)
+        var magicLinks = scope.ServiceProvider.GetService<IMagicLinkTokenStore>();
+        var removedMagicLinks = magicLinks is null ? 0 : await magicLinks.DeleteExpiredAsync(now, cancellationToken);
+
+        var removed = removedRefresh + removedReset + removedChallenges + removedDevices + removedInvitations
+            + removedVerifications + removedMagicLinks;
+
+        if (removed > 0)
         {
             logger.LogInformation(
                 "Removed {RefreshTokens} expired refresh token(s), {ResetTokens} expired reset token(s), {Challenges} "
                 + "expired two-factor challenge(s), {Devices} expired trusted device row(s), {Invitations} expired "
-                + "invitation token(s) and {Verifications} expired email verification token(s).",
+                + "invitation token(s), {Verifications} expired email verification token(s) and {MagicLinks} expired "
+                + "magic-link token(s).",
                 removedRefresh,
                 removedReset,
                 removedChallenges,
                 removedDevices,
                 removedInvitations,
-                removedVerifications);
+                removedVerifications,
+                removedMagicLinks);
         }
     }
 }

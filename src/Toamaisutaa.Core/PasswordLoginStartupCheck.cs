@@ -72,6 +72,7 @@ internal sealed class PasswordLoginStartupCheck(
                      typeof(IPasswordResetTokenStore),
                      typeof(IInvitationTokenStore),
                      typeof(IEmailVerificationTokenStore),
+                     typeof(IMagicLinkTokenStore),
                  })
         {
             if (!IsRegistered(storeType))
@@ -96,6 +97,16 @@ internal sealed class PasswordLoginStartupCheck(
                 $"LocalLogin:RequireVerifiedEmailForPasswordReset is on but no {nameof(IEmailVerificationNotifier)} is "
                 + "registered, so no address can ever be verified and no password can ever be reset. Register one, or "
                 + "turn the option off.");
+        }
+
+        // The same shape, and it fails just as quietly: a magic link only ever goes to a verified
+        // address, so with no way to verify one the endpoint answers 204 forever and sends nothing.
+        if (IsRegistered(typeof(IMagicLinkNotifier)) && !IsRegistered(typeof(IEmailVerificationNotifier)))
+        {
+            problems.Add(
+                $"An {nameof(IMagicLinkNotifier)} is registered but no {nameof(IEmailVerificationNotifier)} is. A magic "
+                + "link is only ever sent to a verified address, so no address could ever qualify and /auth/magic-link "
+                + "would answer 204 without sending anything. Register one, or drop the magic-link notifier.");
         }
     }
 

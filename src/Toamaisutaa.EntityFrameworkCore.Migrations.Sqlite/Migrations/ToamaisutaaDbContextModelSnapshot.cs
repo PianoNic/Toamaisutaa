@@ -124,6 +124,38 @@ namespace Toamaisutaa.EntityFrameworkCore.Migrations.Sqlite.Migrations
                     b.ToTable("ToamaisutaaInvitationTokens", (string)null);
                 });
 
+            modelBuilder.Entity("Toamaisutaa.Abstractions.ToamaisutaaMagicLinkToken", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("TEXT");
+
+                    b.Property<long?>("ConsumedAt")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<long>("CreatedAt")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<long>("ExpiresAt")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("TokenHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TokenHash")
+                        .IsUnique();
+
+                    b.HasIndex("UserId");
+
+                    b.ToTable("ToamaisutaaMagicLinkTokens", (string)null);
+                });
+
             modelBuilder.Entity("Toamaisutaa.Abstractions.ToamaisutaaPasswordCredential", b =>
                 {
                     b.Property<Guid>("UserId")
@@ -389,6 +421,11 @@ namespace Toamaisutaa.EntityFrameworkCore.Migrations.Sqlite.Migrations
                     b.Property<Guid>("Id")
                         .HasColumnType("TEXT");
 
+                    b.Property<string>("AuthenticationMethods")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("TEXT");
+
                     b.Property<long?>("ConsumedAt")
                         .HasColumnType("INTEGER");
 
@@ -522,6 +559,15 @@ namespace Toamaisutaa.EntityFrameworkCore.Migrations.Sqlite.Migrations
                 });
 
             modelBuilder.Entity("Toamaisutaa.Abstractions.ToamaisutaaInvitationToken", b =>
+                {
+                    b.HasOne("Toamaisutaa.Abstractions.ToamaisutaaUser", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Toamaisutaa.Abstractions.ToamaisutaaMagicLinkToken", b =>
                 {
                     b.HasOne("Toamaisutaa.Abstractions.ToamaisutaaUser", null)
                         .WithMany()

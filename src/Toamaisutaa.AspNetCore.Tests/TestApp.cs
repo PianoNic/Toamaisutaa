@@ -46,7 +46,8 @@ internal sealed class TestApp : IAsyncDisposable
         MutableTimeProvider time,
         List<(Guid UserId, string Password)> issuedPasswords,
         List<(Guid UserId, string Token)> issuedInvitations,
-        List<(Guid UserId, string Email, string Token)> issuedEmailVerifications)
+        List<(Guid UserId, string Email, string Token)> issuedEmailVerifications,
+        List<(Guid UserId, string Token)> issuedMagicLinks)
     {
         _app = app;
         _connection = connection;
@@ -55,6 +56,7 @@ internal sealed class TestApp : IAsyncDisposable
         IssuedPasswords = issuedPasswords;
         IssuedInvitations = issuedInvitations;
         IssuedEmailVerifications = issuedEmailVerifications;
+        IssuedMagicLinks = issuedMagicLinks;
     }
 
     public HttpClient Client { get; }
@@ -77,6 +79,10 @@ internal sealed class TestApp : IAsyncDisposable
     /// <summary>What <c>IEmailVerificationNotifier</c> was handed. The address is kept alongside the
     /// token, because which mailbox the link went to is the half of that flow that matters.</summary>
     public List<(Guid UserId, string Email, string Token)> IssuedEmailVerifications { get; }
+
+    /// <summary>What <c>IMagicLinkNotifier</c> was handed. The only place a sign-in link can be
+    /// observed, since it is never in an HTTP response.</summary>
+    public List<(Guid UserId, string Token)> IssuedMagicLinks { get; }
 
     /// <summary>
     /// Advance it to cross a TOTP step. Anchored at the real clock and never moved far, because the
@@ -106,6 +112,13 @@ internal sealed class TestApp : IAsyncDisposable
     /// On by default, so <c>/auth/email</c> and <c>/auth/email/verify</c> are mapped and most tests
     /// can use them. Off to prove they are not mapped at all without one.
     /// </param>
+    /// <param name="includeMagicLinkNotifier">
+    /// Follows <paramref name="includeEmailVerificationNotifier"/> unless it is given, so
+    /// <c>/auth/magic-link</c> and <c>/auth/magic-link/verify</c> are mapped for most tests. It has
+    /// to follow rather than default to true: startup refuses a magic-link notifier with no way to
+    /// verify an address, because then no address could ever qualify for a link. Pass false to prove
+    /// the endpoints are not mapped at all without one.
+    /// </param>
     /// <param name="remoteIpAddress">
     /// Puts an address on every connection. The test host leaves <c>RemoteIpAddress</c> null, so
     /// without this the columns fed from it are null throughout and a test about
@@ -124,6 +137,7 @@ internal sealed class TestApp : IAsyncDisposable
         bool includeAdminPasswordNotifier = true,
         bool includeInvitationNotifier = true,
         bool includeEmailVerificationNotifier = true,
+        bool? includeMagicLinkNotifier = null,
         string? remoteIpAddress = null,
         bool includeOpenApi = false)
     {
@@ -169,6 +183,7 @@ internal sealed class TestApp : IAsyncDisposable
         var issuedPasswords = new List<(Guid UserId, string Password)>();
         var issuedInvitations = new List<(Guid UserId, string Token)>();
         var issuedEmailVerifications = new List<(Guid UserId, string Email, string Token)>();
+        var issuedMagicLinks = new List<(Guid UserId, string Token)>();
 
         if (includeAdminPasswordNotifier)
             builder.Services.AddSingleton<IAdminPasswordIssuedNotifier>(new CapturingAdminPasswordIssuedNotifier(issuedPasswords));
@@ -178,6 +193,9 @@ internal sealed class TestApp : IAsyncDisposable
 
         if (includeEmailVerificationNotifier)
             builder.Services.AddSingleton<IEmailVerificationNotifier>(new CapturingEmailVerificationNotifier(issuedEmailVerifications));
+
+        if (includeMagicLinkNotifier ?? includeEmailVerificationNotifier)
+            builder.Services.AddSingleton<IMagicLinkNotifier>(new CapturingMagicLinkNotifier(issuedMagicLinks));
 
         if (includeOpenApi)
         {
@@ -243,7 +261,15 @@ internal sealed class TestApp : IAsyncDisposable
 
         await app.StartAsync();
 
-        return new TestApp(app, connection, app.GetTestClient(), time, issuedPasswords, issuedInvitations, issuedEmailVerifications);
+        return new TestApp(
+            app,
+            connection,
+            app.GetTestClient(),
+            time,
+            issuedPasswords,
+            issuedInvitations,
+            issuedEmailVerifications,
+            issuedMagicLinks);
     }
 
     /// <summary>
@@ -307,6 +333,15 @@ internal sealed class TestApp : IAsyncDisposable
         public Task SendAsync(ToamaisutaaUser user, string email, string verificationToken, CancellationToken cancellationToken = default)
         {
             sent.Add((user.Id, email, verificationToken));
+            return Task.CompletedTask;
+        }
+    }
+
+    private sealed class CapturingMagicLinkNotifier(List<(Guid UserId, string Token)> sent) : IMagicLinkNotifier
+    {
+        public Task SendAsync(ToamaisutaaUser user, string magicLinkToken, CancellationToken cancellationToken = default)
+        {
+            sent.Add((user.Id, magicLinkToken));
             return Task.CompletedTask;
         }
     }

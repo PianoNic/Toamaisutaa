@@ -39,6 +39,24 @@ internal static class Http
             ? [.. value.EnumerateArray().Select(item => item.GetString()!)]
             : [];
 
+    /// <summary>
+    /// The <c>amr</c> values on a decoded token.
+    /// </summary>
+    /// <remarks>
+    /// Not <see cref="Strings"/>, which insists on an array: a token carrying one method serialises
+    /// it as a bare string, so a magic-link sign-in - the one shape whose <c>amr</c> is a single
+    /// value - would read as no methods at all.
+    /// </remarks>
+    public static IReadOnlyList<string> Amr(this JsonElement claims)
+    {
+        if (!claims.TryGetProperty("amr", out var amr))
+            return [];
+
+        return amr.ValueKind == JsonValueKind.Array
+            ? [.. amr.EnumerateArray().Select(value => value.GetString()!)]
+            : [amr.GetString()!];
+    }
+
     public static bool Has(this JsonElement element, string name) =>
         element.TryGetProperty(name, out var value) && value.ValueKind is not JsonValueKind.Null;
 

@@ -21,6 +21,25 @@ public interface IPasswordSignInService
     Task<SignInResult> VerifyTwoFactorAsync(TwoFactorSignInRequest request, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Spends a magic-link token for a token pair. No password is presented and none is checked:
+    /// reading the mailbox is the factor.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Stops at <see cref="SignInOutcome.TwoFactorRequired"/> for an enrolled account exactly as
+    /// <see cref="SignInAsync"/> does, and the challenge is finished at the same
+    /// <see cref="VerifyTwoFactorAsync"/>. The token is spent either way - it got the account holder
+    /// as far as the challenge, which is all a first factor ever does.
+    /// </para>
+    /// <para>
+    /// A trusted device cannot stand in for that challenge here, unlike at <see cref="SignInAsync"/>.
+    /// There the cached factor sits behind a password; here it would sit behind a mailbox alone, and
+    /// two cached things are not two factors. Whoever enrolled an authenticator gets asked for it.
+    /// </para>
+    /// </remarks>
+    Task<SignInResult> VerifyMagicLinkAsync(MagicLinkSignInRequest request, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Asks for a second factor from a session that is already signed in, so that a policy
     /// requiring a <i>fresh</i> one can be satisfied without signing out.
     /// </summary>
@@ -112,6 +131,25 @@ public sealed record PasswordSignInRequest
     /// verified first regardless.
     /// </summary>
     public string? DeviceToken { get; init; }
+
+    public string? UserAgent { get; init; }
+
+    public string? IpAddress { get; init; }
+}
+
+/// <summary>
+/// A magic-link token being redeemed, and the client redeeming it.
+/// </summary>
+/// <remarks>
+/// A record rather than a bare string for the same reason <see cref="PasswordSignInRequest"/> is
+/// one: the user agent and the address are read from the request by the endpoint and passed down, so
+/// nothing below the web layer has to know what an HTTP request is. There is deliberately no device
+/// token here - see <see cref="IPasswordSignInService.VerifyMagicLinkAsync"/>.
+/// </remarks>
+public sealed record MagicLinkSignInRequest
+{
+    /// <summary>The raw token, as it arrived from the mailbox.</summary>
+    public required string Token { get; init; }
 
     public string? UserAgent { get; init; }
 
@@ -239,6 +277,12 @@ public enum SignInOutcome
     /// the user deliberately ended.
     /// </summary>
     SessionEnded,
+
+    /// <summary>
+    /// The magic-link token is unknown, already spent or expired. One outcome for all three, the
+    /// same reasoning a reset link uses: they are the same answer to whoever is holding it.
+    /// </summary>
+    InvalidMagicLink,
 }
 
 /// <summary>How the second factor was satisfied. Written to <c>toa_2fa_source</c>.</summary>

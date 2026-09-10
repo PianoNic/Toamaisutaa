@@ -125,6 +125,14 @@ public sealed class ToamaisutaaLocalLoginOptions
     public TimeSpan EmailVerificationTokenLifetime { get; set; } = TimeSpan.FromDays(1);
 
     /// <summary>
+    /// Shorter than <see cref="PasswordResetTokenLifetime"/>, and the one lifetime here that was
+    /// argued down rather than up: this link is not a step towards a session, it is the session.
+    /// Fifteen minutes is long enough for mail to be delivered and read, and short enough that a
+    /// message sitting in a shared or forwarded mailbox stops being a credential quickly.
+    /// </summary>
+    public TimeSpan MagicLinkTokenLifetime { get; set; } = TimeSpan.FromMinutes(15);
+
+    /// <summary>
     /// Off by default. When on, <c>/auth/password/forgot</c> issues nothing for a credential whose
     /// address was never verified, so a reset link can only ever be sent to an address somebody has
     /// proven they hold.
@@ -139,8 +147,8 @@ public sealed class ToamaisutaaLocalLoginOptions
     /// </remarks>
     public bool RequireVerifiedEmailForPasswordReset { get; set; }
 
-    /// <summary>How often the opt-in cleanup service deletes expired refresh, reset, invitation and
-    /// email verification rows.</summary>
+    /// <summary>How often the opt-in cleanup service deletes expired refresh, reset, invitation,
+    /// email verification and magic-link rows.</summary>
     public TimeSpan TokenCleanupInterval { get; set; } = TimeSpan.FromHours(6);
 
     // ── Endpoints ──
