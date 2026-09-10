@@ -148,7 +148,8 @@ public sealed class ToamaisutaaLocalLoginOptions
     public bool RequireVerifiedEmailForPasswordReset { get; set; }
 
     /// <summary>How often the opt-in cleanup service deletes expired refresh, reset, invitation,
-    /// email verification and magic-link rows.</summary>
+    /// email-verification and magic-link rows, plus expired two-factor challenge, trusted-device
+    /// and passkey-challenge rows when those features are registered.</summary>
     public TimeSpan TokenCleanupInterval { get; set; } = TimeSpan.FromHours(6);
 
     // ── Endpoints ──

@@ -37,7 +37,7 @@ of `SignInOutcome`.
 `pwd otp mfa` - and `none` for an attempt that issued nothing. Summing over `amr` gives you attempts;
 summing over `result` gives you sign-ins split by how they were proved.
 
-`source` is which second factor was presented: `otp`, `recovery` or `device`.
+`source` is which second factor was presented: `otp`, `recovery`, `device` or `passkey`.
 
 `result` on the password histogram is what the hasher answered - `succeeded`, `rehash_needed`,
 `failed` - plus `no_credential` for the derivation run against an identifier that does not exist.

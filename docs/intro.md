@@ -97,6 +97,10 @@ requires a commercial licence above a revenue threshold.
 | `Toamaisutaa.EntityFrameworkCore.Migrations.SqlServer` | The SQL Server migration set |
 | `Toamaisutaa.EntityFrameworkCore.Migrations.MySql` | The MySQL migration set |
 | `Toamaisutaa.OpenApi` | Opt-in `AddToamaisutaaOpenApi`, the security schemes for your OpenAPI document |
+| `Toamaisutaa.Email.Smtp` | Opt-in SMTP notifiers for local login: reset, invitation, admin-issued password, email verification, magic link |
+| `Toamaisutaa.Passkeys` | Opt-in passkey registration and WebAuthn sign-in |
+| `Toamaisutaa.PasswordHashing.Argon2` | Opt-in Argon2id `IPasswordHasher` |
+| `Toamaisutaa.PasswordValidation.Hibp` | Opt-in Have I Been Pwned breach check for new passwords |
 
 `Abstractions` and `Core` carry no ASP.NET and no Entity Framework, so a domain or application
 project can depend on `ICurrentUser` without dragging a web stack behind it.
