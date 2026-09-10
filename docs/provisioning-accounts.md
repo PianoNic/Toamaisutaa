@@ -1,9 +1,10 @@
 # Provisioning accounts
 
 Three flows, one shape: a secret exists in the clear for exactly one in-process call to an interface
-you implement, and never reaches an HTTP response or a log line. The package ships no implementation
-for any of them - sending mail, or generating a credentials sheet, is not an authentication library's
-job.
+you implement, and never reaches an HTTP response or a log line. Nothing you install for
+authentication implements any of them - sending mail, or generating a credentials sheet, is not an
+authentication library's job. The opt-in `Toamaisutaa.Email.Smtp` package is the exception, and it
+is a separate package for exactly that reason.
 
 ## Password reset delivery is yours
 
@@ -46,6 +47,17 @@ two endpoints - neither exists on the wire without it, the same reasoning `/auth
 `AllowSelfRegistration`. Calling either method directly without one registered throws, at the call
 site rather than at startup, because the feature itself is optional.
 
+If emailing the password is what you want, `Toamaisutaa.Email.Smtp` supplies a notifier that does:
+
+```csharp
+builder.Services.AddToamaisutaaSmtpEmail(builder.Configuration);   // section "Email:Smtp"
+builder.Services.AddToamaisutaaSmtpAdminPasswordEmail();
+```
+
+Two calls rather than one, because the second is what puts the two endpoints on the wire, and an
+application that installed the package to send reset mail did not ask for them. `Email:Smtp:SignInUrl`
+is put at the end of the message when it is set.
+
 **Never called for a password a person chose for themselves.** Self-registration, a self-service
 change or reset, and completing a reserved invitation never reach `IAdminPasswordIssuedNotifier` -
 there is no code path from any of them to it. The only two ways a password reaches that interface
@@ -70,6 +82,17 @@ builder.Services.AddSingleton<IInvitationNotifier, YourInvitationEmailSender>();
 Same shape as `IAdminPasswordIssuedNotifier`: optional, resolved lazily, and what maps the two
 endpoints at all. The raw token exists in the clear only for the one call into
 `IInvitationNotifier` - never on the wire, and `POST /auth/invitations` never returns it.
+
+`Toamaisutaa.Email.Smtp` supplies this one too, and the same way:
+
+```csharp
+builder.Services.AddToamaisutaaSmtpEmail(builder.Configuration);   // section "Email:Smtp"
+builder.Services.AddToamaisutaaSmtpInvitationEmail();
+```
+
+`Email:Smtp:InvitationLinkTemplate` is the page the email points at, with `{token}` replaced by the
+raw token, and startup fails without it - the same way the reset link template is handled, and for
+the same reason: the shipped template cannot invent a page it knows nothing about.
 
 **Not open registration.** A token names exactly one reserved row; completing it can only ever set
 that one account's user name and password, never create an arbitrary new one. A taken user name
