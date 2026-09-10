@@ -17,6 +17,7 @@ internal static class ToamaisutaaSecuritySchemes
 
     public static async Task ApplyAsync(
         OpenApiDocument document,
+        AuthorizationServerMetadataCache metadata,
         IServiceProvider services,
         CancellationToken cancellationToken)
     {
@@ -40,7 +41,7 @@ internal static class ToamaisutaaSecuritySchemes
             new() { [new OpenApiSecuritySchemeReference(BearerScheme, document)] = [] },
         ];
 
-        if (await AuthorizationServerMetadata.DiscoverAsync(settings, services, cancellationToken) is { } issuer)
+        if (await metadata.GetAsync(settings, services, cancellationToken) is { } issuer)
         {
             var scopes = Scopes(settings.Scope);
 

@@ -67,8 +67,14 @@ public static class ToamaisutaaOpenApiExtensions
     {
         ArgumentNullException.ThrowIfNull(options);
 
+        // One per document rather than one per request. The transformer below runs on every request
+        // for the document, and the discovery answer it needs changes about as often as the issuer
+        // is redeployed - so this is what keeps a reader of an anonymous /openapi/v1.json from
+        // setting the rate at which this process reaches for the issuer.
+        var metadata = new AuthorizationServerMetadataCache();
+
         options.AddDocumentTransformer((document, context, cancellationToken) =>
-            ToamaisutaaSecuritySchemes.ApplyAsync(document, context.ApplicationServices, cancellationToken));
+            ToamaisutaaSecuritySchemes.ApplyAsync(document, metadata, context.ApplicationServices, cancellationToken));
 
         options.AddOperationTransformer((operation, context, _) =>
         {
