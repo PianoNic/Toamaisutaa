@@ -34,7 +34,7 @@ That is not an inconsistency, and the deciding question is always the same one:
 So: slow and salted when a human picked it, fast and plain when the random generator did. Reach for
 the expensive one by default, and be able to say why when you do not.
 
-## Where PBKDF2 stops, and how to replace it
+## Where PBKDF2 stops
 
 PBKDF2 is **compute-hard but not memory-hard**: each guess costs processor time and almost no memory,
 which is the shape an attacker with a rack of GPUs is best equipped to parallelise. A memory-hard
@@ -48,16 +48,65 @@ primitives to the platform and only OpenSSL implements it. Taking a third-party 
 credential path of a library other people install is a decision this package will not make on your
 behalf.
 
-So it is a seam instead. Register your own `IPasswordHasher` and it wins:
+So it is your decision, in one line.
+
+## Argon2id, in an opt-in package
+
+```bash
+dotnet add package Toamaisutaa.PasswordHashing.Argon2
+```
 
 ```csharp
-builder.Services.AddSingleton<IPasswordHasher, YourArgon2Hasher>();
+builder.Services.AddToamaisutaaArgon2PasswordHashing(builder.Configuration);   // section "PasswordHashing:Argon2"
 builder.Services.AddToamaisutaaPasswordLogin(builder.Configuration);
 ```
 
-Every stored hash is a PHC string naming the algorithm and parameters that produced it, so existing
-rows keep verifying and each one is rewritten under the new scheme on that user's next successful
-sign-in. There is no migration to run and no flag day.
+Before `AddToamaisutaaPasswordLogin` or after: registration order does not decide which hasher wins.
+The dependency it carries -
+[Konscious](https://www.nuget.org/packages/Konscious.Security.Cryptography.Argon2), pure managed and
+passing the RFC 9106 vectors - is installed with the package and reaches nothing else.
+
+| Key | Default | Notes |
+|---|---|---|
+| `PasswordHashing:Argon2:MemorySizeKib` | `19456` | 19 MiB, the OWASP figure for two iterations |
+| `PasswordHashing:Argon2:Iterations` | `2` | |
+| `PasswordHashing:Argon2:DegreeOfParallelism` | `1` | Lanes divide the memory rather than add to it |
+| `PasswordHashing:Argon2:VerifyOnly` | `false` | Read Argon2id, write PBKDF2 - the way back off the package |
+
+Startup refuses anything weaker than every OWASP configuration - `m=47104,t=1`, `m=19456,t=2`,
+`m=12288,t=3`, `m=9216,t=4`, `m=7168,t=5` - rather than let a real password be hashed under
+parameters that cannot be repaired afterwards. Salt and output lengths stay
+`LocalLogin:SaltSizeBytes` and `LocalLogin:HashSizeBytes`, and a configured `LocalLogin:Pepper` keeps
+applying.
+
+### There is no migration, in either direction
+
+Every stored hash is a PHC string naming the algorithm and parameters that produced it:
+
+```
+$pbkdf2-sha256$i=600000$<salt>$<hash>
+$argon2id$v=19$m=19456,t=2,p=1$<salt>$<hash>
+```
+
+So the rows a deployment already has keep verifying, and each one is rewritten as Argon2id on that
+user's next successful sign-in. Nothing to run, no flag day, and nobody locked out.
+
+Setting `VerifyOnly` runs the same thing backwards: Argon2id rows still verify, new ones are written
+with PBKDF2, and once the last Argon2id row has drained the package can be uninstalled. Uninstalling
+it while Argon2id rows remain leaves nothing that can read them.
+
+## Or bring your own
+
+`IPasswordHasher` is a seam, and the Argon2 package is one implementation of it rather than the only
+one allowed. Register your own and it wins:
+
+```csharp
+builder.Services.AddSingleton<IPasswordHasher, YourHasher>();
+builder.Services.AddToamaisutaaPasswordLogin(builder.Configuration);
+```
+
+The same rehash-on-next-login path carries your rows too, as long as what you write says what made
+it.
 
 ## A pepper is available, and off by default
 

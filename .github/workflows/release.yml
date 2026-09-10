@@ -137,6 +137,9 @@ jobs:
       - name: Test the SMTP notifier
         run: dotnet run --project src/Toamaisutaa.Email.Smtp.Tests/Toamaisutaa.Email.Smtp.Tests.csproj --configuration Release --no-build -p:Version=${{ steps.version.outputs.version }}
 
+      - name: Test the Argon2 hasher
+        run: dotnet run --project src/Toamaisutaa.PasswordHashing.Argon2.Tests/Toamaisutaa.PasswordHashing.Argon2.Tests.csproj --configuration Release --no-build -p:Version=${{ steps.version.outputs.version }}
+
       - name: Test the breached-password check
         run: dotnet run --project src/Toamaisutaa.PasswordValidation.Hibp.Tests/Toamaisutaa.PasswordValidation.Hibp.Tests.csproj --configuration Release --no-build -p:Version=${{ steps.version.outputs.version }}
 

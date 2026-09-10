@@ -66,8 +66,8 @@ out, and no database at all.
 - **Optional local user** - provisioning is opt-in, written only when a claim actually changed, and
   safe when two first requests race. The package works fine storing nothing at all.
 - **Local password login** - for deployments that cannot run an identity provider: PBKDF2 hashing
-  with an optional pepper, rotating refresh tokens with reuse detection, lockout, and reset tokens.
-  Off unless you ask for it.
+  with an optional pepper, Argon2id from an opt-in package, rotating refresh tokens with reuse
+  detection, lockout, and reset tokens. Off unless you ask for it.
 - **Two-factor authentication** - TOTP, no library and no new dependency, with recovery codes, an
   opaque single-use challenge that cannot be presented as a bearer token, and secrets encrypted at
   rest under a key of their own.
@@ -118,6 +118,7 @@ traffic - there is no third option that does not cost a read per request.
 | [`Toamaisutaa.EntityFrameworkCore.Migrations.MySql`](https://www.nuget.org/packages/Toamaisutaa.EntityFrameworkCore.Migrations.MySql) | The MySQL migration set |
 | [`Toamaisutaa.Email.Smtp`](https://www.nuget.org/packages/Toamaisutaa.Email.Smtp) | Opt-in SMTP notifiers for local login: reset, invitation, admin-issued password |
 | [`Toamaisutaa.OpenApi`](https://www.nuget.org/packages/Toamaisutaa.OpenApi) | Opt-in `AddToamaisutaaOpenApi`, the security schemes for your OpenAPI document |
+| [`Toamaisutaa.PasswordHashing.Argon2`](https://www.nuget.org/packages/Toamaisutaa.PasswordHashing.Argon2) | Opt-in Argon2id hashing, in place of the in-box PBKDF2 |
 | [`Toamaisutaa.PasswordValidation.Hibp`](https://www.nuget.org/packages/Toamaisutaa.PasswordValidation.Hibp) | Opt-in Have I Been Pwned breach check, on top of the length rules |
 
 ## Documentation

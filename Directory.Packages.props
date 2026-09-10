@@ -41,6 +41,11 @@
     <PackageVersion Include="Microsoft.AspNetCore.TestHost" Version="10.0.10" />
     <PackageVersion Include="TUnit" Version="0.90.0" />
     <PackageVersion Include="MailKit" Version="4.17.0" />
+    <!-- The only .NET Argon2 that is pure managed, ships no native assets and passes the RFC 9106
+         vectors. Isopoh is the better-engineered one and already targets net10 on master, but its
+         published release is still 2.0.0 from 2023 - swap when that changes, and the PHC format
+         means it is a one-file change. -->
+    <PackageVersion Include="Konscious.Security.Cryptography.Argon2" Version="1.3.1" />
   </ItemGroup>
 
 </Project>

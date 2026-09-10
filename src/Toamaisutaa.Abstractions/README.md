@@ -31,7 +31,7 @@ Everyone else gets it transitively and never has to think about it.
 |---|---|
 | `IPasswordSignInService` | Sign in, refresh, sign out, and finish a two-factor challenge |
 | `IPasswordAccountService` | Register, set or change a password, request and complete a reset |
-| `IPasswordHasher` | Hashing and verification. Replace it to use Argon2 or anything else |
+| `IPasswordHasher` | Hashing and verification. `Toamaisutaa.PasswordHashing.Argon2` replaces it, and so can you |
 | `IPasswordValidator` | What counts as an acceptable password |
 | `IPasswordResetNotifier` | **You must implement this.** The package deliberately ships no way to send mail |
 | `IAccessTokenIssuer` | Minting the access token a local sign-in returns |

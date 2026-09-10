@@ -40,6 +40,9 @@ jobs:
       - name: Test the SMTP notifier
         run: dotnet run --project src/Toamaisutaa.Email.Smtp.Tests/Toamaisutaa.Email.Smtp.Tests.csproj --configuration Release --no-build
 
+      - name: Test the Argon2 hasher
+        run: dotnet run --project src/Toamaisutaa.PasswordHashing.Argon2.Tests/Toamaisutaa.PasswordHashing.Argon2.Tests.csproj --configuration Release --no-build
+
       # Stubs the range API rather than calling it, so this reaches the network no more than the
       # rest of the suite does.
       - name: Test the breached-password check

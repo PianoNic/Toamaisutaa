@@ -34,6 +34,12 @@ builder.Services.AddToamaisutaaDbContext(db => db.UseSqlite(
     sqlite => sqlite.MigrationsAssembly("Toamaisutaa.EntityFrameworkCore.Migrations.Sqlite")));
 builder.Services.AddToamaisutaaCurrentUser();
 
+// Argon2id instead of the in-box PBKDF2, from an opt-in package - memory-hard, and the dependency
+// that needs is installed here rather than by the library. Drop this line and every account still
+// signs in: the rows say what made them, so the two hashers read each other's and each password is
+// rewritten under whichever one is registered the next time its owner logs in.
+builder.Services.AddToamaisutaaArgon2PasswordHashing(builder.Configuration);
+
 // Local username and password sign-in. OIDC is the recommended path; this is the fallback for a
 // deployment that cannot run an identity provider.
 builder.Services.AddToamaisutaaPasswordLogin(builder.Configuration);

@@ -17,5 +17,8 @@
     <InternalsVisibleTo Include="Toamaisutaa.Core.Tests" />
     <InternalsVisibleTo Include="Toamaisutaa.OpenIdConnect" />
     <InternalsVisibleTo Include="Toamaisutaa.AspNetCore" />
+    <!-- For PhcString and the pepper rules: the Argon2 hasher writes the same row format and reads
+         the same keys, and a second copy of either would be a second answer to the same question. -->
+    <InternalsVisibleTo Include="Toamaisutaa.PasswordHashing.Argon2" />
   </ItemGroup>
 </Project>
