@@ -54,6 +54,24 @@ public class ToamaisutaaRefreshToken
     /// <summary>The last live second factor on this chain, replayed into <c>toa_2fa_at</c>.</summary>
     public DateTimeOffset? SecondFactorAt { get; set; }
 
+    /// <summary>
+    /// Raw and truncated, as on a trusted device, and carried across rotations rather than taken
+    /// again: <c>/auth/refresh</c> is the one call a background timer makes, so recomputing it would
+    /// eventually describe every session as whatever last renewed it.
+    /// </summary>
+    public string? UserAgent { get; set; }
+
+    /// <summary>Null unless <c>LocalLogin:IpAddressStorage</c> says otherwise. Carried across
+    /// rotations for the same reason as <see cref="UserAgent"/>.</summary>
+    public string? IpAddress { get; set; }
+
+    /// <summary>
+    /// When this row was minted, which for the family's live row is when the session last signed in
+    /// or refreshed. A rotation writes a new row rather than touching this one, so the live row's
+    /// value is the family's own last activity.
+    /// </summary>
+    public DateTimeOffset LastUsedAt { get; set; }
+
     /// <summary>Set when this token was exchanged. A token that arrives with this already set has
     /// been presented twice, which is the reuse signal.</summary>
     public DateTimeOffset? RotatedAt { get; set; }

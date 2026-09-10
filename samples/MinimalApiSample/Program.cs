@@ -123,6 +123,11 @@ app.MapToamaisutaaTwoFactorEndpoints();
 // GET /auth/devices, DELETE /auth/devices/{id}, DELETE /auth/devices.
 app.MapToamaisutaaTrustedDeviceEndpoints();
 
+// GET /auth/sessions, DELETE /auth/sessions/{id}, DELETE /auth/sessions. One entry per sign-in
+// rather than per access token, because a session here is the refresh family that toa_sid names.
+// The last of the three signs out everywhere ELSE - the page you clicked it on stays signed in.
+app.MapToamaisutaaSessionEndpoints();
+
 // Anonymous, and it has to be: the fallback policy would otherwise answer 401, which an orchestrator
 // reads as a failing probe no matter how healthy the issuer is.
 app.MapHealthChecks("/health").AllowAnonymous();

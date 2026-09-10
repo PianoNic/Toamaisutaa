@@ -67,6 +67,10 @@ internal sealed class FakePasswordStore
     public Task<ToamaisutaaRefreshToken?> FindLiveByFamilyAsync(Guid familyId, CancellationToken cancellationToken = default) =>
         Task.FromResult(Live(familyId));
 
+    public Task<IReadOnlyList<ToamaisutaaRefreshToken>> ListActiveAsync(Guid userId, CancellationToken cancellationToken = default) =>
+        Task.FromResult<IReadOnlyList<ToamaisutaaRefreshToken>>(
+            [.. RefreshTokens.Where(token => token.UserId == userId && token.RotatedAt is null && token.RevokedAt is null)]);
+
     public Task<bool> UpdateSecondFactorAsync(
         Guid familyId,
         string authenticationMethods,

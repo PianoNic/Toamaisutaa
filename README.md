@@ -131,6 +131,7 @@ traffic - there is no third option that does not cost a read per request.
 - [Local password login](https://docs.toamaisutaa.pianonic.ch/password-login)
 - [Two-factor authentication](https://docs.toamaisutaa.pianonic.ch/two-factor)
 - [Trusted devices](https://docs.toamaisutaa.pianonic.ch/trusted-devices)
+- [Sessions](https://docs.toamaisutaa.pianonic.ch/sessions)
 - [Audit events](https://docs.toamaisutaa.pianonic.ch/audit-events)
 - [Storage and migrations](https://docs.toamaisutaa.pianonic.ch/storage)
 - [Metrics](https://docs.toamaisutaa.pianonic.ch/metrics)

@@ -87,7 +87,7 @@ keeps working. What changes is `toa_2fa_at`, which reports when the factor was a
 | `sub`, `preferred_username`, `email`, `name` | yes | The usual profile claims |
 | `amr` | RFC 8176 | Every method this session has used. Only ever grows |
 | `toa_stamp` | no | The user's security stamp when the session was minted |
-| `toa_sid` | no | The refresh family - the session. Stable across every rotation |
+| `toa_sid` | no | The refresh family - the [session](/sessions). Stable across every rotation |
 | `toa_2fa_source` | no | The most recent second factor: `otp`, `recovery` or `device` |
 | `toa_2fa_at` | no | Unix seconds of the last **live** second factor |
 | `toa_2fa_required` | no | Set when enforcement demands an enrolment this user has not made |

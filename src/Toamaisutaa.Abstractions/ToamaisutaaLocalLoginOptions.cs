@@ -151,6 +151,24 @@ public sealed class ToamaisutaaLocalLoginOptions
 
     public string EndpointPrefix { get; set; } = "/auth";
 
+    /// <summary>
+    /// Composed onto <see cref="EndpointPrefix"/>, the same way the trusted-device endpoints append
+    /// <c>/devices</c>. A relative suffix rather than a full path, so moving local login moves the
+    /// session endpoints with it instead of stranding them at the old prefix.
+    /// </summary>
+    public string SessionEndpointPrefix { get; set; } = "/sessions";
+
+    /// <summary>
+    /// How much of the caller's address to keep against a refresh family, so the session list can
+    /// say where a session was established.
+    /// </summary>
+    /// <remarks>
+    /// Its own setting rather than the trusted-device one it mirrors. Sessions exist wherever local
+    /// login does; trusted devices are opt-in, and reading a section that may never have been bound
+    /// would make an address that a consumer asked to store depend on a feature they never enabled.
+    /// </remarks>
+    public IpAddressStorage IpAddressStorage { get; set; } = IpAddressStorage.None;
+
     public ToamaisutaaRateLimitOptions RateLimit { get; set; } = new();
 }
 

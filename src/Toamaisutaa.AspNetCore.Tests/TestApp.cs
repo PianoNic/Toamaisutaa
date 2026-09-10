@@ -106,6 +106,11 @@ internal sealed class TestApp : IAsyncDisposable
     /// On by default, so <c>/auth/email</c> and <c>/auth/email/verify</c> are mapped and most tests
     /// can use them. Off to prove they are not mapped at all without one.
     /// </param>
+    /// <param name="remoteIpAddress">
+    /// Puts an address on every connection. The test host leaves <c>RemoteIpAddress</c> null, so
+    /// without this the columns fed from it are null throughout and a test about
+    /// <c>IpAddressStorage</c> would pass whether the setting were honoured or ignored.
+    /// </param>
     /// <param name="includeOpenApi">
     /// Adds <c>AddToamaisutaaOpenApi</c> and maps <c>/openapi/v1.json</c>. Off by default: it is a
     /// document generator no other test needs, and it makes the discovery fetch resolve back into
@@ -119,6 +124,7 @@ internal sealed class TestApp : IAsyncDisposable
         bool includeAdminPasswordNotifier = true,
         bool includeInvitationNotifier = true,
         bool includeEmailVerificationNotifier = true,
+        string? remoteIpAddress = null,
         bool includeOpenApi = false)
     {
         var settings = new Dictionary<string, string?>
@@ -132,6 +138,7 @@ internal sealed class TestApp : IAsyncDisposable
             ["LocalLogin:RateLimit:Enabled"] = "false",
             ["TwoFactor:EncryptionKey"] = Convert.ToBase64String(new byte[32]),
             ["TrustedDevices:IpAddressStorage"] = "Truncated",
+            ["LocalLogin:IpAddressStorage"] = "Truncated",
         };
 
         configure?.Invoke(settings);
@@ -199,6 +206,15 @@ internal sealed class TestApp : IAsyncDisposable
         if (handleStaleStampGlobally)
             app.UseExceptionHandler();
 
+        if (remoteIpAddress is not null)
+        {
+            app.Use((context, next) =>
+            {
+                context.Connection.RemoteIpAddress = System.Net.IPAddress.Parse(remoteIpAddress);
+                return next(context);
+            });
+        }
+
         app.UseAuthentication();
         app.UseAuthorization();
 
@@ -206,6 +222,7 @@ internal sealed class TestApp : IAsyncDisposable
         app.MapToamaisutaaPasswordEndpoints();
         app.MapToamaisutaaTwoFactorEndpoints();
         app.MapToamaisutaaTrustedDeviceEndpoints();
+        app.MapToamaisutaaSessionEndpoints();
 
         // Stands in for an ordinary protected endpoint of the application's own.
         app.MapGet("/test/me", async (ICurrentUser currentUser, CancellationToken cancellationToken) =>

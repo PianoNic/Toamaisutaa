@@ -152,6 +152,7 @@ internal sealed class PasswordSignInService(
                 secondFactorAt: trust.SecondFactorAt,
                 trustedDevice: trust.RotatedToken,
                 newSignIn: true,
+                client: ClientMetadata.Describe(request.UserAgent, request.IpAddress, options.Value.IpAddressStorage),
                 now,
                 cancellationToken);
 
@@ -173,6 +174,7 @@ internal sealed class PasswordSignInService(
             secondFactorAt: null,
             trustedDevice: null,
             newSignIn: true,
+            client: ClientMetadata.Describe(request.UserAgent, request.IpAddress, options.Value.IpAddressStorage),
             now,
             cancellationToken);
 
@@ -233,6 +235,7 @@ internal sealed class PasswordSignInService(
             secondFactorAt: now,
             trustedDevice: issued,
             newSignIn: true,
+            client: ClientMetadata.Describe(request.UserAgent, request.IpAddress, options.Value.IpAddressStorage),
             now,
             cancellationToken);
 
@@ -572,6 +575,11 @@ internal sealed class PasswordSignInService(
             secondFactorAt: stored.SecondFactorAt,
             trustedDevice: null,
             newSignIn: false,
+
+            // Carried too, for a plainer reason than the claims above: /auth/refresh is the one call
+            // a background timer makes, so taking these again would eventually describe every
+            // session as whatever last renewed it.
+            client: new ClientMetadata.SessionClient(stored.UserAgent, stored.IpAddress),
             now,
             cancellationToken);
     }
@@ -623,6 +631,7 @@ internal sealed class PasswordSignInService(
         DateTimeOffset? secondFactorAt,
         TrustedDeviceToken? trustedDevice,
         bool newSignIn,
+        ClientMetadata.SessionClient client,
         DateTimeOffset now,
         CancellationToken cancellationToken)
     {
@@ -665,6 +674,13 @@ internal sealed class PasswordSignInService(
                 AuthenticationMethods = string.Join(' ', methods),
                 TwoFactorSource = twoFactorSource,
                 SecondFactorAt = secondFactorAt,
+
+                UserAgent = client.UserAgent,
+                IpAddress = client.IpAddress,
+
+                // The live row of a family is always the newest one, so this is the family's own
+                // last activity without anything ever writing over a row in place.
+                LastUsedAt = now,
             },
             cancellationToken);
 

@@ -217,6 +217,28 @@ Authorization: Bearer {{mfaToken}}
 
 { "currentPassword": "correct horse battery", "newPassword": "a whole new password" }
 
+# ───────────────────────── sessions ─────────────────────────
+
+### Every session this account has open. One entry per sign-in, not per access token: sign in from
+### the browser and from here, and both are listed. isCurrent marks the one this token belongs to.
+GET {{host}}/auth/sessions
+Authorization: Bearer {{token}}
+
+### End one, by the id from the list. Its refresh token stops working immediately; the access token
+### it already handed out lives out its fifteen minutes, which no stateless token can be talked out of.
+DELETE {{host}}/auth/sessions/00000000-0000-0000-0000-000000000000
+Authorization: Bearer {{token}}
+
+### Sign out everywhere ELSE. This session survives - that is the whole difference from /auth/logout.
+DELETE {{host}}/auth/sessions
+Authorization: Bearer {{token}}
+
+### Prove it: the token used above still refreshes, and the sessions it ended do not.
+POST {{host}}/auth/refresh
+Content-Type: application/json
+
+{ "refreshToken": "{{refresh}}" }
+
 # ───────────────────────── identity provider ─────────────────────────
 
 ### Mint a token from the mock issuer. Copy access_token into @idpToken below.

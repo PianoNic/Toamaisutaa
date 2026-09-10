@@ -22,11 +22,13 @@ public class EndpointMappingTests
         v1.MapToamaisutaaPasswordEndpoints("V1");
         v1.MapToamaisutaaTwoFactorEndpoints("V1");
         v1.MapToamaisutaaTrustedDeviceEndpoints("V1");
+        v1.MapToamaisutaaSessionEndpoints("V1");
 
         var v2 = endpoints.MapGroup("/api/v2");
         v2.MapToamaisutaaPasswordEndpoints("V2");
         v2.MapToamaisutaaTwoFactorEndpoints("V2");
         v2.MapToamaisutaaTrustedDeviceEndpoints("V2");
+        v2.MapToamaisutaaSessionEndpoints("V2");
     }
 
     [Test]
@@ -67,11 +69,12 @@ public class EndpointMappingTests
     }
 
     /// <summary>
-    /// The trusted device prefix composes onto the local login one, the way /2fa does. It used to
-    /// be a full path with /auth baked in, so moving LocalLogin left the device endpoints behind.
+    /// The trusted device and session prefixes compose onto the local login one, the way /2fa does.
+    /// The device one used to be a full path with /auth baked in, so moving LocalLogin left the
+    /// device endpoints behind.
     /// </summary>
     [Test]
-    public async Task Moving_the_local_login_prefix_moves_the_two_factor_and_device_endpoints_with_it()
+    public async Task Moving_the_local_login_prefix_moves_the_two_factor_device_and_session_endpoints_with_it()
     {
         await using var app = await TestApp.StartAsync(
             configure: settings => settings["LocalLogin:EndpointPrefix"] = "/identity");
@@ -86,9 +89,11 @@ public class EndpointMappingTests
 
         await Assert.That((await app.Client.Get("/identity/2fa", token)).StatusCode).IsEqualTo(HttpStatusCode.OK);
         await Assert.That((await app.Client.Get("/identity/devices", token)).StatusCode).IsEqualTo(HttpStatusCode.OK);
+        await Assert.That((await app.Client.Get("/identity/sessions", token)).StatusCode).IsEqualTo(HttpStatusCode.OK);
 
         // And nothing is left behind at the old prefix.
         await Assert.That((await app.Client.Get("/auth/devices", token)).StatusCode).IsEqualTo(HttpStatusCode.NotFound);
+        await Assert.That((await app.Client.Get("/auth/sessions", token)).StatusCode).IsEqualTo(HttpStatusCode.NotFound);
     }
 
     [Test]

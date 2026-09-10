@@ -26,6 +26,9 @@ and all three are checked at startup rather than at the first request.
 | POST | `/auth/login` | 200 with a token pair, 200 with a two-factor challenge, or 401 |
 | POST | `/auth/refresh` | 200 with a rotated pair, or 401 |
 | POST | `/auth/logout` | 204 |
+| GET | `/auth/sessions` | 200. Authenticated. See [sessions](/sessions) |
+| DELETE | `/auth/sessions/{id}` | 204 or 404. Authenticated |
+| DELETE | `/auth/sessions` | 204. Authenticated. Signs out everywhere else |
 | POST | `/auth/register` | 201, 400, or 409. Only mapped when `AllowSelfRegistration` is true |
 | POST | `/auth/password` | 204. Authenticated. Sets a first password or changes an existing one |
 | POST | `/auth/password/forgot` | 204, always |
@@ -248,6 +251,9 @@ logged loudly - the standard mitigation for a stolen refresh token.
 Rotation alone would keep a session alive forever, so a chain also has an absolute lifetime
 (`RefreshTokenAbsoluteLifetime`, 90 days) measured from the sign-in that started it.
 
+A family is what this package means by a session, and a user can see and end their own:
+[Sessions](/sessions).
+
 ### A new claim and the refresh path
 
 If you replace `IAccessTokenIssuer` and add a claim, decide in the same change what
@@ -328,6 +334,8 @@ hands you - rather than expecting to construct one.
 | `LocalLogin:RequireVerifiedEmailForPasswordReset` | `false` | See [email verification](/email-verification#requiring-a-verified-address-before-a-password-reset) before turning it on |
 | `LocalLogin:AllowSelfRegistration` | `false` | When false the endpoint is not mapped at all |
 | `LocalLogin:EndpointPrefix` | `/auth` | |
+| `LocalLogin:SessionEndpointPrefix` | `/sessions` | Appended to `EndpointPrefix`. See [sessions](/sessions) |
+| `LocalLogin:IpAddressStorage` | `None` | What a session row keeps of the caller's address |
 | `LocalLogin:RateLimit:Enabled` | `true` | Per caller address, fixed window |
 | `LocalLogin:RateLimit:PermitLimit` / `Window` | `10` / `00:01:00` | |
 | `LocalLogin:TokenCleanupInterval` | `06:00:00` | Only used by `AddToamaisutaaTokenCleanup()` |
