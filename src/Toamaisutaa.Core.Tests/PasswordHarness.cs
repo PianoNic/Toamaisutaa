@@ -138,6 +138,8 @@ internal sealed class PasswordHarness
             NullLogger<PasswordAccountService>.Instance,
             provider);
 
+        Sessions = new SessionService(Passwords, publisher, wrapped, Clock, NullLogger<SessionService>.Instance);
+
         TwoFactor = new TwoFactorService(
             TwoFactorStore,
             TwoFactorStore,
@@ -203,25 +205,42 @@ internal sealed class PasswordHarness
 
     internal TrustedDeviceService TrustedDevices { get; }
 
+    internal SessionService Sessions { get; }
+
     internal ToamaisutaaTrustedDeviceOptions TrustedDeviceOptions { get; }
 
     /// <summary>What every existing test used to call directly, kept as a helper so the request
     /// record does not have to appear in fifty places.</summary>
-    internal Task<SignInResult> SignInAsync(string identifier, string password, string? deviceToken = null) =>
+    internal Task<SignInResult> SignInAsync(
+        string identifier,
+        string password,
+        string? deviceToken = null,
+        string? userAgent = null,
+        string? ipAddress = null) =>
         SignIn.SignInAsync(new PasswordSignInRequest
         {
             Identifier = identifier,
             Password = password,
             DeviceToken = deviceToken,
+            UserAgent = userAgent,
+            IpAddress = ipAddress,
         });
 
-    internal Task<SignInResult> VerifyAsync(string challenge, string code, bool rememberDevice = false, string? label = null) =>
+    internal Task<SignInResult> VerifyAsync(
+        string challenge,
+        string code,
+        bool rememberDevice = false,
+        string? label = null,
+        string? userAgent = null,
+        string? ipAddress = null) =>
         SignIn.VerifyTwoFactorAsync(new TwoFactorSignInRequest
         {
             ChallengeToken = challenge,
             Code = code,
             RememberDevice = rememberDevice,
             DeviceLabel = label,
+            UserAgent = userAgent,
+            IpAddress = ipAddress,
         });
 
     internal static PasswordHarness Create(

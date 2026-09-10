@@ -177,7 +177,7 @@ internal sealed class TrustedDeviceGate(
         var settings = options.Value;
         var raw = SecureTokens.Create();
         var family = Guid.CreateVersion7(now);
-        var label = Truncate(request.DeviceLabel, 128);
+        var label = ClientMetadata.Truncate(request.DeviceLabel, 128);
 
         await devices.CreateAsync(
             new ToamaisutaaTrustedDevice
@@ -189,8 +189,8 @@ internal sealed class TrustedDeviceGate(
                 SecurityStamp = user.SecurityStamp,
                 SecondFactorAt = now,
                 Label = label,
-                UserAgent = Truncate(request.UserAgent, 256),
-                IpAddress = ResolveAddress(request.IpAddress, settings.IpAddressStorage),
+                UserAgent = ClientMetadata.Truncate(request.UserAgent, ClientMetadata.UserAgentLength),
+                IpAddress = ClientMetadata.ResolveAddress(request.IpAddress, settings.IpAddressStorage),
                 CreatedAt = now,
                 FamilyStartedAt = now,
                 ExpiresAt = now + settings.Lifetime,
@@ -280,38 +280,6 @@ internal sealed class TrustedDeviceGate(
                 Reason = reason,
             },
             cancellationToken);
-    }
-
-    private static string? Truncate(string? value, int length) =>
-        string.IsNullOrWhiteSpace(value) ? null : value.Length <= length ? value : value[..length];
-
-    /// <summary>
-    /// Truncation keeps the network and drops the host: /24 for IPv4, /48 for IPv6. Enough to say
-    /// "somewhere else" without storing something that identifies a person.
-    /// </summary>
-    private static string? ResolveAddress(string? address, IpAddressStorage storage)
-    {
-        if (storage == IpAddressStorage.None || string.IsNullOrWhiteSpace(address))
-            return null;
-
-        if (storage == IpAddressStorage.Full)
-            return Truncate(address, 64);
-
-        if (!System.Net.IPAddress.TryParse(address, out var parsed))
-            return null;
-
-        var bytes = parsed.GetAddressBytes();
-
-        if (parsed.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork)
-        {
-            bytes[3] = 0;
-            return new System.Net.IPAddress(bytes).ToString() + "/24";
-        }
-
-        for (var i = 6; i < bytes.Length; i++)
-            bytes[i] = 0;
-
-        return new System.Net.IPAddress(bytes).ToString() + "/48";
     }
 }
 

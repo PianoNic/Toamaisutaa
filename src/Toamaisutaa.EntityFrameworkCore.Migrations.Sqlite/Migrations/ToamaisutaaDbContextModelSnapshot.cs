@@ -261,6 +261,13 @@ namespace Toamaisutaa.EntityFrameworkCore.Migrations.Sqlite.Migrations
                     b.Property<long>("FamilyStartedAt")
                         .HasColumnType("INTEGER");
 
+                    b.Property<string>("IpAddress")
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
+
+                    b.Property<long>("LastUsedAt")
+                        .HasColumnType("INTEGER");
+
                     b.Property<long?>("RevokedAt")
                         .HasColumnType("INTEGER");
 
@@ -286,6 +293,10 @@ namespace Toamaisutaa.EntityFrameworkCore.Migrations.Sqlite.Migrations
 
                     b.Property<string>("TwoFactorSource")
                         .HasMaxLength(32)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("UserAgent")
+                        .HasMaxLength(256)
                         .HasColumnType("TEXT");
 
                     b.Property<Guid>("UserId")

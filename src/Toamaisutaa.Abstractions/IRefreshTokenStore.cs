@@ -29,6 +29,17 @@ public interface IRefreshTokenStore
     Task<ToamaisutaaRefreshToken?> FindLiveByFamilyAsync(Guid familyId, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// The live row of every family this user has, which is what a user thinks of as "my sessions".
+    /// </summary>
+    /// <remarks>
+    /// <b>No default implementation, for the reason <see cref="UpdateSecondFactorAsync"/> has
+    /// none.</b> A default returning nothing would show a user an empty session list while their
+    /// sessions were live, and answer 404 to every attempt to revoke one - a feature that looks
+    /// implemented and protects nobody. A compile error is the cheaper failure.
+    /// </remarks>
+    Task<IReadOnlyList<ToamaisutaaRefreshToken>> ListActiveAsync(Guid userId, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Moves a family's second-factor state forward after a step-up. Returns false when the family
     /// has no live row, which is how a step-up on a signed-out session is refused.
     /// </summary>

@@ -85,6 +85,11 @@ public static class ToamaisutaaPasswordLoginExtensions
         services.TryAddScoped<IPasswordSignInService, PasswordSignInService>();
         services.TryAddScoped<IPasswordAccountService, PasswordAccountService>();
 
+        // Not opt-in the way trusted devices are: refresh families exist from the first sign-in
+        // whether or not anyone maps the endpoints, so listing and ending them needs no feature of
+        // its own to be switched on first.
+        services.TryAddScoped<ISessionService, SessionService>();
+
         // Owned rather than delegated to the rate-limiting middleware, so that forgetting a call in
         // Program.cs cannot silently leave the anonymous endpoints unthrottled.
         services.TryAddSingleton<PasswordRateLimiter>();

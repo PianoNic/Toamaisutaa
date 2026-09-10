@@ -62,6 +62,13 @@ internal static class Http
         return client.SendAsync(request);
     }
 
+    public static Task<HttpResponseMessage> Delete(this HttpClient client, string path, string accessToken)
+    {
+        var request = new HttpRequestMessage(HttpMethod.Delete, path);
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
+        return client.SendAsync(request);
+    }
+
     public static Task<HttpResponseMessage> Get(this HttpClient client, string path, string? accessToken = null, string? deviceToken = null)
     {
         var request = new HttpRequestMessage(HttpMethod.Get, path);

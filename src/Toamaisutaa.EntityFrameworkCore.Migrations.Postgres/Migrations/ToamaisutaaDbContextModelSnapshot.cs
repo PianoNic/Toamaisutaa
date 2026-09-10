@@ -266,6 +266,13 @@ namespace Toamaisutaa.EntityFrameworkCore.Migrations.Postgres.Migrations
                     b.Property<long>("FamilyStartedAt")
                         .HasColumnType("bigint");
 
+                    b.Property<string>("IpAddress")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<long>("LastUsedAt")
+                        .HasColumnType("bigint");
+
                     b.Property<long?>("RevokedAt")
                         .HasColumnType("bigint");
 
@@ -292,6 +299,10 @@ namespace Toamaisutaa.EntityFrameworkCore.Migrations.Postgres.Migrations
                     b.Property<string>("TwoFactorSource")
                         .HasMaxLength(32)
                         .HasColumnType("character varying(32)");
+
+                    b.Property<string>("UserAgent")
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)");
 
                     b.Property<Guid>("UserId")
                         .HasColumnType("uuid");

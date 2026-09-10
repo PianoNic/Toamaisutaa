@@ -101,6 +101,15 @@ internal sealed class EntityFrameworkPasswordStore<TContext>(TContext context)
                     .SetProperty(token => token.RevokedReason, reason),
                 cancellationToken);
 
+    /// <summary>
+    /// The live row of each family: not rotated, not revoked. Rotated rows stay in the table because
+    /// reuse detection needs them, but they are not sessions anybody has.
+    /// </summary>
+    public async Task<IReadOnlyList<ToamaisutaaRefreshToken>> ListActiveAsync(Guid userId, CancellationToken cancellationToken = default) =>
+        await context.Set<ToamaisutaaRefreshToken>()
+            .Where(token => token.UserId == userId && token.RotatedAt == null && token.RevokedAt == null)
+            .ToListAsync(cancellationToken);
+
     public async Task<ToamaisutaaRefreshToken?> FindLiveByFamilyAsync(Guid familyId, CancellationToken cancellationToken = default) =>
         await context.Set<ToamaisutaaRefreshToken>()
             .FirstOrDefaultAsync(

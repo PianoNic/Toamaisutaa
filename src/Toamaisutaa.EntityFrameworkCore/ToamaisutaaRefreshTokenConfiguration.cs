@@ -25,12 +25,18 @@ public sealed class ToamaisutaaRefreshTokenConfiguration : IEntityTypeConfigurat
         // consumer adding their own RFC 8176 method does not hit a column limit.
         builder.Property(token => token.AuthenticationMethods).HasMaxLength(128).IsRequired();
         builder.Property(token => token.TwoFactorSource).HasMaxLength(32);
+        builder.Property(token => token.UserAgent).HasMaxLength(256);
+
+        // Sized for an IPv6 address plus a prefix suffix. Null unless LocalLogin:IpAddressStorage
+        // says otherwise, which is the default.
+        builder.Property(token => token.IpAddress).HasMaxLength(64);
 
         // Expiry is range-queried by the cleanup sweep, which is exactly the comparison SQLite
         // cannot translate on a timestamp column.
         builder.Property(token => token.CreatedAt).HasConversion(InstantConverters.Instant);
         builder.Property(token => token.ExpiresAt).HasConversion(InstantConverters.Instant);
         builder.Property(token => token.FamilyStartedAt).HasConversion(InstantConverters.Instant);
+        builder.Property(token => token.LastUsedAt).HasConversion(InstantConverters.Instant);
         builder.Property(token => token.RotatedAt).HasConversion(InstantConverters.NullableInstant);
         builder.Property(token => token.RevokedAt).HasConversion(InstantConverters.NullableInstant);
         builder.Property(token => token.SecondFactorAt).HasConversion(InstantConverters.NullableInstant);
