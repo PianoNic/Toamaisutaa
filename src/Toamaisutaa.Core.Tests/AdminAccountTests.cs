@@ -151,6 +151,44 @@ public class AdminAccountTests
         await Assert.That(harness.AdminPasswordNotifier.Issued).IsEmpty();
     }
 
+    // The revocation is what an admin reset is for, and it may not be conditional on an SMTP relay
+    // being up. Before this, a notifier that threw skipped the stamp bump, the sessions, the
+    // devices and the tokens, and answered 500 - the account kept whoever was in it.
+    [Test]
+    public async Task ANotifierFailureStillEndsEverySession()
+    {
+        var harness = PasswordHarness.Create();
+        var user = await harness.RegisterAsync();
+        var tokens = (await harness.SignInAsync("pianonic", Password)).Tokens!;
+        await harness.Accounts.RequestPasswordResetAsync("nic@example.com");
+        harness.AdminPasswordNotifier.ThrowOnSend = new InvalidOperationException("the mail server is down");
+
+        var result = await harness.Accounts.AdminSetPasswordAsync(user.Id, "a whole new password");
+
+        await Assert.That(result.Succeeded).IsTrue();
+        await Assert.That(result.NotificationFailed).IsTrue();
+
+        var refreshed = await harness.SignIn.RefreshAsync(tokens.RefreshToken);
+        await Assert.That(refreshed.Outcome).IsEqualTo(SignInOutcome.RefreshTokenRevoked);
+
+        await Assert.That(harness.Passwords.ResetTokens.Single().ConsumedAt).IsNotNull();
+
+        var newPassword = await harness.SignInAsync("pianonic", "a whole new password");
+        await Assert.That(newPassword.Outcome).IsEqualTo(SignInOutcome.Succeeded);
+    }
+
+    [Test]
+    public async Task ANotifierFailurePublishesThePasswordChangedEvent()
+    {
+        var harness = PasswordHarness.Create();
+        var user = await harness.RegisterAsync();
+        harness.AdminPasswordNotifier.ThrowOnSend = new InvalidOperationException("the mail server is down");
+
+        await harness.Accounts.AdminSetPasswordAsync(user.Id, "a whole new password");
+
+        await Assert.That(harness.Events.Single<PasswordChanged>().SetByAdministrator).IsTrue();
+    }
+
     [Test]
     public async Task SettingAPasswordWithoutTheNotifierRegisteredThrows()
     {

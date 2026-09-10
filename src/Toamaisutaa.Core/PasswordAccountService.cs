@@ -234,10 +234,11 @@ internal sealed class PasswordAccountService(
             await credentials.UpdateAsync(credential, cancellationToken);
         }
 
-        await adminNotifier.PasswordIssuedAsync(user, effectivePassword, cancellationToken);
-
         // Same reasoning as a self-service change: whoever is now holding this password should not
-        // find the account's other sessions still alive.
+        // find the account's other sessions still alive. Ahead of the notifier rather than behind
+        // it, because the hash is already committed by here and a notifier that throws would
+        // otherwise leave every one of these undone - the account reset in order to lock somebody
+        // out would keep their refresh family, their trusted devices and their reset tokens.
         await users.UpdateSecurityStampAsync(userId, SecureTokens.Create(), cancellationToken);
         await RevokeAllSessionsAsync(userId, "admin-password-set", now, cancellationToken);
         await trustedDevices.RevokeAllAsync(userId, "admin-password-set", now, cancellationToken);
@@ -247,6 +248,24 @@ internal sealed class PasswordAccountService(
         await events.PublishAsync(
             new PasswordChanged { OccurredAt = now, UserId = userId, SetByAdministrator = true },
             cancellationToken);
+
+        try
+        {
+            await adminNotifier.PasswordIssuedAsync(user, effectivePassword, cancellationToken);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            // Nothing to undo and nothing to retry here: the password is set and the sessions are
+            // gone. The caller is told instead, because a generated password that reached
+            // nobody leaves an account only another call to this method can open.
+            logger.LogError(
+                ex,
+                "Admin password notifier failed for user {UserId}. The password was set and all local sessions "
+                + "revoked, but nothing was delivered.",
+                userId);
+
+            return new AccountResult { Succeeded = true, UserId = userId, NotificationFailed = true };
+        }
 
         logger.LogInformation("Admin set the password for user {UserId}; all local sessions revoked.", userId);
 
@@ -495,11 +514,12 @@ internal sealed class PasswordAccountService(
             cancellationToken);
 
         var raw = SecureTokens.Create();
+        var tokenId = Guid.CreateVersion7(now);
 
         await invitationTokens.CreateAsync(
             new ToamaisutaaInvitationToken
             {
-                Id = Guid.CreateVersion7(now),
+                Id = tokenId,
                 UserId = user.Id,
                 TokenHash = SecureTokens.HashToken(raw),
                 CreatedAt = now,
@@ -507,7 +527,32 @@ internal sealed class PasswordAccountService(
             },
             cancellationToken);
 
-        await invitationNotifier.SendAsync(user, raw, cancellationToken);
+        try
+        {
+            await invitationNotifier.SendAsync(user, raw, cancellationToken);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            // Rolled back rather than reported and left, because nothing here found an existing
+            // reservation before creating this one: retrying against a relay that is still down
+            // would reserve the same address again, and again. The token is burnt before the row
+            // goes, so a store that does not cascade the delete still leaves nothing redeemable.
+            await invitationTokens.MarkConsumedAsync(tokenId, now, cancellationToken);
+            await users.DeleteAsync(user.Id, cancellationToken);
+
+            logger.LogError(
+                ex,
+                "Invitation notifier failed for user {UserId}. Nothing was sent, and the reserved account and its "
+                + "token were rolled back.",
+                user.Id);
+
+            return new AccountResult
+            {
+                Succeeded = false,
+                NotificationFailed = true,
+                Errors = ["The invitation could not be sent, so no account was reserved."],
+            };
+        }
 
         logger.LogInformation("Invitation created for user {UserId} and handed to the notifier.", user.Id);
 

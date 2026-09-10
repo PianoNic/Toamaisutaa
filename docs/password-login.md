@@ -37,9 +37,9 @@ and all three are checked at startup rather than at the first request.
 | POST | `/auth/email/verify` | 204, 400, or 409. Only mapped when an `IEmailVerificationNotifier` is registered |
 | POST | `/auth/magic-link` | 204, always. Only mapped when an `IMagicLinkNotifier` is registered |
 | POST | `/auth/magic-link/verify` | 200 with a token pair, 200 with a two-factor challenge, or 401. Only mapped when an `IMagicLinkNotifier` is registered |
-| POST | `/auth/users` | 201, 400, or 409. Authenticated. Only mapped when an `IAdminPasswordIssuedNotifier` is registered |
-| POST | `/auth/users/{userId}/password` | 204 or 400. Authenticated. Only mapped when an `IAdminPasswordIssuedNotifier` is registered |
-| POST | `/auth/invitations` | 201 or 400. Authenticated. Only mapped when an `IInvitationNotifier` is registered |
+| POST | `/auth/users` | 201, 400, 403, or 409. Admin only. Only mapped when an `IAdminPasswordIssuedNotifier` is registered and `Oidc:AdminRole` is set |
+| POST | `/auth/users/{userId}/password` | 204, 400, 403, or 502. Admin only. Only mapped when an `IAdminPasswordIssuedNotifier` is registered and `Oidc:AdminRole` is set |
+| POST | `/auth/invitations` | 201, 400, 403, or 502. Admin only. Only mapped when an `IInvitationNotifier` is registered and `Oidc:AdminRole` is set |
 | POST | `/auth/invitations/complete` | 201 with a token pair, 400, or 409. Only mapped when an `IInvitationNotifier` is registered |
 | GET | `/auth/.well-known/jwks.json` | 200 with the public signing keys. Only mapped when `SigningKeys` is set - see [signing local tokens](/token-signing) |
 
@@ -140,8 +140,8 @@ token names and stamps it confirmed. Answers 204, 400, or 409.
 { "token": "the token from the notifier" }
 ```
 
-**`POST /auth/users`** - authenticated, provisions an account on someone else's behalf. `password` is
-optional; omit it and Toamaisutaa generates one. Answers 201, 400, or 409. Never signs the caller in
+**`POST /auth/users`** - admin only, provisions an account on someone else's behalf. `password` is
+optional; omit it and Toamaisutaa generates one. Answers 201, 400, 403, or 409. Never signs the caller in
 as the new account, and the response never carries a password - see
 [Admin-provisioned accounts](/provisioning-accounts#admin-provisioned-accounts).
 
@@ -153,16 +153,17 @@ as the new account, and the response never carries a password - see
 { "userId": "0199...", "userName": "newteacher", "email": "newteacher@example.com" }
 ```
 
-**`POST /auth/users/{userId}/password`** - authenticated, overwrites `userId`'s password
-unconditionally. `password` is optional; omit it and Toamaisutaa generates one. Answers 204 or 400,
-never a password.
+**`POST /auth/users/{userId}/password`** - admin only, overwrites `userId`'s password
+unconditionally. `password` is optional; omit it and Toamaisutaa generates one. Answers 204, 400,
+403, or 502 when the password was set but could not be delivered - never a password.
 
 ```json
 { "password": null }
 ```
 
-**`POST /auth/invitations`** - authenticated, reserves an account with nothing but an email. Answers
-201 or 400. Never returns the invitation token - see
+**`POST /auth/invitations`** - admin only, reserves an account with nothing but an email. Answers
+201, 400, 403, or 502 when nothing could be delivered and the reservation was rolled back. Never
+returns the invitation token - see
 [Completing a reserved invitation](/provisioning-accounts#completing-a-reserved-invitation).
 
 ```json

@@ -35,6 +35,12 @@ public interface IPasswordAccountService
     /// optional: omit it and Toamaisutaa generates one. Either way, the raw value goes to
     /// <see cref="IAdminPasswordIssuedNotifier"/> and is never returned from this call.
     /// </summary>
+    /// <remarks>
+    /// The revocation happens before the notifier is called and does not depend on it. A notifier
+    /// that throws leaves the password set and every session gone, and says so through
+    /// <see cref="AccountResult.NotificationFailed"/> - the value reached nobody, so set one again
+    /// once delivery works.
+    /// </remarks>
     Task<AccountResult> AdminSetPasswordAsync(Guid userId, string? password, CancellationToken cancellationToken = default);
 
     /// <summary>
@@ -76,6 +82,12 @@ public interface IPasswordAccountService
     /// Reserves an account with nothing but an email - no user name, no credential - and hands an
     /// invitation token to <see cref="IInvitationNotifier"/>. Never returned from this call.
     /// </summary>
+    /// <remarks>
+    /// A notifier that throws takes the reservation with it: the row and its token are deleted and
+    /// <see cref="AccountResult.NotificationFailed"/> is set. Nothing here looks for an existing
+    /// reservation before making one, so leaving the row behind would mean a retry reserved the
+    /// same address twice.
+    /// </remarks>
     Task<AccountResult> CreateInvitationAsync(string email, CancellationToken cancellationToken = default);
 
     /// <summary>
@@ -147,6 +159,15 @@ public sealed record AccountResult
     /// <summary>The user name or email is already taken. Separated from a validation failure only
     /// so the endpoint can answer 409 rather than 400.</summary>
     public bool Conflict { get; init; }
+
+    /// <summary>
+    /// The notifier carrying the secret this call produced threw, so nothing was delivered.
+    /// Independent of <see cref="Succeeded"/>: <see cref="IPasswordAccountService.AdminSetPasswordAsync"/>
+    /// keeps the change and reports true, <see cref="IPasswordAccountService.CreateInvitationAsync"/>
+    /// rolls its reservation back and reports false. Either way the endpoint answers 502 rather
+    /// than a 500 or a success the caller would read as "the mail went out".
+    /// </summary>
+    public bool NotificationFailed { get; init; }
 
     public static AccountResult Failure(params string[] errors) => new() { Succeeded = false, Errors = errors };
 

@@ -33,7 +33,7 @@ Everything binds from the `Oidc` section.
 | `Oidc:RedirectUri` | derived | Falls back to `PublicUrl`, then the request origin |
 | `Oidc:PostLogoutRedirectUri` | `RedirectUri` | |
 | `Oidc:PublicUrl` | | Used to derive the two above |
-| `Oidc:AdminRole` | | Registers the `Toamaisutaa.Admin` policy when set |
+| `Oidc:AdminRole` | | Registers the `Toamaisutaa.Admin` policy when set, which is also what maps the [admin provisioning endpoints](/provisioning-accounts#the-three-admin-endpoints-need-an-admin-role) |
 | `Oidc:RequireAdminRoleGlobally` | `false` | Puts the admin role in the fallback policy |
 | `Oidc:QueryToken:IncludePaths:0` | | Path prefixes where `?access_token=` is honoured, for SignalR |
 | `Oidc:QueryToken:ExcludePaths:0` | | Carved back out of the above |

@@ -34,6 +34,37 @@ public class InvitationTests
         await Assert.That(harness.InvitationNotifier.Sent[0].Token).IsNotEmpty();
     }
 
+    // Nothing here looks for an existing reservation before making one, so a notifier that threw and
+    // left the row behind meant every retry against the same down relay reserved the address again.
+    [Test]
+    public async Task ANotifierFailureLeavesNoReservedAccountBehind()
+    {
+        var harness = PasswordHarness.Create();
+        harness.InvitationNotifier.ThrowOnSend = new InvalidOperationException("the mail server is down");
+
+        var result = await harness.Accounts.CreateInvitationAsync("ada@example.com");
+
+        await Assert.That(result.Succeeded).IsFalse();
+        await Assert.That(result.NotificationFailed).IsTrue();
+        await Assert.That(harness.Users.Users).IsEmpty();
+        await Assert.That(harness.Passwords.InvitationTokens.Where(token => token.ConsumedAt is null)).IsEmpty();
+    }
+
+    [Test]
+    public async Task ARetryAfterANotifierFailureReservesExactlyOneAccount()
+    {
+        var harness = PasswordHarness.Create();
+        harness.InvitationNotifier.ThrowOnSend = new InvalidOperationException("the mail server is down");
+        await harness.Accounts.CreateInvitationAsync("ada@example.com");
+
+        harness.InvitationNotifier.ThrowOnSend = null;
+        var retry = await harness.Accounts.CreateInvitationAsync("ada@example.com");
+
+        await Assert.That(retry.Succeeded).IsTrue();
+        await Assert.That(harness.Users.Users.Count).IsEqualTo(1);
+        await Assert.That(harness.Users.Users.Single().Id).IsEqualTo(retry.UserId!.Value);
+    }
+
     [Test]
     public async Task CreatingAnInvitationWithoutTheNotifierRegisteredThrows()
     {
