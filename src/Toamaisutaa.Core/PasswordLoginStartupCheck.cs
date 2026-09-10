@@ -13,7 +13,8 @@ internal sealed class PasswordLoginStartupCheck(
     IServiceCollection services,
     IOptions<ToamaisutaaLocalLoginOptions> options,
     IOptions<ToamaisutaaOidcOptions> oidcOptions,
-    DummyPasswordHash dummy) : IHostedService
+    DummyPasswordHash dummy,
+    LocalSigningKeyRing signingKeys) : IHostedService
 {
     private const int MinimumSigningKeyBytes = 32;
     private const int MinimumPepperBytes = 32;
@@ -25,7 +26,7 @@ internal sealed class PasswordLoginStartupCheck(
 
         CheckRegistrations(problems);
         CheckEmailVerification(settings, problems);
-        CheckSigningKey(settings, problems);
+        CheckSigningKeys(settings, problems);
         CheckPeppers(settings, problems);
         CheckHashingParameters(settings, problems);
         CheckLengths(settings, problems);
@@ -98,18 +99,28 @@ internal sealed class PasswordLoginStartupCheck(
         }
     }
 
-    private static void CheckSigningKey(ToamaisutaaLocalLoginOptions settings, List<string> problems)
+    private void CheckSigningKeys(ToamaisutaaLocalLoginOptions settings, List<string> problems)
     {
-        if (string.IsNullOrWhiteSpace(settings.SigningKey))
+        problems.AddRange(signingKeys.Problems);
+
+        var hasSymmetric = !string.IsNullOrWhiteSpace(settings.SigningKey);
+
+        if (!hasSymmetric && settings.SigningKeys.Count == 0)
         {
             problems.Add(
-                "LocalLogin:SigningKey is not set. Locally issued access tokens are signed with it, and there is no "
-                + "generated fallback on purpose: a per-process key would sign people out on every restart and "
-                + "disagree between instances.");
+                "Neither LocalLogin:SigningKey nor LocalLogin:SigningKeys is set. Locally issued access tokens are "
+                + "signed with one of them, and there is no generated fallback on purpose: a per-process key would "
+                + "sign people out on every restart and disagree between instances.");
             return;
         }
 
-        if (!TryDecode(settings.SigningKey, out var key))
+        // Checked whenever it is present, active or not. A symmetric key left in place alongside an
+        // asymmetric list is not dead weight - it is what keeps the HS256 tokens issued before the
+        // switch validating until they expire.
+        if (!hasSymmetric)
+            return;
+
+        if (!TryDecode(settings.SigningKey!, out var key))
         {
             problems.Add("LocalLogin:SigningKey is not valid base64.");
             return;

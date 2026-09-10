@@ -37,10 +37,14 @@ public static class ToamaisutaaDefaults
     /// <summary>Configuration section local password login binds from.</summary>
     public const string LocalLoginConfigurationSection = "LocalLogin";
 
-    /// <summary>Key id stamped on the local signing key, so the bearer layer can tell it apart from
-    /// the identity provider's keys and refuse to validate one issuer's tokens with the other's
-    /// key.</summary>
+    /// <summary>Key id stamped on the symmetric local signing key, so the bearer layer can tell it
+    /// apart from the identity provider's keys and refuse to validate one issuer's tokens with the
+    /// other's key. Reserved: an entry in <c>LocalLogin:SigningKeys</c> may not claim it.</summary>
     public const string LocalSigningKeyId = "toamaisutaa-local";
+
+    /// <summary>Where the public halves of <c>LocalLogin:SigningKeys</c> are published, relative to
+    /// <c>LocalLogin:EndpointPrefix</c>.</summary>
+    public const string JwksEndpointPattern = "/.well-known/jwks.json";
 
     /// <summary>Configuration section two-factor authentication binds from.</summary>
     public const string TwoFactorConfigurationSection = "TwoFactor";

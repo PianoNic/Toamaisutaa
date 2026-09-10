@@ -36,6 +36,7 @@ and all three are checked at startup rather than at the first request.
 | POST | `/auth/users/{userId}/password` | 204 or 400. Authenticated. Only mapped when an `IAdminPasswordIssuedNotifier` is registered |
 | POST | `/auth/invitations` | 201 or 400. Authenticated. Only mapped when an `IInvitationNotifier` is registered |
 | POST | `/auth/invitations/complete` | 201 with a token pair, 400, or 409. Only mapped when an `IInvitationNotifier` is registered |
+| GET | `/auth/.well-known/jwks.json` | 200 with the public signing keys. Only mapped when `SigningKeys` is set - see [signing local tokens](/token-signing) |
 
 ::: warning Requests are camelCase, token responses are not
 Request bodies bind to this package's own records, so they are camelCase: `identifier`,
@@ -306,7 +307,8 @@ hands you - rather than expecting to construct one.
 
 | Key | Default | Notes |
 |---|---|---|
-| `LocalLogin:SigningKey` | | Base64, at least 32 bytes. Required. No generated fallback |
+| `LocalLogin:SigningKey` | | Base64, at least 32 bytes. HS256. Required unless `SigningKeys` is set, and there is no generated fallback either way |
+| `LocalLogin:SigningKeys` | empty | Asymmetric keys, active one first, published as JWKS. See [signing local tokens](/token-signing) |
 | `LocalLogin:Issuer` | `toamaisutaa` | Changing it invalidates every token in flight |
 | `LocalLogin:Audience` | `Oidc:ClientId` | |
 | `LocalLogin:AccessTokenLifetime` | `00:15:00` | |

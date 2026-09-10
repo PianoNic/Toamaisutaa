@@ -177,3 +177,69 @@ public sealed record InvitationResponse
 
     public required string Email { get; init; }
 }
+
+/// <summary>
+/// What <c>GET {EndpointPrefix}/.well-known/jwks.json</c> returns: the public halves of
+/// <c>LocalLogin:SigningKeys</c>, in the RFC 7517 shape a gateway already knows how to read.
+/// </summary>
+/// <remarks>
+/// Only mapped when there are asymmetric keys to publish. A deployment signing HS256 has no public
+/// half, and an empty set would tell a gateway that this issuer publishes nothing rather than that
+/// it was never asked to.
+/// </remarks>
+public sealed record JsonWebKeySetResponse
+{
+    [JsonPropertyName("keys")]
+    public required IReadOnlyList<JsonWebKeyResponse> Keys { get; init; }
+}
+
+/// <summary>
+/// One public key of <see cref="JsonWebKeySetResponse"/>. RFC 7517 field names, which is the whole
+/// point of the document: they are what every JWKS client already reads.
+/// </summary>
+/// <remarks>
+/// The per-key-type members are omitted when null rather than written as <c>null</c>. An RSA key
+/// carrying <c>"crv": null</c> is not a shape the RFC describes, and a strict parser is within its
+/// rights to refuse it.
+/// </remarks>
+public sealed record JsonWebKeyResponse
+{
+    [JsonPropertyName("kty")]
+    public required string KeyType { get; init; }
+
+    /// <summary>Always <c>sig</c>. These keys sign tokens and do nothing else.</summary>
+    [JsonPropertyName("use")]
+    public string Use { get; init; } = "sig";
+
+    [JsonPropertyName("kid")]
+    public required string KeyId { get; init; }
+
+    /// <summary><c>RS256</c>, <c>ES256</c>, <c>ES384</c> or <c>ES512</c>.</summary>
+    [JsonPropertyName("alg")]
+    public required string Algorithm { get; init; }
+
+    /// <summary>RSA modulus, base64url.</summary>
+    [JsonPropertyName("n")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Modulus { get; init; }
+
+    /// <summary>RSA public exponent, base64url.</summary>
+    [JsonPropertyName("e")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Exponent { get; init; }
+
+    /// <summary>EC curve name - <c>P-256</c>, <c>P-384</c> or <c>P-521</c>.</summary>
+    [JsonPropertyName("crv")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Curve { get; init; }
+
+    /// <summary>EC public point, x coordinate, base64url.</summary>
+    [JsonPropertyName("x")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? X { get; init; }
+
+    /// <summary>EC public point, y coordinate, base64url.</summary>
+    [JsonPropertyName("y")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Y { get; init; }
+}

@@ -218,8 +218,8 @@ in this package that cannot be a one-way function. AES-256-GCM, under **its own 
 
 Use a different key from `LocalLogin:SigningKey`. They do different jobs, they rotate on different
 schedules - rotating a signing key signs people out for fifteen minutes, rotating this one means
-re-encrypting every enrolment - and a signing key may later need to be asymmetric, which an AES key
-cannot be.
+re-encrypting every enrolment - and a signing key can be
+[asymmetric](/token-signing), which an AES key cannot be.
 
 Rotate the same way as the pepper - move the old key into `TwoFactor:RetiredEncryptionKeys` under its
 version marker, set a new key and version, and rows re-encrypt themselves as people sign in.

@@ -12,6 +12,11 @@ GET {{host}}/health
 
 # ───────────────────────── local password login ─────────────────────────
 
+### The public half of the sample's signing key. Anonymous, and mapped only because
+### LocalLogin:SigningKeys is set - an HS256 deployment answers 404 here.
+### Paste an access_token from below into jwt.io and check its kid against this.
+GET {{host}}/auth/.well-known/jwks.json
+
 ### Register. Only mapped because LocalLogin:AllowSelfRegistration is true.
 POST {{host}}/auth/register
 Content-Type: application/json

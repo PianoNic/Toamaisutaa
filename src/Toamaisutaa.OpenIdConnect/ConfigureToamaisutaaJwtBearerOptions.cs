@@ -15,6 +15,7 @@ internal sealed class ConfigureToamaisutaaJwtBearerOptions(
     IOptions<ToamaisutaaOidcOptions> oidcOptions,
     IOptions<ToamaisutaaAuthorizationOptions> authorizationOptions,
     IOptions<ToamaisutaaLocalLoginOptions> localLoginOptions,
+    LocalTokenKeys localKeys,
     UserInfoClaimsEnricher enricher) : IConfigureNamedOptions<JwtBearerOptions>
 {
     public void Configure(string? name, JwtBearerOptions options)
@@ -83,28 +84,41 @@ internal sealed class ConfigureToamaisutaaJwtBearerOptions(
     /// here, so both shapes validate in a single pass and nothing downstream can tell them apart.
     /// </summary>
     /// <remarks>
+    /// <para>
     /// The key resolver is the part that matters. With both key sets in one flat collection, the
     /// validator falls back to trying every key when the key id does not match - so a token
     /// claiming our issuer but signed with the identity provider's key would validate, and its
     /// subject is a local user id. Binding each issuer to its own key closes that.
+    /// </para>
+    /// <para>
+    /// It stays closed with a key list rather than a single key: the local branch answers with our
+    /// keys picked by <c>kid</c> and never with the issuer's, and the issuer branch drops every key
+    /// id we own.
+    /// </para>
     /// </remarks>
     private void ConfigureLocallyIssuedTokens(JwtBearerOptions options, ToamaisutaaOidcOptions settings)
     {
         var local = localLoginOptions.Value;
-        var localKey = LocalSigningKey.Create(local);
 
-        // No key means password login was never registered. Leave the handler exactly as it was.
-        if (localKey is null)
+        // No keys means password login was never registered. Leave the handler exactly as it was.
+        if (localKeys.ValidationKeys.Count == 0)
             return;
 
         options.TokenValidationParameters.ValidIssuers = [local.Issuer];
-        options.TokenValidationParameters.IssuerSigningKeys = [localKey];
+        options.TokenValidationParameters.IssuerSigningKeys = localKeys.ValidationKeys;
 
-        options.TokenValidationParameters.IssuerSigningKeyResolver = (_, securityToken, _, parameters) =>
+        // The resolver is only authoritative if an empty answer means no. By default an empty
+        // answer is treated as "did not resolve" and every configured key is tried instead, which
+        // puts the local keys back in front of a token whose kid names none of them - and the
+        // resolver below is the whole defence against one issuer's tokens being validated with the
+        // other's key. The non-local branch hands back the identity provider's keys explicitly, so
+        // nothing it relied on is lost.
+        options.TokenValidationParameters.TryAllIssuerSigningKeys = false;
+
+        options.TokenValidationParameters.IssuerSigningKeyResolver = (_, securityToken, keyId, parameters) =>
             string.Equals(securityToken?.Issuer, local.Issuer, StringComparison.Ordinal)
-                ? [localKey]
-                : parameters.IssuerSigningKeys?.Where(key =>
-                    !string.Equals(key.KeyId, ToamaisutaaDefaults.LocalSigningKeyId, StringComparison.Ordinal)) ?? [];
+                ? localKeys.Resolve(keyId)
+                : parameters.IssuerSigningKeys?.Where(key => !localKeys.Owns(key.KeyId)) ?? [];
     }
 
     /// <summary>
