@@ -57,6 +57,11 @@ internal sealed class TestApp : IAsyncDisposable
 
     public HttpClient Client { get; }
 
+    /// <summary>The host's own container. For the few assertions that have to read what landed in
+    /// the database rather than what came back in a body - a stored password hash is never on the
+    /// wire, and that is the point of it.</summary>
+    public IServiceProvider Services => _app.Services;
+
     /// <summary>
     /// What <c>IAdminPasswordIssuedNotifier</c> was handed - the only place a password an admin
     /// endpoint issued can be observed, since it is never in an HTTP response.

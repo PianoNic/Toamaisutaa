@@ -30,7 +30,8 @@ Use OIDC if you can.
   Keycloak for Entra is configuration rather than code.
 - **A bridge from claims to a user row.** Optional, written only when a claim actually changed, and
   safe when two first requests race.
-- **A local login, for when you have no provider.** PBKDF2, rotating refresh tokens, lockout, reset
+- **A local login, for when you have no provider.** PBKDF2 or [opt-in Argon2id](/password-hashing),
+  rotating refresh tokens, lockout, reset
   tokens, TOTP, and [two ways to get someone into an account](/provisioning-accounts) without open
   registration. Off until you ask.
 - **Storage on your terms.** Four databases' migrations, your own `DbContext`, or no database at all.

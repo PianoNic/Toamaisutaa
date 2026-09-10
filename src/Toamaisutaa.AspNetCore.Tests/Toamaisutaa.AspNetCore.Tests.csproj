@@ -32,6 +32,9 @@
     <ProjectReference Include="..\Toamaisutaa.OpenApi\Toamaisutaa.OpenApi.csproj" />
     <ProjectReference Include="..\Toamaisutaa.OpenIdConnect\Toamaisutaa.OpenIdConnect.csproj" />
     <ProjectReference Include="..\Toamaisutaa.EntityFrameworkCore\Toamaisutaa.EntityFrameworkCore.csproj" />
+    <!-- An opt-in package, exercised here because what it changes - which hasher the host resolves,
+         and what a login writes back - is invisible from every response body. -->
+    <ProjectReference Include="..\Toamaisutaa.PasswordHashing.Argon2\Toamaisutaa.PasswordHashing.Argon2.csproj" />
     <!-- An opt-in package, exercised here because what it changes is the body of /auth/register and
          /auth/password, and a validator that reaches the wire correctly in a unit test is exactly
          the shape of bug this suite exists for. -->

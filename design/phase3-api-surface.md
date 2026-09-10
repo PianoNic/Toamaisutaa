@@ -211,6 +211,10 @@ Diligence done. The landscape:
 > conclusion was not. `Pbkdf2PasswordHasher` is the only shipped hasher, `IPasswordHasher` stays
 > public so a consumer can register Argon2 themselves, and the PHC format means their rows
 > interoperate with ours in both directions.
+>
+> **Revisited in #66:** the recommendation below was taken, one step removed. Argon2id ships as
+> `Toamaisutaa.PasswordHashing.Argon2`, an opt-in package, so the dependency is the consumer's
+> decision rather than the default. See `design/argon2-package.md`.
 
 **Recommendation (not taken): Konscious for the default, and ship a PBKDF2 hasher next to it.**
 
