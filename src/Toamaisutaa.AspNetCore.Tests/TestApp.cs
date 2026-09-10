@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Diagnostics;
+using Microsoft.AspNetCore.Hosting.Server;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.AspNetCore.TestHost;
@@ -90,13 +91,19 @@ internal sealed class TestApp : IAsyncDisposable
     /// On by default, so <c>/auth/invitations</c> and <c>/auth/invitations/complete</c> are mapped
     /// and most tests can use them. Off to prove they are not mapped at all without one.
     /// </param>
+    /// <param name="includeOpenApi">
+    /// Adds <c>AddToamaisutaaOpenApi</c> and maps <c>/openapi/v1.json</c>. Off by default: it is a
+    /// document generator no other test needs, and it makes the discovery fetch resolve back into
+    /// this same host.
+    /// </param>
     public static async Task<TestApp> StartAsync(
         Action<IEndpointRouteBuilder>? mapExtra = null,
         Action<Dictionary<string, string?>>? configure = null,
         bool handleStaleStampGlobally = false,
         Action<IServiceCollection>? configureServices = null,
         bool includeAdminPasswordNotifier = true,
-        bool includeInvitationNotifier = true)
+        bool includeInvitationNotifier = true,
+        bool includeOpenApi = false)
     {
         var settings = new Dictionary<string, string?>
         {
@@ -145,6 +152,20 @@ internal sealed class TestApp : IAsyncDisposable
         if (includeInvitationNotifier)
             builder.Services.AddSingleton<IInvitationNotifier>(new CapturingInvitationNotifier(issuedInvitations));
 
+        if (includeOpenApi)
+        {
+            builder.Services.AddToamaisutaaOpenApi(builder.Configuration);
+
+            // Sends the discovery fetch back into this host instead of onto the network, so a test
+            // serves its own issuer metadata from a route and the suite still needs no identity
+            // provider. An address this host has no route for answers a refusal rather than a
+            // document, which is the same "could not be read" branch as an issuer that is not
+            // there at all.
+            builder.Services
+                .AddHttpClient(ToamaisutaaDefaults.DiscoveryHttpClientName)
+                .ConfigurePrimaryHttpMessageHandler(services => ((TestServer)services.GetRequiredService<IServer>()).CreateHandler());
+        }
+
         configureServices?.Invoke(builder.Services);
 
         if (handleStaleStampGlobally)
@@ -172,6 +193,9 @@ internal sealed class TestApp : IAsyncDisposable
             var user = await currentUser.GetOrProvisionAsync(cancellationToken);
             return Results.Ok(new { user.Id, user.UserName });
         });
+
+        if (includeOpenApi)
+            app.MapOpenApi().AllowAnonymous();
 
         mapExtra?.Invoke(app);
 

@@ -95,6 +95,7 @@ requires a commercial licence above a revenue threshold.
 | `Toamaisutaa.EntityFrameworkCore.Migrations.Sqlite` | The SQLite migration set |
 | `Toamaisutaa.EntityFrameworkCore.Migrations.SqlServer` | The SQL Server migration set |
 | `Toamaisutaa.EntityFrameworkCore.Migrations.MySql` | The MySQL migration set |
+| `Toamaisutaa.OpenApi` | Opt-in `AddToamaisutaaOpenApi`, the security schemes for your OpenAPI document |
 
 `Abstractions` and `Core` carry no ASP.NET and no Entity Framework, so a domain or application
 project can depend on `ICurrentUser` without dragging a web stack behind it.

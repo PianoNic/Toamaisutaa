@@ -157,55 +157,65 @@ way.
 Every endpoint this package maps describes itself: response types, status codes, summaries, and a
 tag per group. They appear in a generated document with no work from you.
 
-**One thing you have to add: the bearer security scheme.** A security scheme is a document-level
-declaration and belongs to whoever owns the document, so this package cannot add it - and nothing
-shipped here takes a dependency on OpenAPI. Without it nothing marks which endpoints need a token,
-and Scalar or Swagger UI shows no Authorize box, which is how most people first try an API.
+**The security schemes are one call.** A security scheme is a document-level declaration, so
+somebody has to add it: without one, nothing marks which endpoints need a token and Scalar or
+Swagger UI shows no Authorize box, which is how most people first try an API.
 
-Paste this into your own application:
-
-```csharp
-builder.Services.AddOpenApi(options => options.AddDocumentTransformer((document, _, _) =>
-{
-    document.Components ??= new OpenApiComponents();
-    document.Components.SecuritySchemes ??= new Dictionary<string, IOpenApiSecurityScheme>();
-    document.Components.SecuritySchemes["Bearer"] = new OpenApiSecurityScheme
-    {
-        Type = SecuritySchemeType.Http,
-        Scheme = "bearer",
-        BearerFormat = "JWT",
-        Description = "Paste the access_token from /auth/login or /auth/2fa/verify.",
-    };
-
-    document.Security =
-    [
-        new OpenApiSecurityRequirement
-        {
-            [new OpenApiSecuritySchemeReference("Bearer", document)] = [],
-        },
-    ];
-
-    return Task.CompletedTask;
-}).AddOperationTransformer((operation, context, _) =>
-{
-    // Without this the document-level requirement puts a padlock on /auth/login too, which is
-    // backwards: it is the endpoint you call because you have no token yet.
-    if (context.Description.ActionDescriptor.EndpointMetadata.OfType<IAllowAnonymous>().Any())
-        operation.Security = [];
-
-    return Task.CompletedTask;
-}));
+```sh
+dotnet add package Toamaisutaa.OpenApi
 ```
 
-Needs `Microsoft.AspNetCore.OpenApi`, and `using Microsoft.OpenApi;`. To render it,
-`Scalar.AspNetCore` is one line:
+```csharp
+builder.Services.AddToamaisutaaOpenApi(builder.Configuration);   // section "Oidc"
+
+app.MapOpenApi().AllowAnonymous();
+```
+
+That puts four things in the document:
+
+- a **`Bearer`** HTTP scheme, for a token pasted in from `/auth/login` or `/auth/2fa/verify`;
+- an **`OAuth2`** authorization-code scheme, with the authorization and token URLs read from your
+  issuer's discovery document and the scopes from `Oidc:Scope`;
+- the **requirement, document-wide**, naming both schemes as alternatives - either token gets in;
+- **no padlock on anonymous endpoints**. `/auth/login` is the endpoint you call because you have no
+  token yet.
+
+Its own package, because `Microsoft.AspNetCore.OpenApi` is not part of the shared framework and an
+application documenting itself some other way should not pay for it.
+
+If your issuer cannot be reached while the document is generated, the `OAuth2` scheme is left out,
+the rest of the document is unchanged, and one warning line says which address failed. With no
+`Oidc:Authority` configured at all there is no authorization server to describe, and the `Bearer`
+scheme stands alone - which is exactly right for a deployment that only issues its own tokens.
+
+To render it, `Scalar.AspNetCore` is one line:
 
 ```csharp
-app.MapOpenApi().AllowAnonymous();
 app.MapScalarApiReference().AllowAnonymous();   // /scalar
 ```
 
 `samples/MinimalApiSample` has both, wired exactly as above.
+
+### With transformers of your own
+
+`AddOpenApi` called twice for the same document registers everything twice, so pass your own
+configuration through instead:
+
+```csharp
+builder.Services.AddToamaisutaaOpenApi(
+    builder.Configuration,
+    configureOptions: options => options.AddDocumentTransformer(YourOwnTransformer));
+```
+
+Or, where the document is already yours, add the schemes to it:
+
+```csharp
+builder.Services.AddOpenApi(options =>
+{
+    options.AddToamaisutaaSecuritySchemes();
+    // ... whatever else you already had
+});
+```
 
 ## Endpoints of yours that resolve the current user
 
