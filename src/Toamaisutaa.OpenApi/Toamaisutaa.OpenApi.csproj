@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <Description>OpenAPI security schemes for Toamaisutaa: a bearer scheme for locally issued tokens, an OAuth2 authorization-code scheme whose URLs come from the issuer's discovery document, applied document-wide and cleared on anonymous endpoints. A package of its own because OpenAPI is not part of the shared framework, and an application that documents itself some other way should not pay for it.</Description>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Toamaisutaa.Abstractions\Toamaisutaa.Abstractions.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- Not part of the shared framework, which is the whole reason this is a package of its own
+         rather than three more files in Toamaisutaa.AspNetCore. -->
+    <PackageReference Include="Microsoft.AspNetCore.OpenApi" />
+    <!-- Microsoft.AspNetCore.OpenApi 10.0.10 drags in Microsoft.OpenApi 2.0.0, which carries
+         GHSA-v5pm-xwqc-g5wc. 2.11.0 is the same major, so no API change. Referenced here rather
+         than pinned transitively, so it is a real dependency of this package instead of a fix for
+         our own build. -->
+    <PackageReference Include="Microsoft.OpenApi" />
+  </ItemGroup>
+</Project>

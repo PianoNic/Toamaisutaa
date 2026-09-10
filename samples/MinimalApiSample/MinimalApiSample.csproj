@@ -7,18 +7,18 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <!-- MapOpenApi is called directly below, so this is a direct dependency even though
+         Toamaisutaa.OpenApi already brings it. The GHSA-v5pm-xwqc-g5wc pin on Microsoft.OpenApi
+         travels with that package now and no longer belongs here. -->
     <PackageReference Include="Microsoft.AspNetCore.OpenApi" />
-    <!-- Microsoft.AspNetCore.OpenApi 10.0.10 pulls in Microsoft.OpenApi 2.0.0, which carries
-         GHSA-v5pm-xwqc-g5wc. Named here to force the patched version. Sample only - no shipped
-         package touches OpenAPI. -->
-    <PackageReference Include="Microsoft.OpenApi" />
-    <!-- Renders the generated document. Sample only, like the two above - no shipped package takes
-         a dependency on OpenAPI or on anything that reads it. -->
+    <!-- Renders the generated document. Sample only - no shipped package takes a dependency on
+         anything that reads OpenAPI. -->
     <PackageReference Include="Scalar.AspNetCore" />
   </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\Toamaisutaa.AspNetCore\Toamaisutaa.AspNetCore.csproj" />
+    <ProjectReference Include="..\..\src\Toamaisutaa.OpenApi\Toamaisutaa.OpenApi.csproj" />
     <ProjectReference Include="..\..\src\Toamaisutaa.OpenIdConnect\Toamaisutaa.OpenIdConnect.csproj" />
     <ProjectReference Include="..\..\src\Toamaisutaa.EntityFrameworkCore\Toamaisutaa.EntityFrameworkCore.csproj" />
     <ProjectReference Include="..\..\src\Toamaisutaa.EntityFrameworkCore.Migrations.Sqlite\Toamaisutaa.EntityFrameworkCore.Migrations.Sqlite.csproj" />

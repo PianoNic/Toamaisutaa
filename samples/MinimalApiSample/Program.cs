@@ -1,7 +1,6 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Diagnostics;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.OpenApi;
 using Scalar.AspNetCore;
 using Toamaisutaa.Abstractions;
 using Toamaisutaa.EntityFrameworkCore;
@@ -9,40 +8,11 @@ using Toamaisutaa.EntityFrameworkCore;
 var builder = WebApplication.CreateBuilder(args);
 
 // The package describes its own endpoints - every response type, every status code - but a security
-// scheme is a document-level declaration, so it belongs to whoever owns the document. Without it
-// nothing marks which endpoints need a token and an API explorer offers no Authorize box, which is
-// how most people first meet an API. Copy this into your own application.
-builder.Services.AddOpenApi(options => options.AddDocumentTransformer((document, _, _) =>
-{
-    document.Components ??= new OpenApiComponents();
-    document.Components.SecuritySchemes ??= new Dictionary<string, IOpenApiSecurityScheme>();
-    document.Components.SecuritySchemes["Bearer"] = new OpenApiSecurityScheme
-    {
-        Type = SecuritySchemeType.Http,
-        Scheme = "bearer",
-        BearerFormat = "JWT",
-        Description = "Paste the access_token from /auth/login or /auth/2fa/verify.",
-    };
-
-    document.Security =
-    [
-        new OpenApiSecurityRequirement
-        {
-            [new OpenApiSecuritySchemeReference("Bearer", document)] = [],
-        },
-    ];
-
-    return Task.CompletedTask;
-}).AddOperationTransformer((operation, context, _) =>
-{
-    // The document-level requirement above would otherwise put a padlock on /auth/login too, which
-    // is exactly backwards: it is the endpoint you call because you have no token yet. An empty
-    // requirement list on an operation overrides the document's.
-    if (context.Description.ActionDescriptor.EndpointMetadata.OfType<IAllowAnonymous>().Any())
-        operation.Security = [];
-
-    return Task.CompletedTask;
-}));
+// scheme is a document-level declaration, so somebody has to add it or an API explorer offers no
+// Authorize box, which is how most people first meet an API. This is the Bearer scheme for tokens
+// this application issues, an OAuth2 scheme whose URLs come from the identity provider's discovery
+// document, and no padlock on the anonymous endpoints.
+builder.Services.AddToamaisutaaOpenApi(builder.Configuration);
 
 // Validate access tokens. Both the identity provider's and the ones this application issues itself:
 // one handler, one scheme, and nothing downstream can tell which kind it is holding.
@@ -133,7 +103,7 @@ if (app.Environment.IsDevelopment())
     app.MapOpenApi().AllowAnonymous();
 
     // http://localhost:5203/scalar - the document above, rendered. The Authorize button comes from
-    // the security scheme declared at the top of this file.
+    // the security schemes AddToamaisutaaOpenApi declared.
     app.MapScalarApiReference(options => options.WithTitle("Toamaisutaa sample")).AllowAnonymous();
 }
 

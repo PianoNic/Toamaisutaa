@@ -10,9 +10,10 @@ public static class ToamaisutaaDefaults
     /// <summary>Named <c>HttpClient</c> the userinfo enrichment resolves.</summary>
     public const string UserInfoHttpClientName = "toamaisutaa-userinfo";
 
-    /// <summary>Named <c>HttpClient</c> the discovery health check resolves. Separate from the
-    /// userinfo one so a handler or a proxy can be put on the probe without touching the path a
-    /// signed-in request takes.</summary>
+    /// <summary>Named <c>HttpClient</c> anything reaching the issuer's discovery document resolves:
+    /// the health check, and the OpenAPI document's OAuth2 URLs. Separate from the userinfo one so a
+    /// handler or a proxy can be put on those without touching the path a signed-in request
+    /// takes.</summary>
     public const string DiscoveryHttpClientName = "toamaisutaa-discovery";
 
     /// <summary>Name the discovery health check is registered under, and the name a health report
