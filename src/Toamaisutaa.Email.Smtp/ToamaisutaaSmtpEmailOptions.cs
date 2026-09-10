@@ -51,6 +51,17 @@ public sealed class ToamaisutaaSmtpEmailOptions
     public string? EmailVerificationLinkTemplate { get; set; }
 
     /// <summary>
+    /// The sign-in link, with <c>{token}</c> replaced by the raw token. Required only when
+    /// <c>AddToamaisutaaSmtpMagicLink</c> is called and the default
+    /// <see cref="IMagicLinkEmailTemplate"/> is the one in use.
+    /// </summary>
+    /// <remarks>
+    /// Point it at a page of yours that posts the token to <c>/auth/magic-link/verify</c>. The link
+    /// itself is the credential, so keep the page off anything that logs query strings.
+    /// </remarks>
+    public string? MagicLinkTemplate { get; set; }
+
+    /// <summary>
     /// Where someone signs in, put at the end of the admin-issued password email. Optional and
     /// checked nowhere: a credentials email is still useful without it, and the person reading one
     /// was usually told what they are signing in to by whoever provisioned the account.

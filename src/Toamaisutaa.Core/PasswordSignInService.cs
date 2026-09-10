@@ -9,6 +9,7 @@ internal sealed class PasswordSignInService(
     IPasswordCredentialStore credentials,
     IUserStore users,
     IRefreshTokenStore refreshTokens,
+    IMagicLinkTokenStore magicLinkTokens,
     IPasswordHasher hasher,
     IAccessTokenIssuer accessTokens,
     IUserRoleProvider roles,
@@ -128,7 +129,12 @@ internal sealed class PasswordSignInService(
 
             if (!trust.Trusted)
             {
-                var challenge = await twoFactor.IssueChallengeAsync(user.Id, now, cancellationToken);
+                var challenge = await twoFactor.IssueChallengeAsync(
+                    user.Id,
+                    now,
+                    cancellationToken,
+                    authenticationMethods: "pwd");
+
                 logger.LogInformation("Password accepted for user {UserId}; a second factor is required.", user.Id);
 
                 metrics.SignInCompleted(SignInOutcome.TwoFactorRequired, methods: null);
@@ -221,9 +227,10 @@ internal sealed class PasswordSignInService(
 
         logger.LogInformation("Sign-in completed for user {UserId} with a second factor.", user.Id);
 
-        string[] methods = redemption.UsedRecoveryCode
-            ? ["pwd", ToamaisutaaDefaults.MultiFactorMethod]
-            : ["pwd", "otp", ToamaisutaaDefaults.MultiFactorMethod];
+        // The first factor comes off the challenge rather than being assumed. A challenge reached
+        // through a magic link proved a mailbox and no password, and writing pwd here would put a
+        // claim on the token that nothing had earned.
+        var methods = SecondFactorMethods(redemption.AuthenticationMethods, redemption.UsedRecoveryCode);
 
         var result = await IssueAsync(
             user,
@@ -234,6 +241,75 @@ internal sealed class PasswordSignInService(
             twoFactorSource: redemption.UsedRecoveryCode ? TwoFactorSource.Recovery : TwoFactorSource.Otp,
             secondFactorAt: now,
             trustedDevice: issued,
+            newSignIn: true,
+            client: ClientMetadata.Describe(request.UserAgent, request.IpAddress, options.Value.IpAddressStorage),
+            now,
+            cancellationToken);
+
+        metrics.SignInCompleted(result.Outcome, methods);
+        return result;
+    }
+
+    public async Task<SignInResult> VerifyMagicLinkAsync(MagicLinkSignInRequest request, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        var now = timeProvider.GetUtcNow();
+        var stored = await magicLinkTokens.FindByHashAsync(SecureTokens.HashToken(request.Token), cancellationToken);
+
+        // One outcome for every way this can fail, the same reasoning a reset link uses: unknown,
+        // spent and expired are the same answer to whoever is holding it.
+        if (stored is null || stored.ConsumedAt is not null || stored.ExpiresAt <= now)
+        {
+            logger.LogWarning("Magic-link sign-in refused: the token is unknown, already used or expired.");
+
+            await events.PublishAsync(
+                new SignInFailed { OccurredAt = now, UserId = stored?.UserId, Reason = SignInOutcome.InvalidMagicLink },
+                cancellationToken);
+
+            return Refused(SignInOutcome.InvalidMagicLink);
+        }
+
+        var user = await users.FindByIdAsync(stored.UserId, cancellationToken)
+            ?? throw new InvalidOperationException($"Magic-link token {stored.Id} points at user {stored.UserId}, which does not exist.");
+
+        // Spent before anything is issued, and before the challenge below. A link that got somebody
+        // as far as a second factor has been used, whether or not they finish - the alternative
+        // leaves a live credential in a mailbox after it has already been read once.
+        await magicLinkTokens.MarkConsumedAsync(stored.Id, now, cancellationToken);
+        await magicLinkTokens.InvalidateAllForUserAsync(stored.UserId, now, cancellationToken);
+
+        // No device token is consulted, unlike the password path. There the cached factor sits
+        // behind a password; here it would sit behind a mailbox alone, and two cached things are
+        // not two factors.
+        if (await twoFactor.RequiresChallengeAsync(user.Id, cancellationToken))
+        {
+            var challenge = await twoFactor.IssueChallengeAsync(
+                user.Id,
+                now,
+                cancellationToken,
+                authenticationMethods: ToamaisutaaDefaults.MagicLinkMethod);
+
+            logger.LogInformation("Magic link accepted for user {UserId}; a second factor is required.", user.Id);
+
+            metrics.SignInCompleted(SignInOutcome.TwoFactorRequired, methods: null);
+
+            return new SignInResult { Outcome = SignInOutcome.TwoFactorRequired, Challenge = challenge };
+        }
+
+        logger.LogInformation("Sign-in succeeded for user {UserId} with a magic link.", user.Id);
+
+        string[] methods = [ToamaisutaaDefaults.MagicLinkMethod];
+
+        var result = await IssueAsync(
+            user,
+            familyId: null,
+            familyStartedAt: null,
+            methods,
+            recoveryCodesRunningLow: false,
+            twoFactorSource: null,
+            secondFactorAt: null,
+            trustedDevice: null,
             newSignIn: true,
             client: ClientMetadata.Describe(request.UserAgent, request.IpAddress, options.Value.IpAddressStorage),
             now,
@@ -434,6 +510,31 @@ internal sealed class PasswordSignInService(
         }
 
         return new StepUpGuard { Outcome = SignInOutcome.Succeeded, Live = live, Credential = credential };
+    }
+
+    /// <summary>
+    /// What a finished challenge proved: whatever got the caller to it, plus the second factor.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <paramref name="firstFactor"/> is empty for every challenge row written before a magic link
+    /// could reach one, and those were all password sign-ins - so empty reads as <c>pwd</c> rather
+    /// than as nothing.
+    /// </para>
+    /// <para>
+    /// A recovery code adds <c>mfa</c> and no <c>otp</c>, matching <see cref="StepUpMethods"/>:
+    /// nothing one-time was presented, but a second factor was.
+    /// </para>
+    /// </remarks>
+    private static string[] SecondFactorMethods(string? firstFactor, bool usedRecoveryCode)
+    {
+        string[] proved = string.IsNullOrEmpty(firstFactor)
+            ? ["pwd"]
+            : firstFactor.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+
+        return usedRecoveryCode
+            ? [.. proved, ToamaisutaaDefaults.MultiFactorMethod]
+            : [.. proved, "otp", ToamaisutaaDefaults.MultiFactorMethod];
     }
 
     /// <summary>

@@ -12,6 +12,7 @@ internal sealed class PasswordAccountService(
     IPasswordResetTokenStore resetTokens,
     IInvitationTokenStore invitationTokens,
     IEmailVerificationTokenStore emailVerificationTokens,
+    IMagicLinkTokenStore magicLinkTokens,
     IPasswordHasher hasher,
     IPasswordValidator validator,
     IPasswordResetNotifier notifier,
@@ -373,6 +374,90 @@ internal sealed class PasswordAccountService(
         return new AccountResult { Succeeded = true, UserId = stored.UserId };
     }
 
+    public async Task<MagicLinkRequestOutcome> RequestMagicLinkAsync(string email, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(email);
+
+        var magicLinkNotifier = ResolveMagicLinkNotifier();
+
+        var normalized = Normalizer.NormalizeOptional(email);
+        if (normalized is null)
+            return MagicLinkRequestOutcome.UnknownEmail;
+
+        var credential = await credentials.FindByNormalizedEmailAsync(normalized, cancellationToken);
+
+        if (credential is null)
+        {
+            // Told apart in the log and nowhere else, the same three cases password reset separates
+            // and for the same reason: a caller who can tell them apart can enumerate addresses.
+            var known = await users.FindByEmailAsync(email.Trim(), cancellationToken);
+
+            if (known is not null)
+            {
+                logger.LogInformation(
+                    "Magic link requested for user {UserId}, which has no local credential - an identity provider owns it. "
+                    + "No email sent; the person should sign in with their provider.",
+                    known.Id);
+
+                return MagicLinkRequestOutcome.NoLocalCredential;
+            }
+
+            logger.LogInformation("Magic link requested for an address with no account. Nothing sent.");
+            return MagicLinkRequestOutcome.UnknownEmail;
+        }
+
+        var user = await users.FindByIdAsync(credential.UserId, cancellationToken);
+        if (user is null)
+            return MagicLinkRequestOutcome.UnknownEmail;
+
+        // Not an option, unlike the password-reset rule this mirrors. A reset link leads to a form
+        // that asks for a new password; this one is exchanged for a session, so an address that is a
+        // typo or that somebody else now owns is an account handed over.
+        if (credential.EmailConfirmedAt is null)
+        {
+            logger.LogInformation(
+                "Magic link requested for user {UserId}, whose email address has never been verified. No email sent; "
+                + "the address has to be verified at /auth/email first.",
+                credential.UserId);
+
+            return MagicLinkRequestOutcome.EmailNotVerified;
+        }
+
+        var now = timeProvider.GetUtcNow();
+
+        // Asking for a new link retires the old ones, so a mailbox never holds two that work.
+        await magicLinkTokens.InvalidateAllForUserAsync(credential.UserId, now, cancellationToken);
+
+        var raw = SecureTokens.Create();
+
+        await magicLinkTokens.CreateAsync(
+            new ToamaisutaaMagicLinkToken
+            {
+                Id = Guid.CreateVersion7(now),
+                UserId = credential.UserId,
+                TokenHash = SecureTokens.HashToken(raw),
+                CreatedAt = now,
+                ExpiresAt = now + options.Value.MagicLinkTokenLifetime,
+            },
+            cancellationToken);
+
+        try
+        {
+            await magicLinkNotifier.SendAsync(user, raw, cancellationToken);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            // Same reasoning as the reset notifier: an unhandled exception here would answer 500 for
+            // a real address and 204 for an unknown one, which is exactly the distinction "always
+            // 204" was meant to erase.
+            logger.LogError(ex, "Magic-link notifier failed for user {UserId}. The token was issued; no email was sent.", credential.UserId);
+            return MagicLinkRequestOutcome.NotificationFailed;
+        }
+
+        logger.LogInformation("Magic-link token issued for user {UserId} and handed to the notifier.", credential.UserId);
+        return MagicLinkRequestOutcome.Sent;
+    }
+
     public async Task<AccountResult> CreateInvitationAsync(string email, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(email);
@@ -653,6 +738,14 @@ internal sealed class PasswordAccountService(
         ?? throw new InvalidOperationException(
             $"No {nameof(IEmailVerificationNotifier)} is registered. A verification token is handed to it and never "
             + "returned from this call - register one before calling RequestEmailChangeAsync.");
+
+    /// <summary>Same reasoning as <see cref="ResolveAdminPasswordNotifier"/>: optional, resolved
+    /// lazily, and only required at the one call site that actually needs it.</summary>
+    private IMagicLinkNotifier ResolveMagicLinkNotifier() =>
+        serviceProvider.GetService<IMagicLinkNotifier>()
+        ?? throw new InvalidOperationException(
+            $"No {nameof(IMagicLinkNotifier)} is registered. A magic-link token is handed to it and never returned "
+            + "from this call - register one before calling RequestMagicLinkAsync.");
 
     /// <summary>Same reasoning as <see cref="ResolveAdminPasswordNotifier"/>: optional, resolved
     /// lazily, and only required at the one call site that actually needs it.</summary>

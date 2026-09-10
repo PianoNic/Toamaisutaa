@@ -61,7 +61,34 @@ public class TokenCleanupTests
         await Assert.That(line.Values["Invitations"]).IsEqualTo(1);
     }
 
+    [Test]
+    public async Task SweepDeletesExpiredMagicLinkTokensAndLeavesLiveOnes()
+    {
+        var passwords = new FakePasswordStore();
+        passwords.MagicLinkTokens.Add(MagicLink("expired", Now.AddMinutes(-1)));
+        passwords.MagicLinkTokens.Add(MagicLink("live", Now.AddMinutes(15)));
+
+        var services = new FakeServiceProvider()
+            .Add<IRefreshTokenStore>(passwords)
+            .Add<IPasswordResetTokenStore>(passwords)
+            .Add<IMagicLinkTokenStore>(passwords);
+
+        await SweepAsync(services);
+
+        await Assert.That(passwords.MagicLinkTokens.Select(token => token.TokenHash)).IsEquivalentTo(["live"]);
+    }
+
     private static ToamaisutaaInvitationToken Invitation(string tokenHash, DateTimeOffset expiresAt) =>
+        new()
+        {
+            Id = Guid.CreateVersion7(Now),
+            UserId = Guid.CreateVersion7(Now),
+            TokenHash = tokenHash,
+            CreatedAt = Now,
+            ExpiresAt = expiresAt,
+        };
+
+    private static ToamaisutaaMagicLinkToken MagicLink(string tokenHash, DateTimeOffset expiresAt) =>
         new()
         {
             Id = Guid.CreateVersion7(Now),

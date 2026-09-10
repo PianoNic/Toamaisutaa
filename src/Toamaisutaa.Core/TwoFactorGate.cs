@@ -49,12 +49,15 @@ internal sealed class TwoFactorGate(
         return enrolment is not { ConfirmedAt: not null };
     }
 
+    // authenticationMethods is what the caller has already proved, replayed into the finished
+    // sign-in's amr. Step-up leaves it empty: it takes its methods from the session it is elevating.
     internal async Task<TwoFactorChallenge> IssueChallengeAsync(
         Guid userId,
         DateTimeOffset now,
         CancellationToken cancellationToken,
         TwoFactorChallengePurpose purpose = TwoFactorChallengePurpose.SignIn,
-        Guid? familyId = null)
+        Guid? familyId = null,
+        string authenticationMethods = "")
     {
         var challenges = Required<ITwoFactorChallengeStore>();
         var lifetime = options.Value.ChallengeLifetime;
@@ -70,6 +73,7 @@ internal sealed class TwoFactorGate(
                 ExpiresAt = now + lifetime,
                 Purpose = purpose,
                 FamilyId = familyId,
+                AuthenticationMethods = authenticationMethods,
             },
             cancellationToken);
 
@@ -166,6 +170,7 @@ internal sealed class TwoFactorGate(
             UserId = stored.UserId,
             UsedRecoveryCode = verification.UsedRecoveryCode,
             RecoveryCodesRunningLow = verification.RecoveryCodesRunningLow,
+            AuthenticationMethods = stored.AuthenticationMethods,
         };
     }
 
@@ -186,6 +191,10 @@ internal readonly record struct ChallengeRedemption
     internal bool UsedRecoveryCode { get; init; }
 
     internal bool RecoveryCodesRunningLow { get; init; }
+
+    /// <summary>What the challenge said had already been proved. Empty or absent means <c>pwd</c>:
+    /// every row written before a magic link could reach a challenge was a password sign-in.</summary>
+    internal string? AuthenticationMethods { get; init; }
 
     internal static ChallengeRedemption Failed(SignInOutcome outcome, Guid? userId = null) =>
         new() { Outcome = outcome, UserId = userId };

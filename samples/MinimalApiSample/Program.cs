@@ -89,6 +89,12 @@ builder.Services.AddToamaisutaaAuthenticationEventSink<LoggingAuditSink>();
 // /auth/email/verify on the wire at all. Comment this line out and both endpoints are gone.
 builder.Services.AddSingleton<IEmailVerificationNotifier, LoggingEmailVerificationNotifier>();
 
+// The same shape again, and the one to be most careful with: this token is not a step towards a
+// session, it is the session. Registering the notifier is what puts /auth/magic-link and
+// /auth/magic-link/verify on the wire, and startup refuses it without the verification notifier
+// above - a link only ever goes to an address somebody has proven.
+builder.Services.AddSingleton<IMagicLinkNotifier, LoggingMagicLinkNotifier>();
+
 // Toamaisutaa's own endpoints already answer 401 for a stale security stamp. This covers YOUR
 // endpoints: anything calling ICurrentUser.GetOrProvisionAsync can meet a token that was issued
 // before a credential changed, and without this it surfaces as a 500 for something the client only
@@ -113,7 +119,8 @@ app.UseAuthorization();
 app.MapToamaisutaaConfiguration();
 
 // POST /auth/login, /auth/refresh, /auth/logout, /auth/register, /auth/password,
-// /auth/password/forgot, /auth/password/reset, /auth/email, /auth/email/verify.
+// /auth/password/forgot, /auth/password/reset, /auth/email, /auth/email/verify,
+// /auth/magic-link, /auth/magic-link/verify.
 app.MapToamaisutaaPasswordEndpoints();
 
 // GET /auth/2fa, POST /auth/2fa/begin, /auth/2fa/confirm, /auth/2fa/disable,
@@ -315,6 +322,21 @@ internal sealed class LoggingEmailVerificationNotifier(ILogger<LoggingEmailVerif
     {
         logger.LogWarning("The gate master reads this one aloud too, at the door it was addressed to.");
         logger.LogWarning("EMAIL VERIFICATION for {Email}: token {Token}", email, verificationToken);
+        return Task.CompletedTask;
+    }
+}
+
+/// <summary>
+/// The same stand-in once more, for the token that IS a sign-in. Verify the address first at
+/// /auth/email, or nothing is ever sent - paste the token into /auth/magic-link/verify and watch a
+/// token pair come back with no password anywhere in it.
+/// </summary>
+internal sealed class LoggingMagicLinkNotifier(ILogger<LoggingMagicLinkNotifier> logger) : IMagicLinkNotifier
+{
+    public Task SendAsync(ToamaisutaaUser user, string magicLinkToken, CancellationToken cancellationToken = default)
+    {
+        logger.LogWarning("This one the gate master would rather whisper. Nothing else here opens a door by itself.");
+        logger.LogWarning("MAGIC LINK for {Email}: token {Token}", user.Email, magicLinkToken);
         return Task.CompletedTask;
     }
 }

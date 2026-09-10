@@ -5,7 +5,12 @@ namespace Toamaisutaa.Core.Tests;
 /// <summary>In-memory credential, refresh-token and reset-token storage, including the unique
 /// identifier constraint the real store gets from its indexes.</summary>
 internal sealed class FakePasswordStore
-    : IPasswordCredentialStore, IRefreshTokenStore, IPasswordResetTokenStore, IInvitationTokenStore, IEmailVerificationTokenStore
+    : IPasswordCredentialStore,
+        IRefreshTokenStore,
+        IPasswordResetTokenStore,
+        IInvitationTokenStore,
+        IEmailVerificationTokenStore,
+        IMagicLinkTokenStore
 {
     internal List<ToamaisutaaPasswordCredential> Credentials { get; } = [];
 
@@ -16,6 +21,8 @@ internal sealed class FakePasswordStore
     internal List<ToamaisutaaInvitationToken> InvitationTokens { get; } = [];
 
     internal List<ToamaisutaaEmailVerificationToken> EmailVerificationTokens { get; } = [];
+
+    internal List<ToamaisutaaMagicLinkToken> MagicLinkTokens { get; } = [];
 
     // ── Credentials ──
 
@@ -197,6 +204,35 @@ internal sealed class FakePasswordStore
 
     Task<int> IEmailVerificationTokenStore.DeleteExpiredAsync(DateTimeOffset expiredBefore, CancellationToken cancellationToken) =>
         Task.FromResult(EmailVerificationTokens.RemoveAll(token => token.ExpiresAt <= expiredBefore));
+
+    // ── Magic-link tokens ──
+
+    public Task CreateAsync(ToamaisutaaMagicLinkToken token, CancellationToken cancellationToken = default)
+    {
+        MagicLinkTokens.Add(token);
+        return Task.CompletedTask;
+    }
+
+    Task<ToamaisutaaMagicLinkToken?> IMagicLinkTokenStore.FindByHashAsync(string tokenHash, CancellationToken cancellationToken) =>
+        Task.FromResult(MagicLinkTokens.FirstOrDefault(token => token.TokenHash == tokenHash));
+
+    Task IMagicLinkTokenStore.MarkConsumedAsync(Guid tokenId, DateTimeOffset consumedAt, CancellationToken cancellationToken)
+    {
+        var token = MagicLinkTokens.First(entry => entry.Id == tokenId);
+        token.ConsumedAt ??= consumedAt;
+        return Task.CompletedTask;
+    }
+
+    Task IMagicLinkTokenStore.InvalidateAllForUserAsync(Guid userId, DateTimeOffset consumedAt, CancellationToken cancellationToken)
+    {
+        foreach (var token in MagicLinkTokens.Where(entry => entry.UserId == userId && entry.ConsumedAt is null))
+            token.ConsumedAt = consumedAt;
+
+        return Task.CompletedTask;
+    }
+
+    Task<int> IMagicLinkTokenStore.DeleteExpiredAsync(DateTimeOffset expiredBefore, CancellationToken cancellationToken) =>
+        Task.FromResult(MagicLinkTokens.RemoveAll(token => token.ExpiresAt <= expiredBefore));
 }
 
 internal sealed class FakeAccessTokenIssuer(TimeProvider timeProvider) : IAccessTokenIssuer
@@ -246,6 +282,24 @@ internal sealed class FakeInvitationNotifier : IInvitationNotifier
     public Task SendAsync(ToamaisutaaUser user, string invitationToken, CancellationToken cancellationToken = default)
     {
         Sent.Add((user.Id, invitationToken));
+        return Task.CompletedTask;
+    }
+}
+
+internal sealed class FakeMagicLinkNotifier : IMagicLinkNotifier
+{
+    internal List<(Guid UserId, string Token)> Sent { get; } = [];
+
+    /// <summary>Set to make the next <see cref="SendAsync"/> throw, so a real notifier failure can
+    /// be simulated without a real SMTP server.</summary>
+    internal Exception? ThrowOnSend { get; set; }
+
+    public Task SendAsync(ToamaisutaaUser user, string magicLinkToken, CancellationToken cancellationToken = default)
+    {
+        if (ThrowOnSend is not null)
+            throw ThrowOnSend;
+
+        Sent.Add((user.Id, magicLinkToken));
         return Task.CompletedTask;
     }
 }

@@ -93,6 +93,18 @@ Content-Type: application/json
 
 { "token": "paste-the-token-from-the-log" }
 
+### Always 204. Nothing is sent unless the address has been verified above first.
+POST {{host}}/auth/magic-link
+Content-Type: application/json
+
+{ "email": "nic@example.com" }
+
+### Paste the token from the log. Answers a token pair with amr saying email rather than pwd.
+POST {{host}}/auth/magic-link/verify
+Content-Type: application/json
+
+{ "token": "paste-the-token-from-the-log" }
+
 ### Revokes the family.
 POST {{host}}/auth/logout
 Content-Type: application/json

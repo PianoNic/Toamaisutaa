@@ -36,6 +36,12 @@ public sealed record ChangeEmailRequest(string NewEmail, string CurrentPassword)
 
 public sealed record VerifyEmailRequest(string Token);
 
+/// <summary>The address a magic link is asked for. Answered identically whether or not it belongs to
+/// anybody, so nothing here is validated back to the caller.</summary>
+public sealed record MagicLinkRequest(string Email);
+
+public sealed record VerifyMagicLinkRequest(string Token);
+
 public sealed record CreateInvitationRequest(string Email);
 
 public sealed record CompleteInvitationRequest(string Token, string UserName, string Password);

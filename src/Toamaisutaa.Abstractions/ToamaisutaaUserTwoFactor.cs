@@ -100,6 +100,18 @@ public class ToamaisutaaTwoFactorChallenge
     /// open.
     /// </remarks>
     public Guid? FamilyId { get; set; }
+
+    /// <summary>
+    /// The RFC 8176 methods already proved when this challenge was minted, space-separated, and the
+    /// ones the finished sign-in's <c>amr</c> is built from.
+    /// </summary>
+    /// <remarks>
+    /// Carried rather than assumed, because there is now more than one way to reach a challenge. A
+    /// magic link proves <c>email</c> and no password was typed, so writing <c>pwd</c> on the way
+    /// out would put a claim on the token that nothing had earned. Empty reads as <c>pwd</c>, which
+    /// is what every row written before this column existed was.
+    /// </remarks>
+    public string AuthenticationMethods { get; set; } = string.Empty;
 }
 
 /// <summary>Which ceremony a challenge belongs to. Not interchangeable.</summary>
