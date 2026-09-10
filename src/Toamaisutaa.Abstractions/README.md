@@ -20,7 +20,7 @@ Everyone else gets it transitively and never has to think about it.
 
 | Type | Is |
 |---|---|
-| `ICurrentUser` | The subject and name from the token, and the local user row if you provision one |
+| `ICurrentUser` | The subject, name, roles and claims from the token, and the local user row if you provision one |
 | `IUserStore`, `IExternalLoginStore` | Reading and writing users and their identity-provider links |
 | `IClaimsProfileMapper` | Turning a `ClaimsPrincipal` into a profile, for issuers that name things unusually |
 | `IProvisioningPolicy` | Whether a first sign-in creates a user, links to an existing one, or is refused |

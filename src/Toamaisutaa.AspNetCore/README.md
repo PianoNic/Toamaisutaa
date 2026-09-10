@@ -24,8 +24,8 @@ out, and no database at all.
 
 - **Authenticated by default**, with an optional admin role and policy. An application can also
   authenticate however it likes and use only the policies.
-- **`ICurrentUser`** - the subject and display name from the token, and the local user row if you
-  provision one.
+- **`ICurrentUser`** - the subject, display name, roles and claims from the token, and the local
+  user row if you provision one.
 - **`GET /api/app`** - the runtime OIDC configuration a SPA reads at startup, so the authority and
   client id live in one place rather than being baked into a bundle.
 

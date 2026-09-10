@@ -15,7 +15,8 @@ namespace Toamaisutaa.AspNetCore;
 internal sealed class HttpContextCurrentUser(
     IHttpContextAccessor accessor,
     IServiceProvider services,
-    IOptions<ToamaisutaaProvisioningOptions> options) : ICurrentUser
+    IOptions<ToamaisutaaProvisioningOptions> options,
+    IOptions<ToamaisutaaOidcOptions> oidcOptions) : ICurrentUser
 {
     private ToamaisutaaUser? _provisioned;
 
@@ -31,6 +32,33 @@ internal sealed class HttpContextCurrentUser(
         ?? Find(ClaimTypes.Name)
         ?? Find(options.Value.ClaimNames.Email)
         ?? Find(ClaimTypes.Email);
+
+    /// <summary>
+    /// The configured claim first, then <see cref="ClaimTypes.Role"/> - the same fallback
+    /// <see cref="Subject"/> and <see cref="Name"/> make, and for the same reason: a principal that
+    /// did not come from this package's bearer pipeline carries the .NET type instead, and that is
+    /// also the one <c>RequireRole</c> would have read there.
+    /// </summary>
+    public IReadOnlyList<string> Roles
+    {
+        get
+        {
+            var principal = Principal;
+            if (principal is null)
+                return [];
+
+            var roles = new List<string>();
+
+            Collect(roles, principal, oidcOptions.Value.RoleClaim);
+            Collect(roles, principal, ClaimTypes.Role);
+
+            return roles;
+        }
+    }
+
+    public bool IsInRole(string role) => Roles.Contains(role, StringComparer.Ordinal);
+
+    public string? FindClaim(string type) => Find(type);
 
     public async Task<ToamaisutaaUser> GetOrProvisionAsync(CancellationToken cancellationToken = default)
     {
@@ -76,5 +104,16 @@ internal sealed class HttpContextCurrentUser(
         }
 
         return null;
+    }
+
+    // Deduplicated because the two claim types can name the same thing - a role claim configured as
+    // ClaimTypes.Role, or a principal enriched from userinfo with what the token already carried.
+    private static void Collect(List<string> roles, ClaimsPrincipal principal, string claimType)
+    {
+        foreach (var claim in principal.FindAll(claimType))
+        {
+            if (!string.IsNullOrWhiteSpace(claim.Value) && !roles.Contains(claim.Value, StringComparer.Ordinal))
+                roles.Add(claim.Value);
+        }
     }
 }

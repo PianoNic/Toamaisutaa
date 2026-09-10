@@ -27,6 +27,18 @@ internal static class Http
             ? value.GetString()
             : null;
 
+    public static bool? Bool(this JsonElement element, string name) =>
+        element.TryGetProperty(name, out var value) && value.ValueKind is JsonValueKind.True or JsonValueKind.False
+            ? value.GetBoolean()
+            : null;
+
+    /// <summary>The strings in an array property. Empty when the property is missing, so a test
+    /// asserting emptiness checks the name is there as well.</summary>
+    public static IReadOnlyList<string> Strings(this JsonElement element, string name) =>
+        element.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.Array
+            ? [.. value.EnumerateArray().Select(item => item.GetString()!)]
+            : [];
+
     public static bool Has(this JsonElement element, string name) =>
         element.TryGetProperty(name, out var value) && value.ValueKind is not JsonValueKind.Null;
 

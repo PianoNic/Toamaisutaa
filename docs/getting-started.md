@@ -79,6 +79,43 @@ app.MapGet("/api/me", async (ICurrentUser currentUser, CancellationToken cancell
 The row is created on the first request that ever carries that subject, and read - not rewritten -
 on every request after. See [Storage and migrations](/storage).
 
+## Roles and claims without `HttpContext`
+
+`ICurrentUser` also reports what the token says about the caller, so code that is not an endpoint
+can answer "is this an admin" without reaching for `HttpContext` - which is the thing the interface
+exists to avoid:
+
+```csharp
+public sealed class ArchiveService(ICurrentUser currentUser)
+{
+    public Task PurgeAsync()
+    {
+        if (!currentUser.IsInRole("archivist"))
+            throw new UnauthorizedAccessException();
+
+        var tenant = currentUser.FindClaim("tenant_id");
+        ...
+    }
+}
+```
+
+- **`Roles`** reads the claim `Oidc:RoleClaim` names - `roles` by default, `groups` on Pocket ID,
+  Authentik and Entra - and falls back to .NET's own role claim type for a principal that did not
+  come from this package's bearer pipeline. Empty on an anonymous request, and empty for a locally
+  issued token until an
+  [`IUserRoleProvider`](/customizing-password-login#local-accounts-have-no-roles) supplies some.
+- **`IsInRole`** compares ordinally, the same comparison `RequireRole` makes.
+- **`FindClaim`** takes a raw JWT claim type - `tenant_id`, not the WS-Federation URI - because
+  inbound claim mapping is off. It returns the first non-empty value.
+
+This is a read of the token, not an authorization decision. It answers "what does this caller
+carry"; `[Authorize]` answers "may this caller in", and a check that only happens inside a service
+is one an unprotected route still skips.
+
+The whole set is available on a project that references only `Toamaisutaa.Abstractions`. An
+implementation of your own - a worker, a test double - inherits an empty answer for all three and
+only overrides what it can actually answer.
+
 ## The runtime configuration endpoint
 
 `MapToamaisutaaConfiguration()` serves the authority, client id, scope and redirect URIs at
