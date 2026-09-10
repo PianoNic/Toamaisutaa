@@ -27,6 +27,10 @@ public class OpenApiDocumentHttpTests
 
     private const string DiscoveryPath = "/issuer/.well-known/openid-configuration";
 
+    private const string PublicAuthority = "https://id.example.test/issuer";
+
+    private const string InternalAuthority = "http://localhost/internal";
+
     /// <summary>
     /// The issuer, served by the application under test. Its endpoints are deliberately on another
     /// host, the way a real discovery document's are, so an assertion on them cannot pass by
@@ -47,6 +51,37 @@ public class OpenApiDocumentHttpTests
         settings["Oidc:RequireHttpsMetadata"] = "false";
         settings["Oidc:Scope"] = "openid profile roles";
     }
+
+    /// <summary>
+    /// The same issuer at two addresses: a public one the browser has and an internal one only this
+    /// process can reach. The docker-compose shape, and the only one where what the fetch returns
+    /// and what the document may carry can differ.
+    /// </summary>
+    private static Action<Dictionary<string, string?>> ThroughAnInternalAuthority(string internalAuthority) =>
+        settings =>
+        {
+            settings["Oidc:Authority"] = PublicAuthority;
+            settings["Oidc:InternalAuthority"] = internalAuthority;
+            settings["Oidc:RequireHttpsMetadata"] = "false";
+            settings["Oidc:Scope"] = "openid profile";
+        };
+
+    private static Action<IEndpointRouteBuilder> MapInternalIssuerMetadata(
+        string internalAuthority,
+        string authorization,
+        string token) =>
+        endpoints => endpoints.MapGet(
+            $"{new Uri(internalAuthority).AbsolutePath.TrimEnd('/')}/.well-known/openid-configuration",
+            () => Results.Json(new Dictionary<string, string>
+            {
+                ["issuer"] = PublicAuthority,
+                ["authorization_endpoint"] = authorization,
+                ["token_endpoint"] = token,
+            }))
+        .AllowAnonymous();
+
+    private static JsonElement AuthorizationCodeFlow(JsonElement document) =>
+        Schemes(document).GetProperty("OAuth2").GetProperty("flows").GetProperty("authorizationCode");
 
     private static async Task<JsonElement> Document(TestApp app)
     {
@@ -164,5 +199,92 @@ public class OpenApiDocumentHttpTests
         await Assert.That(Schemes(document).Names()).IsEquivalentTo(new[] { "Bearer" });
 
         await app.StopAsync();
+    }
+
+    [Test]
+    public async Task An_endpoint_answered_at_the_internal_address_is_moved_onto_the_public_authority()
+    {
+        // What Keycloak with no KC_HOSTNAME answers the internal hop with: its own endpoint URLs
+        // built from the Host header the container was reached at. Written into the document
+        // unchanged, they are an Authorize button pointing at a host no browser can resolve.
+        await using var app = await TestApp.StartAsync(
+            MapInternalIssuerMetadata(
+                InternalAuthority,
+                $"{InternalAuthority}/protocol/openid-connect/auth",
+                $"{InternalAuthority}/protocol/openid-connect/token"),
+            ThroughAnInternalAuthority(InternalAuthority),
+            includeOpenApi: true);
+
+        var flow = AuthorizationCodeFlow(await Document(app));
+
+        await Assert.That(flow.String("authorizationUrl"))
+            .IsEqualTo($"{PublicAuthority}/protocol/openid-connect/auth");
+        await Assert.That(flow.String("tokenUrl")).IsEqualTo($"{PublicAuthority}/protocol/openid-connect/token");
+        await Assert.That(flow.String("refreshUrl")).IsEqualTo($"{PublicAuthority}/protocol/openid-connect/token");
+    }
+
+    /// <summary>
+    /// Two ways an endpoint can fail to be the internal authority's, one per guard: another host,
+    /// and the same host outside the path the internal authority names. Both are addresses the
+    /// browser can already reach, and an issuer whose authorization endpoint lives on a login domain
+    /// of its own is ordinary - rewriting either onto <c>Oidc:Authority</c> would break a deployment
+    /// that works today.
+    /// </summary>
+    [Test]
+    [Arguments("http://localhost", "https://login.example.test/authorize", "https://login.example.test/token")]
+    [Arguments(InternalAuthority, "http://localhost/other/authorize", "http://localhost/other/token")]
+    public async Task An_endpoint_that_is_not_the_internal_authoritys_is_left_exactly_as_the_issuer_gave_it(
+        string internalAuthority,
+        string authorization,
+        string token)
+    {
+        await using var app = await TestApp.StartAsync(
+            MapInternalIssuerMetadata(internalAuthority, authorization, token),
+            ThroughAnInternalAuthority(internalAuthority),
+            includeOpenApi: true);
+
+        var flow = AuthorizationCodeFlow(await Document(app));
+
+        await Assert.That(flow.String("authorizationUrl")).IsEqualTo(authorization);
+        await Assert.That(flow.String("tokenUrl")).IsEqualTo(token);
+    }
+
+    [Test]
+    public async Task The_issuer_is_asked_once_however_many_readers_the_document_has()
+    {
+        var fetches = 0;
+
+        await using var app = await TestApp.StartAsync(
+            endpoints => endpoints.MapGet(DiscoveryPath, () =>
+            {
+                Interlocked.Increment(ref fetches);
+
+                return Results.Json(new Dictionary<string, string>
+                {
+                    ["issuer"] = Authority,
+                    ["authorization_endpoint"] = "https://id.example.test/authorize",
+                    ["token_endpoint"] = "https://id.example.test/token",
+                });
+            })
+            .AllowAnonymous(),
+            WithIssuer,
+            includeOpenApi: true);
+
+        // The document endpoint is anonymous wherever it is mapped, so without a cache whoever is
+        // calling it decides how hard this process leans on the identity provider.
+        await Document(app);
+        await Document(app);
+        await Document(app);
+
+        await Assert.That(fetches).IsEqualTo(1);
+
+        // Held for five minutes, not forever: a redeployed issuer is picked up without restarting
+        // the application.
+        app.Time.Advance(TimeSpan.FromMinutes(6));
+
+        var flow = AuthorizationCodeFlow(await Document(app));
+
+        await Assert.That(fetches).IsEqualTo(2);
+        await Assert.That(flow.String("authorizationUrl")).IsEqualTo("https://id.example.test/authorize");
     }
 }

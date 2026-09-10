@@ -170,8 +170,13 @@ dotnet add package Toamaisutaa.OpenApi
 ```csharp
 builder.Services.AddToamaisutaaOpenApi(builder.Configuration);   // section "Oidc"
 
-app.MapOpenApi().AllowAnonymous();
+if (app.Environment.IsDevelopment())
+    app.MapOpenApi().AllowAnonymous();
 ```
+
+Anonymous, because an API explorer reads the document before anybody has a token. Development-only
+because the document describes every endpoint you have, and publishing it is a decision rather than
+a default - map it outside development when you meant to.
 
 That puts four things in the document:
 
@@ -189,6 +194,13 @@ If your issuer cannot be reached while the document is generated, the `OAuth2` s
 the rest of the document is unchanged, and one warning line says which address failed. With no
 `Oidc:Authority` configured at all there is no authorization server to describe, and the `Bearer`
 scheme stands alone - which is exactly right for a deployment that only issues its own tokens.
+
+The discovery answer is held for five minutes, so how often this process reaches for your issuer does
+not depend on how often the document is read. And where `Oidc:InternalAuthority` is set, an endpoint
+the issuer answered with under that address is moved onto `Oidc:Authority` before it reaches the
+document: Keycloak with no `KC_HOSTNAME` builds its endpoint URLs from the Host header it was reached
+at, and the browser cannot resolve a container name. Endpoints on any other host are left as they
+came.
 
 To render it, `Scalar.AspNetCore` is one line:
 
