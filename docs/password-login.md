@@ -30,6 +30,8 @@ and all three are checked at startup rather than at the first request.
 | POST | `/auth/password` | 204. Authenticated. Sets a first password or changes an existing one |
 | POST | `/auth/password/forgot` | 204, always |
 | POST | `/auth/password/reset` | 204 or 400 |
+| POST | `/auth/email` | 204, 400, or 409. Authenticated. Only mapped when an `IEmailVerificationNotifier` is registered |
+| POST | `/auth/email/verify` | 204, 400, or 409. Only mapped when an `IEmailVerificationNotifier` is registered |
 | POST | `/auth/users` | 201, 400, or 409. Authenticated. Only mapped when an `IAdminPasswordIssuedNotifier` is registered |
 | POST | `/auth/users/{userId}/password` | 204 or 400. Authenticated. Only mapped when an `IAdminPasswordIssuedNotifier` is registered |
 | POST | `/auth/invitations` | 201 or 400. Authenticated. Only mapped when an `IInvitationNotifier` is registered |
@@ -114,6 +116,22 @@ identity provider owns alike.
 
 ```json
 { "token": "the token from the notifier", "newPassword": "the new one" }
+```
+
+**`POST /auth/email`** - authenticated, asks for a verification link and moves nothing yet. The link
+goes to `newEmail` and only there; the account changes when it is redeemed. `currentPassword` is
+required, including when `newEmail` is the address the account already has, which is how a link is
+asked for again. Answers 204, 400, or 409 - see [Email verification](/email-verification).
+
+```json
+{ "newEmail": "ada@newplace.example", "currentPassword": "the one they signed in with" }
+```
+
+**`POST /auth/email/verify`** - anonymous, but only usable with a valid token. Writes the address the
+token names and stamps it confirmed. Answers 204, 400, or 409.
+
+```json
+{ "token": "the token from the notifier" }
 ```
 
 **`POST /auth/users`** - authenticated, provisions an account on someone else's behalf. `password` is
@@ -204,7 +222,9 @@ A taken user name answers 409. Hiding that needs an email round trip, and email 
 deliberately not in this package. Registration is off by default; turning it on accepts this.
 
 That email round trip - and two other ways to get someone into an account without open
-registration - are their own page: [Provisioning accounts](/provisioning-accounts).
+registration - are their own page: [Provisioning accounts](/provisioning-accounts). Proving that an
+address belongs to whoever typed it, and changing it afterwards, is
+[Email verification](/email-verification).
 
 ### Revoking sessions means local sessions
 
@@ -214,8 +234,8 @@ identity provider issued keeps working until it expires, because we cannot revok
 ### Expired tokens accumulate unless you sweep them
 
 `AddToamaisutaaTokenCleanup()` runs a periodic delete over every expiring row this package writes -
-refresh tokens, reset tokens, invitation tokens, and the two-factor challenge and trusted-device
-rows when those are configured. Without it, plan to call `DeleteExpiredAsync` on each of those
+refresh tokens, reset tokens, invitation tokens, email verification tokens, and the two-factor
+challenge and trusted-device rows when those are configured. Without it, plan to call `DeleteExpiredAsync` on each of those
 stores from your own scheduler.
 
 ## Refresh tokens
@@ -302,6 +322,8 @@ hands you - rather than expecting to construct one.
 | `LocalLogin:MaximumPasswordLength` | `128` | Not a strength rule - a bound on an anonymous endpoint |
 | `LocalLogin:PasswordResetTokenLifetime` | `01:00:00` | Single use |
 | `LocalLogin:InvitationTokenLifetime` | `7.00:00:00` | Single use |
+| `LocalLogin:EmailVerificationTokenLifetime` | `1.00:00:00` | Single use |
+| `LocalLogin:RequireVerifiedEmailForPasswordReset` | `false` | See [email verification](/email-verification#requiring-a-verified-address-before-a-password-reset) before turning it on |
 | `LocalLogin:AllowSelfRegistration` | `false` | When false the endpoint is not mapped at all |
 | `LocalLogin:EndpointPrefix` | `/auth` | |
 | `LocalLogin:RateLimit:Enabled` | `true` | Per caller address, fixed window |

@@ -28,6 +28,14 @@ public class ToamaisutaaPasswordCredential
     /// both supported providers treat as distinct rather than colliding.</summary>
     public string? NormalizedEmail { get; set; }
 
+    /// <summary>
+    /// When somebody redeemed a token mailed to <see cref="Email"/>, and null until then. On the
+    /// credential rather than the user because it belongs to the login identifier: the address that
+    /// was proven is the one someone can sign in and reset a password with, not whatever an
+    /// identity provider last wrote onto the profile.
+    /// </summary>
+    public DateTimeOffset? EmailConfirmedAt { get; set; }
+
     /// <summary>A self-describing PHC string naming the algorithm and its parameters, so changing
     /// either is a rehash on next login rather than a schema change.</summary>
     public string PasswordHash { get; set; } = default!;

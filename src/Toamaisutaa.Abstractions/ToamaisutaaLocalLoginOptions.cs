@@ -96,8 +96,30 @@ public sealed class ToamaisutaaLocalLoginOptions
     /// </summary>
     public TimeSpan InvitationTokenLifetime { get; set; } = TimeSpan.FromDays(7);
 
-    /// <summary>How often the opt-in cleanup service deletes expired refresh, reset and invitation
-    /// rows.</summary>
+    /// <summary>
+    /// Longer than <see cref="PasswordResetTokenLifetime"/> for the same reason the invitation
+    /// lifetime is: nobody is locked out while this link sits unread, so there is no hurry, and a
+    /// verification mail is routinely opened the following morning.
+    /// </summary>
+    public TimeSpan EmailVerificationTokenLifetime { get; set; } = TimeSpan.FromDays(1);
+
+    /// <summary>
+    /// Off by default. When on, <c>/auth/password/forgot</c> issues nothing for a credential whose
+    /// address was never verified, so a reset link can only ever be sent to an address somebody has
+    /// proven they hold.
+    /// </summary>
+    /// <remarks>
+    /// It closes a real hole and opens a real one, so read both. An unverified address that is a
+    /// typo, or that somebody else now owns, is an address a reset link should never reach. But
+    /// every account already in the database has <see cref="ToamaisutaaPasswordCredential.EmailConfirmedAt"/>
+    /// null, so switching this on takes password reset away from all of them at once - and the only
+    /// way back is <c>/auth/email</c>, which needs the password they came here without. Verify the
+    /// existing accounts first, or expect to reset them by hand.
+    /// </remarks>
+    public bool RequireVerifiedEmailForPasswordReset { get; set; }
+
+    /// <summary>How often the opt-in cleanup service deletes expired refresh, reset, invitation and
+    /// email verification rows.</summary>
     public TimeSpan TokenCleanupInterval { get; set; } = TimeSpan.FromHours(6);
 
     // ── Endpoints ──

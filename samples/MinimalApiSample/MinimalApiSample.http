@@ -75,6 +75,19 @@ Content-Type: application/json
 
 { "token": "paste-the-token-from-the-log", "newPassword": "a whole new password" }
 
+### Nothing moves yet: the link goes to the new address, and the account changes when it comes back.
+POST {{host}}/auth/email
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+{ "newEmail": "nic@newplace.example", "currentPassword": "correct horse battery" }
+
+### The token is written to the log by the sample's notifier. Paste it here to move the address.
+POST {{host}}/auth/email/verify
+Content-Type: application/json
+
+{ "token": "paste-the-token-from-the-log" }
+
 ### Revokes the family.
 POST {{host}}/auth/logout
 Content-Type: application/json

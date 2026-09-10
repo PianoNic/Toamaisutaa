@@ -44,6 +44,13 @@ public sealed class ToamaisutaaSmtpEmailOptions
     public string? InvitationLinkTemplate { get; set; }
 
     /// <summary>
+    /// The verification link, with <c>{token}</c> replaced by the raw token. Required only when
+    /// <c>AddToamaisutaaSmtpEmailVerification</c> is called and the default
+    /// <see cref="IEmailVerificationEmailTemplate"/> is the one in use.
+    /// </summary>
+    public string? EmailVerificationLinkTemplate { get; set; }
+
+    /// <summary>
     /// Where someone signs in, put at the end of the admin-issued password email. Optional and
     /// checked nowhere: a credentials email is still useful without it, and the person reading one
     /// was usually told what they are signing in to by whoever provisioned the account.

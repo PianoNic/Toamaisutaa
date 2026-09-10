@@ -5,7 +5,7 @@ namespace Toamaisutaa.Core.Tests;
 /// <summary>In-memory credential, refresh-token and reset-token storage, including the unique
 /// identifier constraint the real store gets from its indexes.</summary>
 internal sealed class FakePasswordStore
-    : IPasswordCredentialStore, IRefreshTokenStore, IPasswordResetTokenStore, IInvitationTokenStore
+    : IPasswordCredentialStore, IRefreshTokenStore, IPasswordResetTokenStore, IInvitationTokenStore, IEmailVerificationTokenStore
 {
     internal List<ToamaisutaaPasswordCredential> Credentials { get; } = [];
 
@@ -14,6 +14,8 @@ internal sealed class FakePasswordStore
     internal List<ToamaisutaaPasswordResetToken> ResetTokens { get; } = [];
 
     internal List<ToamaisutaaInvitationToken> InvitationTokens { get; } = [];
+
+    internal List<ToamaisutaaEmailVerificationToken> EmailVerificationTokens { get; } = [];
 
     // ── Credentials ──
 
@@ -162,6 +164,35 @@ internal sealed class FakePasswordStore
 
     Task<int> IInvitationTokenStore.DeleteExpiredAsync(DateTimeOffset expiredBefore, CancellationToken cancellationToken) =>
         Task.FromResult(InvitationTokens.RemoveAll(token => token.ExpiresAt <= expiredBefore));
+
+    // ── Email verification tokens ──
+
+    public Task CreateAsync(ToamaisutaaEmailVerificationToken token, CancellationToken cancellationToken = default)
+    {
+        EmailVerificationTokens.Add(token);
+        return Task.CompletedTask;
+    }
+
+    Task<ToamaisutaaEmailVerificationToken?> IEmailVerificationTokenStore.FindByHashAsync(string tokenHash, CancellationToken cancellationToken) =>
+        Task.FromResult(EmailVerificationTokens.FirstOrDefault(token => token.TokenHash == tokenHash));
+
+    Task IEmailVerificationTokenStore.MarkConsumedAsync(Guid tokenId, DateTimeOffset consumedAt, CancellationToken cancellationToken)
+    {
+        var token = EmailVerificationTokens.First(entry => entry.Id == tokenId);
+        token.ConsumedAt ??= consumedAt;
+        return Task.CompletedTask;
+    }
+
+    Task IEmailVerificationTokenStore.InvalidateAllForUserAsync(Guid userId, DateTimeOffset consumedAt, CancellationToken cancellationToken)
+    {
+        foreach (var token in EmailVerificationTokens.Where(entry => entry.UserId == userId && entry.ConsumedAt is null))
+            token.ConsumedAt = consumedAt;
+
+        return Task.CompletedTask;
+    }
+
+    Task<int> IEmailVerificationTokenStore.DeleteExpiredAsync(DateTimeOffset expiredBefore, CancellationToken cancellationToken) =>
+        Task.FromResult(EmailVerificationTokens.RemoveAll(token => token.ExpiresAt <= expiredBefore));
 }
 
 internal sealed class FakeAccessTokenIssuer(TimeProvider timeProvider) : IAccessTokenIssuer
@@ -211,6 +242,19 @@ internal sealed class FakeInvitationNotifier : IInvitationNotifier
     public Task SendAsync(ToamaisutaaUser user, string invitationToken, CancellationToken cancellationToken = default)
     {
         Sent.Add((user.Id, invitationToken));
+        return Task.CompletedTask;
+    }
+}
+
+internal sealed class FakeEmailVerificationNotifier : IEmailVerificationNotifier
+{
+    /// <summary>The address is recorded alongside the token, because where the link was sent is the
+    /// half of this that decides whether the flow is sound.</summary>
+    internal List<(Guid UserId, string Email, string Token)> Sent { get; } = [];
+
+    public Task SendAsync(ToamaisutaaUser user, string email, string verificationToken, CancellationToken cancellationToken = default)
+    {
+        Sent.Add((user.Id, email, verificationToken));
         return Task.CompletedTask;
     }
 }

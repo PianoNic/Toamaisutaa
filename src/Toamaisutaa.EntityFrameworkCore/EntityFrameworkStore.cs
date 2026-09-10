@@ -124,6 +124,21 @@ internal sealed class EntityFrameworkStore<TContext>(TContext context, TimeProvi
                 cancellationToken);
     }
 
+    public async Task SetEmailAsync(Guid userId, string email, CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(email);
+
+        // The display name is left alone, unlike SetUserNameAsync: an address is not a name, and
+        // overwriting one somebody chose with their mailbox would be a surprise.
+        await context.Set<ToamaisutaaUser>()
+            .Where(user => user.Id == userId)
+            .ExecuteUpdateAsync(
+                setters => setters
+                    .SetProperty(user => user.Email, email)
+                    .SetProperty(user => user.UpdatedAt, timeProvider.GetUtcNow()),
+                cancellationToken);
+    }
+
     /// <summary>
     /// Every user gets one from the moment the row exists, including one provisioned from an
     /// identity provider that will never have a password. A null stamp compares equal to nothing

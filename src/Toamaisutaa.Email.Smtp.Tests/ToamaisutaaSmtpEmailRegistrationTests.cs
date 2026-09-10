@@ -19,22 +19,45 @@ public class ToamaisutaaSmtpEmailRegistrationTests
             options.From = "noreply@example.com";
             options.PasswordResetLinkTemplate = "https://app.example.com/reset?token={token}";
             options.InvitationLinkTemplate = "https://app.example.com/invite?token={token}";
+            options.EmailVerificationLinkTemplate = "https://app.example.com/verify?token={token}";
         });
 
         return services;
     }
 
-    // Registering an IInvitationNotifier or an IAdminPasswordIssuedNotifier is what maps
-    // /auth/invitations and /auth/users at all. Installing this package for reset mail must not put
-    // four endpoints on the wire that nobody asked for.
+    // Registering an IInvitationNotifier, an IEmailVerificationNotifier or an
+    // IAdminPasswordIssuedNotifier is what maps /auth/invitations, /auth/email and /auth/users at
+    // all. Installing this package for reset mail must not put six endpoints on the wire that
+    // nobody asked for.
     [Test]
-    public async Task TheResetRegistrationBringsNeitherOfTheOtherTwoNotifiers()
+    public async Task TheResetRegistrationBringsNoneOfTheOtherThreeNotifiers()
     {
         using var provider = Services().BuildServiceProvider();
 
         await Assert.That(provider.GetService<IPasswordResetNotifier>()).IsNotNull();
         await Assert.That(provider.GetService<IInvitationNotifier>()).IsNull();
+        await Assert.That(provider.GetService<IEmailVerificationNotifier>()).IsNull();
         await Assert.That(provider.GetService<IAdminPasswordIssuedNotifier>()).IsNull();
+    }
+
+    [Test]
+    public async Task EmailVerificationRegistersTheSmtpNotifier()
+    {
+        using var provider = Services().AddToamaisutaaSmtpEmailVerification().BuildServiceProvider();
+
+        await Assert.That(provider.GetService<IEmailVerificationNotifier>()).IsTypeOf<SmtpEmailVerificationNotifier>();
+        await Assert.That(provider.GetService<IEmailVerificationEmailTemplate>()).IsTypeOf<DefaultEmailVerificationEmailTemplate>();
+    }
+
+    [Test]
+    public async Task AnEmailVerificationNotifierTheConsumerRegisteredWins()
+    {
+        var services = Services();
+        services.AddSingleton<IEmailVerificationNotifier, FakeEmailVerificationNotifier>();
+
+        using var provider = services.AddToamaisutaaSmtpEmailVerification().BuildServiceProvider();
+
+        await Assert.That(provider.GetService<IEmailVerificationNotifier>()).IsTypeOf<FakeEmailVerificationNotifier>();
     }
 
     [Test]
@@ -91,6 +114,12 @@ public class ToamaisutaaSmtpEmailRegistrationTests
     private sealed class FakeInvitationNotifier : IInvitationNotifier
     {
         public Task SendAsync(ToamaisutaaUser user, string invitationToken, CancellationToken cancellationToken = default) =>
+            Task.CompletedTask;
+    }
+
+    private sealed class FakeEmailVerificationNotifier : IEmailVerificationNotifier
+    {
+        public Task SendAsync(ToamaisutaaUser user, string email, string verificationToken, CancellationToken cancellationToken = default) =>
             Task.CompletedTask;
     }
 

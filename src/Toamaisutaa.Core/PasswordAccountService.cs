@@ -11,6 +11,7 @@ internal sealed class PasswordAccountService(
     IRefreshTokenStore refreshTokens,
     IPasswordResetTokenStore resetTokens,
     IInvitationTokenStore invitationTokens,
+    IEmailVerificationTokenStore emailVerificationTokens,
     IPasswordHasher hasher,
     IPasswordValidator validator,
     IPasswordResetNotifier notifier,
@@ -135,6 +136,11 @@ internal sealed class PasswordAccountService(
 
         await events.PublishAsync(new PasswordChanged { OccurredAt = now, UserId = userId }, cancellationToken);
 
+        // An outstanding change of address is a credential in flight too: whoever was in this
+        // account a moment ago may have pointed it at a mailbox of their own, and the link is still
+        // sitting there.
+        await emailVerificationTokens.InvalidateAllForUserAsync(userId, now, cancellationToken);
+
         return new AccountResult { Succeeded = true, UserId = userId };
     }
 
@@ -235,6 +241,7 @@ internal sealed class PasswordAccountService(
         await RevokeAllSessionsAsync(userId, "admin-password-set", now, cancellationToken);
         await trustedDevices.RevokeAllAsync(userId, "admin-password-set", now, cancellationToken);
         await resetTokens.InvalidateAllForUserAsync(userId, now, cancellationToken);
+        await emailVerificationTokens.InvalidateAllForUserAsync(userId, now, cancellationToken);
 
         await events.PublishAsync(
             new PasswordChanged { OccurredAt = now, UserId = userId, SetByAdministrator = true },
@@ -243,6 +250,127 @@ internal sealed class PasswordAccountService(
         logger.LogInformation("Admin set the password for user {UserId}; all local sessions revoked.", userId);
 
         return new AccountResult { Succeeded = true, UserId = userId };
+    }
+
+    public async Task<AccountResult> RequestEmailChangeAsync(
+        Guid userId,
+        string newEmail,
+        string currentPassword,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(newEmail);
+        ArgumentNullException.ThrowIfNull(currentPassword);
+
+        if (string.IsNullOrWhiteSpace(newEmail))
+            return AccountResult.Failure("Give an email address.");
+
+        var user = await users.FindByIdAsync(userId, cancellationToken);
+        if (user is null)
+            return AccountResult.Failure("That account no longer exists.");
+
+        var verificationNotifier = ResolveEmailVerificationNotifier();
+        var credential = await credentials.FindByUserIdAsync(userId, cancellationToken);
+
+        if (credential is null)
+        {
+            // No local credential means no local email to change: the address on the profile belongs
+            // to the identity provider that wrote it, and changing it here would be overwritten on
+            // the next sign-in.
+            return AccountResult.Failure("This account has no local password, so its email address is not ours to change.");
+        }
+
+        if (hasher.Verify(currentPassword, credential.PasswordHash) == PasswordVerificationResult.Failed)
+        {
+            logger.LogWarning("Email change refused for user {UserId}: the current password is wrong.", userId);
+            return AccountResult.Failure("Your current password is not correct.");
+        }
+
+        var trimmed = newEmail.Trim();
+        var normalized = Normalizer.Normalize(trimmed);
+
+        // Checked here as well as on redemption. Doing it only on redemption would mail a link that
+        // cannot work, and the person holding it has no way to tell that from a broken link.
+        var holder = await credentials.FindByNormalizedEmailAsync(normalized, cancellationToken);
+        if (holder is not null && holder.UserId != userId)
+        {
+            logger.LogInformation("Email change refused for user {UserId}: another local account already uses that address.", userId);
+            return AccountResult.Taken("That email address is already in use.");
+        }
+
+        var now = timeProvider.GetUtcNow();
+
+        // Asking for a second address retires the link sent to the first, so only the most recent
+        // request can ever be redeemed.
+        await emailVerificationTokens.InvalidateAllForUserAsync(userId, now, cancellationToken);
+
+        var raw = SecureTokens.Create();
+
+        await emailVerificationTokens.CreateAsync(
+            new ToamaisutaaEmailVerificationToken
+            {
+                Id = Guid.CreateVersion7(now),
+                UserId = userId,
+                Email = trimmed,
+                TokenHash = SecureTokens.HashToken(raw),
+                CreatedAt = now,
+                ExpiresAt = now + options.Value.EmailVerificationTokenLifetime,
+            },
+            cancellationToken);
+
+        await verificationNotifier.SendAsync(user, trimmed, raw, cancellationToken);
+
+        logger.LogInformation("Email verification token issued for user {UserId} and handed to the notifier.", userId);
+
+        return new AccountResult { Succeeded = true, UserId = userId };
+    }
+
+    public async Task<AccountResult> VerifyEmailAsync(string verificationToken, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(verificationToken);
+
+        var now = timeProvider.GetUtcNow();
+        var stored = await emailVerificationTokens.FindByHashAsync(SecureTokens.HashToken(verificationToken), cancellationToken);
+
+        // One message for every way this can fail, the same reasoning ResetPasswordAsync uses.
+        if (stored is null || stored.ConsumedAt is not null || stored.ExpiresAt <= now)
+        {
+            logger.LogWarning("Email verification refused: the token is unknown, already used or expired.");
+            return AccountResult.Failure("That verification link is no longer valid. Request a new one.");
+        }
+
+        var credential = await credentials.FindByUserIdAsync(stored.UserId, cancellationToken);
+        if (credential is null)
+            return AccountResult.Failure("That verification link is no longer valid. Request a new one.");
+
+        var normalized = Normalizer.Normalize(stored.Email);
+
+        // Checked again, because the link may have sat in a mailbox for a day while somebody else
+        // took the address. The unique index would answer this too, as an exception rather than a
+        // sentence the person can read.
+        var holder = await credentials.FindByNormalizedEmailAsync(normalized, cancellationToken);
+        if (holder is not null && holder.UserId != stored.UserId)
+        {
+            logger.LogInformation("Email verification refused for user {UserId}: another local account now uses that address.", stored.UserId);
+            return AccountResult.Taken("That email address is already in use.");
+        }
+
+        credential.Email = stored.Email;
+        credential.NormalizedEmail = normalized;
+        credential.EmailConfirmedAt = now;
+        credential.UpdatedAt = now;
+
+        await credentials.UpdateAsync(credential, cancellationToken);
+        await emailVerificationTokens.MarkConsumedAsync(stored.Id, now, cancellationToken);
+        await emailVerificationTokens.InvalidateAllForUserAsync(stored.UserId, now, cancellationToken);
+
+        // The profile field follows the login identifier, so the reset and invitation notifiers stop
+        // addressing mail to where this account used to be. Nothing else moves: sessions stay alive,
+        // because proving an address is not a credential change.
+        await users.SetEmailAsync(stored.UserId, stored.Email, cancellationToken);
+
+        logger.LogInformation("Email verified for user {UserId}.", stored.UserId);
+
+        return new AccountResult { Succeeded = true, UserId = stored.UserId };
     }
 
     public async Task<AccountResult> CreateInvitationAsync(string email, CancellationToken cancellationToken = default)
@@ -376,6 +504,20 @@ internal sealed class PasswordAccountService(
         if (user is null)
             return PasswordResetRequestOutcome.UnknownEmail;
 
+        if (options.Value.RequireVerifiedEmailForPasswordReset && credential.EmailConfirmedAt is null)
+        {
+            // Told apart in the log and nowhere else, the same as the two cases above. This is the
+            // one that looks like a bug from the outside: the account exists, it is local, and no
+            // mail arrives - so the line has to say which option did it.
+            logger.LogInformation(
+                "Password reset requested for user {UserId}, whose email address has never been verified, and "
+                + "LocalLogin:RequireVerifiedEmailForPasswordReset is on. No email sent; the address has to be "
+                + "verified at /auth/email first.",
+                credential.UserId);
+
+            return PasswordResetRequestOutcome.EmailNotVerified;
+        }
+
         var now = timeProvider.GetUtcNow();
 
         // Asking for a new link retires the old ones, so a forwarded email cannot be spent later.
@@ -441,6 +583,7 @@ internal sealed class PasswordAccountService(
 
         await resetTokens.MarkConsumedAsync(stored.Id, now, cancellationToken);
         await resetTokens.InvalidateAllForUserAsync(stored.UserId, now, cancellationToken);
+        await emailVerificationTokens.InvalidateAllForUserAsync(stored.UserId, now, cancellationToken);
 
         // Nothing on the external side is touched: the external logins stay linked, and a token the
         // identity provider issued keeps working until it expires, because we cannot revoke it.
@@ -502,6 +645,14 @@ internal sealed class PasswordAccountService(
             $"No {nameof(IAdminPasswordIssuedNotifier)} is registered. An admin-issued password is handed to it "
             + "and never returned from this call - register one before calling AdminCreateAccountAsync or "
             + "AdminSetPasswordAsync.");
+
+    /// <summary>Same reasoning as <see cref="ResolveAdminPasswordNotifier"/>: optional, resolved
+    /// lazily, and only required at the one call site that actually needs it.</summary>
+    private IEmailVerificationNotifier ResolveEmailVerificationNotifier() =>
+        serviceProvider.GetService<IEmailVerificationNotifier>()
+        ?? throw new InvalidOperationException(
+            $"No {nameof(IEmailVerificationNotifier)} is registered. A verification token is handed to it and never "
+            + "returned from this call - register one before calling RequestEmailChangeAsync.");
 
     /// <summary>Same reasoning as <see cref="ResolveAdminPasswordNotifier"/>: optional, resolved
     /// lazily, and only required at the one call site that actually needs it.</summary>

@@ -41,6 +41,13 @@ public interface IUserStore
     Task SetUserNameAsync(Guid userId, string userName, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Sets the email on an existing row. For a verified change of address: the credential holds the
+    /// login identifier, and this keeps the profile field the notifiers address their mail to from
+    /// pointing at the address the person just moved away from.
+    /// </summary>
+    Task SetEmailAsync(Guid userId, string email, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Removes a user and everything that hangs off it. Used to take back a row created moments ago
     /// for a registration that then lost a race on the credential's unique index, so a failed
     /// attempt does not leave an account behind that nobody can sign in to.

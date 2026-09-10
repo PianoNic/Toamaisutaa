@@ -4,12 +4,12 @@ using Toamaisutaa.Abstractions;
 namespace Toamaisutaa.EntityFrameworkCore;
 
 /// <summary>
-/// Credentials, refresh tokens and reset tokens. One class because they share a
-/// <c>DbContext</c> and are always registered together; each interface is still separate, so an
-/// application can replace one of them without the others.
+/// Credentials, refresh tokens, and the reset, invitation and email verification tokens. One class
+/// because they share a <c>DbContext</c> and are always registered together; each interface is still
+/// separate, so an application can replace one of them without the others.
 /// </summary>
 internal sealed class EntityFrameworkPasswordStore<TContext>(TContext context)
-    : IPasswordCredentialStore, IRefreshTokenStore, IPasswordResetTokenStore, IInvitationTokenStore
+    : IPasswordCredentialStore, IRefreshTokenStore, IPasswordResetTokenStore, IInvitationTokenStore, IEmailVerificationTokenStore
     where TContext : DbContext
 {
     // ── Credentials ──
@@ -182,6 +182,33 @@ internal sealed class EntityFrameworkPasswordStore<TContext>(TContext context)
 
     async Task<int> IInvitationTokenStore.DeleteExpiredAsync(DateTimeOffset expiredBefore, CancellationToken cancellationToken) =>
         await context.Set<ToamaisutaaInvitationToken>()
+            .Where(token => token.ExpiresAt <= expiredBefore)
+            .ExecuteDeleteAsync(cancellationToken);
+
+    // ── Email verification tokens ──
+
+    public async Task CreateAsync(ToamaisutaaEmailVerificationToken token, CancellationToken cancellationToken = default)
+    {
+        context.Set<ToamaisutaaEmailVerificationToken>().Add(token);
+        await context.SaveChangesAsync(cancellationToken);
+    }
+
+    async Task<ToamaisutaaEmailVerificationToken?> IEmailVerificationTokenStore.FindByHashAsync(string tokenHash, CancellationToken cancellationToken) =>
+        await context.Set<ToamaisutaaEmailVerificationToken>()
+            .FirstOrDefaultAsync(token => token.TokenHash == tokenHash, cancellationToken);
+
+    async Task IEmailVerificationTokenStore.MarkConsumedAsync(Guid tokenId, DateTimeOffset consumedAt, CancellationToken cancellationToken) =>
+        await context.Set<ToamaisutaaEmailVerificationToken>()
+            .Where(token => token.Id == tokenId && token.ConsumedAt == null)
+            .ExecuteUpdateAsync(setters => setters.SetProperty(token => token.ConsumedAt, consumedAt), cancellationToken);
+
+    async Task IEmailVerificationTokenStore.InvalidateAllForUserAsync(Guid userId, DateTimeOffset consumedAt, CancellationToken cancellationToken) =>
+        await context.Set<ToamaisutaaEmailVerificationToken>()
+            .Where(token => token.UserId == userId && token.ConsumedAt == null)
+            .ExecuteUpdateAsync(setters => setters.SetProperty(token => token.ConsumedAt, consumedAt), cancellationToken);
+
+    async Task<int> IEmailVerificationTokenStore.DeleteExpiredAsync(DateTimeOffset expiredBefore, CancellationToken cancellationToken) =>
+        await context.Set<ToamaisutaaEmailVerificationToken>()
             .Where(token => token.ExpiresAt <= expiredBefore)
             .ExecuteDeleteAsync(cancellationToken);
 }

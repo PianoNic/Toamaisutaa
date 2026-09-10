@@ -20,8 +20,9 @@ public static class ToamaisutaaSmtpEmailExtensions
     /// are checked at startup rather than at the first password reset request. Register your own
     /// <see cref="IPasswordResetEmailTemplate"/> before calling this to replace the default wording.
     /// <para>
-    /// The reset email and nothing else. Invitations and admin-issued passwords are opt-in one at a
-    /// time - see <see cref="AddToamaisutaaSmtpInvitationEmail"/> and
+    /// The reset email and nothing else. Invitations, email verification and admin-issued passwords
+    /// are opt-in one at a time - see <see cref="AddToamaisutaaSmtpInvitationEmail"/>,
+    /// <see cref="AddToamaisutaaSmtpEmailVerification"/> and
     /// <see cref="AddToamaisutaaSmtpAdminPasswordEmail"/>.
     /// </para>
     /// </remarks>
@@ -75,6 +76,32 @@ public static class ToamaisutaaSmtpEmailExtensions
         services.TryAddSingleton<IInvitationNotifier, SmtpInvitationNotifier>();
 
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IHostedService, SmtpInvitationStartupCheck>());
+
+        return services;
+    }
+
+    /// <summary>
+    /// Adds an SMTP-backed <see cref="IEmailVerificationNotifier"/> on top of
+    /// <see cref="AddToamaisutaaSmtpEmail(IServiceCollection, IConfiguration, string)"/>, which
+    /// binds the options and the transport this uses and has to be called as well.
+    /// </summary>
+    /// <remarks>
+    /// Separate for the same reason as the invitation notifier: registering one is what maps
+    /// <c>POST /auth/email</c> and <c>POST /auth/email/verify</c> at all.
+    /// <para>
+    /// <see cref="ToamaisutaaSmtpEmailOptions.EmailVerificationLinkTemplate"/> is checked at startup
+    /// unless you register your own <see cref="IEmailVerificationEmailTemplate"/>, which replaces
+    /// the wording and the link both.
+    /// </para>
+    /// </remarks>
+    public static IServiceCollection AddToamaisutaaSmtpEmailVerification(this IServiceCollection services)
+    {
+        ArgumentNullException.ThrowIfNull(services);
+
+        services.TryAddSingleton<IEmailVerificationEmailTemplate, DefaultEmailVerificationEmailTemplate>();
+        services.TryAddSingleton<IEmailVerificationNotifier, SmtpEmailVerificationNotifier>();
+
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IHostedService, SmtpEmailVerificationStartupCheck>());
 
         return services;
     }

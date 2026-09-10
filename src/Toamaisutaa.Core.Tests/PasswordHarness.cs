@@ -18,6 +18,7 @@ internal sealed class PasswordHarness
         bool withTrustedDevices,
         bool withAdminPasswordNotifier,
         bool withInvitationNotifier,
+        bool withEmailVerificationNotifier,
         bool withThrowingEventSink,
         IPasswordValidator? validator)
     {
@@ -36,6 +37,7 @@ internal sealed class PasswordHarness
         Notifier = new FakePasswordResetNotifier();
         AdminPasswordNotifier = new FakeAdminPasswordIssuedNotifier();
         InvitationNotifier = new FakeInvitationNotifier();
+        EmailVerificationNotifier = new FakeEmailVerificationNotifier();
         Hasher = new Pbkdf2PasswordHasher(wrapped);
 
         TwoFactorStore = new FakeTwoFactorStore();
@@ -72,6 +74,9 @@ internal sealed class PasswordHarness
 
         if (withInvitationNotifier)
             provider.Add<IInvitationNotifier>(InvitationNotifier);
+
+        if (withEmailVerificationNotifier)
+            provider.Add<IEmailVerificationNotifier>(EmailVerificationNotifier);
 
         // Registered only when the test asks for it, so the "password login with no second factor
         // configured" path is exercised by every other test rather than assumed.
@@ -118,6 +123,7 @@ internal sealed class PasswordHarness
         Accounts = new PasswordAccountService(
             Passwords,
             Users,
+            Passwords,
             Passwords,
             Passwords,
             Passwords,
@@ -168,6 +174,8 @@ internal sealed class PasswordHarness
     internal FakeAdminPasswordIssuedNotifier AdminPasswordNotifier { get; }
 
     internal FakeInvitationNotifier InvitationNotifier { get; }
+
+    internal FakeEmailVerificationNotifier EmailVerificationNotifier { get; }
 
     internal Pbkdf2PasswordHasher Hasher { get; }
 
@@ -224,6 +232,7 @@ internal sealed class PasswordHarness
         bool withTrustedDevices = false,
         bool withAdminPasswordNotifier = true,
         bool withInvitationNotifier = true,
+        bool withEmailVerificationNotifier = true,
         bool withThrowingEventSink = false,
         IPasswordValidator? validator = null)
     {
@@ -250,6 +259,7 @@ internal sealed class PasswordHarness
             withTrustedDevices,
             withAdminPasswordNotifier,
             withInvitationNotifier,
+            withEmailVerificationNotifier,
             withThrowingEventSink,
             validator);
     }
