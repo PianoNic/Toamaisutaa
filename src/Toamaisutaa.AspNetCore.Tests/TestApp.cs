@@ -63,6 +63,16 @@ internal sealed class TestApp : IAsyncDisposable
     /// can claim. The browser puts this in the client data and the package checks it.</summary>
     public const string Origin = "http://localhost";
 
+    /// <summary>What <c>Oidc:AdminRole</c> names here, which is what puts the admin provisioning
+    /// endpoints on the wire and what their policy asks for.</summary>
+    public const string AdminRole = "gate-master";
+
+    /// <summary>
+    /// The one account name <see cref="AdminRole"/> is granted to. Every other account this suite
+    /// registers is an ordinary caller, which is what makes a 403 assertion mean something.
+    /// </summary>
+    public const string AdminUserName = "admin";
+
     public HttpClient Client { get; }
 
     /// <summary>The host's own container. For the few assertions that have to read what landed in
@@ -133,6 +143,11 @@ internal sealed class TestApp : IAsyncDisposable
     /// document generator no other test needs, and it makes the discovery fetch resolve back into
     /// this same host.
     /// </param>
+    /// <param name="includeAdminRole">
+    /// On by default: sets <c>Oidc:AdminRole</c> and grants it to <see cref="AdminUserName"/>, so
+    /// the admin provisioning endpoints are mapped and one account can reach them. Off to prove
+    /// they are not mapped at all when nothing says who an administrator is.
+    /// </param>
     public static async Task<TestApp> StartAsync(
         Action<IEndpointRouteBuilder>? mapExtra = null,
         Action<Dictionary<string, string?>>? configure = null,
@@ -143,12 +158,14 @@ internal sealed class TestApp : IAsyncDisposable
         bool includeEmailVerificationNotifier = true,
         bool? includeMagicLinkNotifier = null,
         string? remoteIpAddress = null,
-        bool includeOpenApi = false)
+        bool includeOpenApi = false,
+        bool includeAdminRole = true)
     {
         var settings = new Dictionary<string, string?>
         {
             // No Authority: nothing to discover, nothing to reach over the network.
             ["Oidc:ClientId"] = "toamaisutaa-tests",
+            ["Oidc:AdminRole"] = includeAdminRole ? AdminRole : null,
             ["LocalLogin:SigningKey"] = Convert.ToBase64String(new byte[32]),
             ["LocalLogin:Issuer"] = "toamaisutaa-tests",
             ["LocalLogin:AllowSelfRegistration"] = "true",
@@ -188,6 +205,11 @@ internal sealed class TestApp : IAsyncDisposable
         builder.Services.AddToamaisutaaTrustedDevices(builder.Configuration);
         builder.Services.AddToamaisutaaPasskeys(builder.Configuration);
         builder.Services.AddSingleton<IPasswordResetNotifier, SilentResetNotifier>();
+
+        // This package ships no roles table, so a locally issued token carries no role until an
+        // application supplies one. Stands in for that table, and grants the role to one name only.
+        if (includeAdminRole)
+            builder.Services.AddSingleton<IUserRoleProvider>(new AdminByNameRoleProvider());
 
         var issuedPasswords = new List<(Guid UserId, string Password)>();
         var issuedInvitations = new List<(Guid UserId, string Token)>();
@@ -312,6 +334,14 @@ internal sealed class TestApp : IAsyncDisposable
         await _app.StopAsync();
         await _app.DisposeAsync();
         await _connection.DisposeAsync();
+    }
+
+    /// <summary>Grants <see cref="AdminRole"/> to <see cref="AdminUserName"/> and to nobody
+    /// else.</summary>
+    private sealed class AdminByNameRoleProvider : IUserRoleProvider
+    {
+        public Task<IReadOnlyList<string>> GetRolesAsync(ToamaisutaaUser user, CancellationToken cancellationToken = default) =>
+            Task.FromResult<IReadOnlyList<string>>(user.UserName == AdminUserName ? [AdminRole] : []);
     }
 
     private sealed class SilentResetNotifier : IPasswordResetNotifier

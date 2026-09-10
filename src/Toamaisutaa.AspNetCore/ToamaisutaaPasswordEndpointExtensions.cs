@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Toamaisutaa.Abstractions;
 using Toamaisutaa.AspNetCore;
@@ -218,47 +219,86 @@ public static class ToamaisutaaPasswordEndpointExtensions
                 .Produces(StatusCodes.Status429TooManyRequests);
         }
 
+        // What the three admin endpoints below are authorised by. They act on whichever account the
+        // route names rather than on the caller's own, so being signed in is not enough for them:
+        // the default policy is RequireAuthenticatedUser and nothing more, which would be every
+        // account that ever registered. Null when no admin role is configured, and then they are
+        // not mapped at all rather than mapped behind a policy that does not exist.
+        var adminPolicy = AdminPolicyName(endpoints.ServiceProvider);
+
+        var hasAdminPasswordNotifier = endpoints.ServiceProvider.GetService<IAdminPasswordIssuedNotifier>() is not null;
+        var hasInvitationNotifier = endpoints.ServiceProvider.GetService<IInvitationNotifier>() is not null;
+
+        if (adminPolicy is null && (hasAdminPasswordNotifier || hasInvitationNotifier))
+        {
+            endpoints.ServiceProvider.GetService<ILoggerFactory>()
+                ?.CreateLogger(typeof(ToamaisutaaPasswordEndpointExtensions).FullName!)
+                .LogWarning(
+                    "A provisioning notifier is registered but Oidc:AdminRole is not set, so /auth/users, "
+                    + "/auth/users/{{userId}}/password and /auth/invitations were not mapped. They act on any "
+                    + "account by id, so they require an admin policy, and that policy is registered only when "
+                    + "Oidc:AdminRole names a role.");
+        }
+
         // Not mapped at all when no IAdminPasswordIssuedNotifier is registered, the same reasoning
         // as self-registration above: an application that never provisions accounts for someone else
         // should not see endpoints that would only ever throw.
-        if (endpoints.ServiceProvider.GetService<IAdminPasswordIssuedNotifier>() is not null)
+        if (hasAdminPasswordNotifier && adminPolicy is not null)
         {
             group.MapPost("/users", CreateUserAsync)
-                .RequireAuthorization()
+                .RequireAuthorization(adminPolicy)
                 .WithName($"{endpointNamePrefix}ToamaisutaaCreateUser")
                 .WithSummary("Creates a local account on someone else's behalf.")
                 .WithDescription(
                     "Never signs the caller in as the new account, and never returns a password - the raw value, "
-                    + "typed or generated, goes to IAdminPasswordIssuedNotifier instead.")
+                    + "typed or generated, goes to IAdminPasswordIssuedNotifier instead. Requires the admin role "
+                    + "`Oidc:AdminRole` names.")
                 .Produces<AdminAccountResponse>(StatusCodes.Status201Created)
                 .Produces<ValidationErrorResponse>(StatusCodes.Status400BadRequest)
+                .Produces(StatusCodes.Status403Forbidden)
                 .Produces<ValidationErrorResponse>(StatusCodes.Status409Conflict);
 
             group.MapPost("/users/{userId:guid}/password", SetUserPasswordAsync)
-                .RequireAuthorization()
+                .RequireAuthorization(adminPolicy)
                 .WithName($"{endpointNamePrefix}ToamaisutaaSetUserPassword")
                 .WithSummary("Overwrites a user's password, generating one if none is given.")
                 .WithDescription(
                     "Unconditional - no current password is checked, because the caller is acting on someone "
-                    + "else's account - and revokes every local session the account holds.")
+                    + "else's account - and revokes every local session the account holds. Requires the admin "
+                    + "role `Oidc:AdminRole` names.\n\n"
+                    + "**502** means the password was set and the sessions revoked but "
+                    + "IAdminPasswordIssuedNotifier could not deliver it, so nobody has the new value. Set one "
+                    + "again once delivery works.")
                 .Produces(StatusCodes.Status204NoContent)
-                .Produces<ValidationErrorResponse>(StatusCodes.Status400BadRequest);
+                .Produces<ValidationErrorResponse>(StatusCodes.Status400BadRequest)
+                .Produces(StatusCodes.Status403Forbidden)
+                .Produces<ErrorResponse>(StatusCodes.Status502BadGateway);
         }
 
         // Same reasoning: not mapped at all without an IInvitationNotifier.
-        if (endpoints.ServiceProvider.GetService<IInvitationNotifier>() is not null)
+        if (hasInvitationNotifier)
         {
-            group.MapPost("/invitations", CreateInvitationAsync)
-                .RequireAuthorization()
-                .WithName($"{endpointNamePrefix}ToamaisutaaCreateInvitation")
-                .WithSummary("Reserves an account with nothing but an email.")
-                .WithDescription(
-                    "No user name and no credential yet - the invited person chooses both at "
-                    + "/auth/invitations/complete. Never returns the invitation token, which goes to "
-                    + "IInvitationNotifier instead.")
-                .Produces<InvitationResponse>(StatusCodes.Status201Created)
-                .Produces<ValidationErrorResponse>(StatusCodes.Status400BadRequest);
+            if (adminPolicy is not null)
+            {
+                group.MapPost("/invitations", CreateInvitationAsync)
+                    .RequireAuthorization(adminPolicy)
+                    .WithName($"{endpointNamePrefix}ToamaisutaaCreateInvitation")
+                    .WithSummary("Reserves an account with nothing but an email.")
+                    .WithDescription(
+                        "No user name and no credential yet - the invited person chooses both at "
+                        + "/auth/invitations/complete. Never returns the invitation token, which goes to "
+                        + "IInvitationNotifier instead. Requires the admin role `Oidc:AdminRole` names.\n\n"
+                        + "**502** means IInvitationNotifier could not deliver the token, and nothing was "
+                        + "reserved - the row and the token are rolled back, so a retry is safe.")
+                    .Produces<InvitationResponse>(StatusCodes.Status201Created)
+                    .Produces<ValidationErrorResponse>(StatusCodes.Status400BadRequest)
+                    .Produces(StatusCodes.Status403Forbidden)
+                    .Produces<ErrorResponse>(StatusCodes.Status502BadGateway);
+            }
 
+            // Mapped whether or not an admin role is configured, unlike the endpoint that issues the
+            // token: this one is redeemed by the invited person, and the invitation it completes may
+            // have been created by a worker calling CreateInvitationAsync rather than over HTTP.
             group.MapPost("/invitations/complete", CompleteInvitationAsync)
                 .AllowAnonymous()
                 .WithName($"{endpointNamePrefix}ToamaisutaaCompleteInvitation")
@@ -273,6 +313,19 @@ public static class ToamaisutaaPasswordEndpointExtensions
         }
 
         return group;
+    }
+
+    /// <summary>
+    /// The admin policy's name when <c>AddToamaisutaaAuthorization</c> registered one, and null
+    /// otherwise. Read off the same condition that registers it - an admin role is configured - so
+    /// "there is a name" and "there is a policy" cannot come apart and leave a route asking for one
+    /// that was never added.
+    /// </summary>
+    private static string? AdminPolicyName(IServiceProvider services)
+    {
+        var authorization = services.GetService<IOptions<ToamaisutaaAuthorizationOptions>>()?.Value;
+
+        return string.IsNullOrWhiteSpace(authorization?.AdminRole) ? null : authorization.AdminPolicyName;
     }
 
     /// <summary>
@@ -569,6 +622,21 @@ public static class ToamaisutaaPasswordEndpointExtensions
     {
         var result = await accounts.AdminSetPasswordAsync(userId, request?.Password, cancellationToken);
 
+        // Not a 204: the password was set and the sessions are gone, but the value reached nobody,
+        // so a caller that read this as success would be leaving an account nobody can open.
+        if (result.NotificationFailed)
+        {
+            return Results.Json(
+                new ErrorResponse
+                {
+                    Error = "notification_failed",
+                    ErrorDescription =
+                        "The password was set and every session revoked, but IAdminPasswordIssuedNotifier could "
+                        + "not deliver it. Nobody has the new password. Set one again once delivery works.",
+                },
+                statusCode: StatusCodes.Status502BadGateway);
+        }
+
         return result.Succeeded
             ? Results.NoContent()
             : Results.BadRequest(new ValidationErrorResponse { Errors = result.Errors });
@@ -583,6 +651,21 @@ public static class ToamaisutaaPasswordEndpointExtensions
             return Results.BadRequest();
 
         var result = await accounts.CreateInvitationAsync(request.Email, cancellationToken);
+
+        // Nothing the caller can correct, so not a 400: the reservation was rolled back and the
+        // same request will work once the notifier does.
+        if (result.NotificationFailed)
+        {
+            return Results.Json(
+                new ErrorResponse
+                {
+                    Error = "notification_failed",
+                    ErrorDescription =
+                        "IInvitationNotifier could not deliver the invitation, so no account was reserved. "
+                        + "Try again once delivery works.",
+                },
+                statusCode: StatusCodes.Status502BadGateway);
+        }
 
         if (!result.Succeeded)
             return Results.BadRequest(new ValidationErrorResponse { Errors = result.Errors });

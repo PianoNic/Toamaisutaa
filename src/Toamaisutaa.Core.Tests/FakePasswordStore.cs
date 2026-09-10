@@ -268,8 +268,15 @@ internal sealed class FakeAdminPasswordIssuedNotifier : IAdminPasswordIssuedNoti
 {
     internal List<(Guid UserId, string Password)> Issued { get; } = [];
 
+    /// <summary>Set to make the next <see cref="PasswordIssuedAsync"/> throw, so a real notifier
+    /// failure can be simulated without a real SMTP server.</summary>
+    internal Exception? ThrowOnSend { get; set; }
+
     public Task PasswordIssuedAsync(ToamaisutaaUser user, string rawPassword, CancellationToken cancellationToken = default)
     {
+        if (ThrowOnSend is not null)
+            throw ThrowOnSend;
+
         Issued.Add((user.Id, rawPassword));
         return Task.CompletedTask;
     }
@@ -279,8 +286,15 @@ internal sealed class FakeInvitationNotifier : IInvitationNotifier
 {
     internal List<(Guid UserId, string Token)> Sent { get; } = [];
 
+    /// <summary>Set to make the next <see cref="SendAsync"/> throw, so a real notifier failure can
+    /// be simulated without a real SMTP server.</summary>
+    internal Exception? ThrowOnSend { get; set; }
+
     public Task SendAsync(ToamaisutaaUser user, string invitationToken, CancellationToken cancellationToken = default)
     {
+        if (ThrowOnSend is not null)
+            throw ThrowOnSend;
+
         Sent.Add((user.Id, invitationToken));
         return Task.CompletedTask;
     }

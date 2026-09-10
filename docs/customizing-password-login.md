@@ -49,3 +49,11 @@ before you ship it.
 This package has no roles table, so a locally issued token carries no role claims and satisfies no
 role requirement, including `Oidc:AdminRole`. Register an `IUserRoleProvider` to supply them from
 wherever your roles actually live.
+
+```csharp
+builder.Services.AddSingleton<IUserRoleProvider, YourRoleProvider>();
+```
+
+This is what a local account needs before it can reach the
+[admin provisioning endpoints](/provisioning-accounts#the-three-admin-endpoints-need-an-admin-role),
+which ask for the role `Oidc:AdminRole` names.
