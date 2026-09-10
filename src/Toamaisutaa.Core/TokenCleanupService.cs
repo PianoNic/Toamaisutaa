@@ -7,8 +7,8 @@ using Toamaisutaa.Abstractions;
 namespace Toamaisutaa.Core;
 
 /// <summary>
-/// Deletes every expiring row this package writes - refresh, reset and invitation tokens,
-/// two-factor challenges and trusted devices - once it is past its expiry. Opt-in, because a
+/// Deletes every expiring row this package writes - refresh, reset, invitation and email
+/// verification tokens, two-factor challenges and trusted devices - once it is past its expiry. Opt-in, because a
 /// package should not start doing background writes to someone's database without being asked -
 /// but offered, because the alternative is a table nobody thinks about until it is enormous.
 /// </summary>
@@ -65,17 +65,21 @@ internal sealed class TokenCleanupService(
         var invitations = scope.ServiceProvider.GetService<IInvitationTokenStore>();
         var removedInvitations = invitations is null ? 0 : await invitations.DeleteExpiredAsync(now, cancellationToken);
 
-        if (removedRefresh + removedReset + removedChallenges + removedDevices + removedInvitations > 0)
+        var verifications = scope.ServiceProvider.GetService<IEmailVerificationTokenStore>();
+        var removedVerifications = verifications is null ? 0 : await verifications.DeleteExpiredAsync(now, cancellationToken);
+
+        if (removedRefresh + removedReset + removedChallenges + removedDevices + removedInvitations + removedVerifications > 0)
         {
             logger.LogInformation(
                 "Removed {RefreshTokens} expired refresh token(s), {ResetTokens} expired reset token(s), {Challenges} "
-                + "expired two-factor challenge(s), {Devices} expired trusted device row(s) and {Invitations} expired "
-                + "invitation token(s).",
+                + "expired two-factor challenge(s), {Devices} expired trusted device row(s), {Invitations} expired "
+                + "invitation token(s) and {Verifications} expired email verification token(s).",
                 removedRefresh,
                 removedReset,
                 removedChallenges,
                 removedDevices,
-                removedInvitations);
+                removedInvitations,
+                removedVerifications);
         }
     }
 }

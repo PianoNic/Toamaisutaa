@@ -24,6 +24,7 @@ internal sealed class PasswordLoginStartupCheck(
         var problems = new List<string>();
 
         CheckRegistrations(problems);
+        CheckEmailVerification(settings, problems);
         CheckSigningKey(settings, problems);
         CheckPeppers(settings, problems);
         CheckHashingParameters(settings, problems);
@@ -69,6 +70,7 @@ internal sealed class PasswordLoginStartupCheck(
                      typeof(IRefreshTokenStore),
                      typeof(IPasswordResetTokenStore),
                      typeof(IInvitationTokenStore),
+                     typeof(IEmailVerificationTokenStore),
                  })
         {
             if (!IsRegistered(storeType))
@@ -77,6 +79,22 @@ internal sealed class PasswordLoginStartupCheck(
                     $"No {storeType.Name} is registered. Call AddToamaisutaaEntityFrameworkStores<TContext>() or "
                     + "AddToamaisutaaDbContext(...), or register the stores yourself.");
             }
+        }
+    }
+
+    /// <summary>
+    /// The one combination that locks people out quietly: reset needs a verified address, and
+    /// nothing in the application can verify one. Every account then has exactly one route back into
+    /// a forgotten password, and it is an administrator doing it by hand.
+    /// </summary>
+    private void CheckEmailVerification(ToamaisutaaLocalLoginOptions settings, List<string> problems)
+    {
+        if (settings.RequireVerifiedEmailForPasswordReset && !IsRegistered(typeof(IEmailVerificationNotifier)))
+        {
+            problems.Add(
+                $"LocalLogin:RequireVerifiedEmailForPasswordReset is on but no {nameof(IEmailVerificationNotifier)} is "
+                + "registered, so no address can ever be verified and no password can ever be reset. Register one, or "
+                + "turn the option off.");
         }
     }
 

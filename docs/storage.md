@@ -85,6 +85,7 @@ those in place of `AddToamaisutaaEntityFrameworkStores`.
 | `IRefreshTokenStore` | Refresh tokens, hashed, grouped into families |
 | `IPasswordResetTokenStore` | Single-use reset tokens, hashed |
 | `IInvitationTokenStore` | Single-use invitation tokens, hashed |
+| `IEmailVerificationTokenStore` | Single-use email verification tokens, hashed, each naming the address it proves |
 | `ITwoFactorStore` | One TOTP enrolment per user |
 | `IRecoveryCodeStore` | Hashed single-use recovery codes |
 | `ITwoFactorChallengeStore` | Half-finished sign-ins |
@@ -102,6 +103,12 @@ builder.Services.AddScoped<IRefreshTokenStore, YourRefreshTokenStore>();
 [Completing a reserved invitation](/provisioning-accounts#completing-a-reserved-invitation) sets a
 user name on a row that was created with only an email, and no existing method could write it. A
 custom `IUserStore` needs the new member before it compiles against this version.
+:::
+
+::: warning Breaking: `IUserStore` gained `SetEmailAsync`
+[Email verification](/email-verification) writes the proven address onto the credential, and the
+profile field the notifiers address their mail to has to follow it. A custom `IUserStore` needs the
+new member before it compiles against this version.
 :::
 
 Three things the EF implementations do that yours must also do, because `Core` relies on them:
@@ -124,6 +131,7 @@ Three things the EF implementations do that yours must also do, because `Core` r
 | `ToamaisutaaRefreshTokens` | Issued refresh tokens, hashed, grouped into families |
 | `ToamaisutaaPasswordResetTokens` | Single-use reset tokens, hashed |
 | `ToamaisutaaInvitationTokens` | Single-use invitation tokens, hashed |
+| `ToamaisutaaEmailVerificationTokens` | Single-use email verification tokens, hashed, each naming the address it proves |
 | `ToamaisutaaUserTwoFactors` | One TOTP enrolment per user, its secret encrypted at rest |
 | `ToamaisutaaRecoveryCodes` | Hashed single-use recovery codes |
 | `ToamaisutaaTwoFactorChallenges` | Half-finished sign-ins waiting on a second factor |

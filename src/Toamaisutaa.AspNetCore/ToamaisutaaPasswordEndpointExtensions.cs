@@ -127,6 +127,35 @@ public static class ToamaisutaaPasswordEndpointExtensions
             .Produces(StatusCodes.Status204NoContent)
             .Produces<ValidationErrorResponse>(StatusCodes.Status400BadRequest);
 
+        // Same reasoning as the two blocks below: not mapped at all without an
+        // IEmailVerificationNotifier, because there is nowhere for the token to go.
+        if (endpoints.ServiceProvider.GetService<IEmailVerificationNotifier>() is not null)
+        {
+            group.MapPost("/email", ChangeEmailAsync)
+                .RequireAuthorization()
+                .WithName($"{endpointNamePrefix}ToamaisutaaChangeEmail")
+                .WithSummary("Sends a verification link to an address, and changes nothing yet.")
+                .WithDescription(
+                    "`currentPassword` is required, including when `newEmail` is the address the account already has - "
+                    + "which is how a verification link is asked for again. The account moves only when the link is "
+                    + "redeemed at /auth/email/verify.")
+                .Produces(StatusCodes.Status204NoContent)
+                .Produces<ValidationErrorResponse>(StatusCodes.Status400BadRequest)
+                .Produces<ValidationErrorResponse>(StatusCodes.Status409Conflict)
+                .Produces<ErrorResponse>(StatusCodes.Status401Unauthorized);
+
+            group.MapPost("/email/verify", VerifyEmailAsync)
+                .AllowAnonymous()
+                .WithName($"{endpointNamePrefix}ToamaisutaaVerifyEmail")
+                .WithSummary("Redeems a verification token and writes the address it names.")
+                .WithDescription(
+                    "Anonymous, because the link is opened from a mailbox and often on another device. The token is "
+                    + "what proves anything here.")
+                .Produces(StatusCodes.Status204NoContent)
+                .Produces<ValidationErrorResponse>(StatusCodes.Status400BadRequest)
+                .Produces<ValidationErrorResponse>(StatusCodes.Status409Conflict);
+        }
+
         // Not mapped at all when no IAdminPasswordIssuedNotifier is registered, the same reasoning
         // as self-registration above: an application that never provisions accounts for someone else
         // should not see endpoints that would only ever throw.
@@ -362,6 +391,45 @@ public static class ToamaisutaaPasswordEndpointExtensions
 
         return result.Succeeded
             ? Results.NoContent()
+            : Results.BadRequest(new ValidationErrorResponse { Errors = result.Errors });
+    }
+
+    private static async Task<IResult> ChangeEmailAsync(
+        ChangeEmailRequest request,
+        ICurrentUser currentUser,
+        IPasswordAccountService accounts,
+        CancellationToken cancellationToken)
+    {
+        if (request is null || string.IsNullOrEmpty(request.NewEmail) || string.IsNullOrEmpty(request.CurrentPassword))
+            return Results.BadRequest();
+
+        var user = await currentUser.GetOrProvisionAsync(cancellationToken);
+
+        var result = await accounts.RequestEmailChangeAsync(user.Id, request.NewEmail, request.CurrentPassword, cancellationToken);
+
+        if (result.Succeeded)
+            return Results.NoContent();
+
+        return result.Conflict
+            ? Results.Json(new ValidationErrorResponse { Errors = result.Errors }, statusCode: StatusCodes.Status409Conflict)
+            : Results.BadRequest(new ValidationErrorResponse { Errors = result.Errors });
+    }
+
+    private static async Task<IResult> VerifyEmailAsync(
+        VerifyEmailRequest request,
+        IPasswordAccountService accounts,
+        CancellationToken cancellationToken)
+    {
+        if (request is null || string.IsNullOrEmpty(request.Token))
+            return Results.BadRequest();
+
+        var result = await accounts.VerifyEmailAsync(request.Token, cancellationToken);
+
+        if (result.Succeeded)
+            return Results.NoContent();
+
+        return result.Conflict
+            ? Results.Json(new ValidationErrorResponse { Errors = result.Errors }, statusCode: StatusCodes.Status409Conflict)
             : Results.BadRequest(new ValidationErrorResponse { Errors = result.Errors });
     }
 

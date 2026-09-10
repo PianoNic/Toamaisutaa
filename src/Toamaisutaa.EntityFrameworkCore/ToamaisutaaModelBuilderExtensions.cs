@@ -19,6 +19,7 @@ public static class ToamaisutaaModelBuilderExtensions
         modelBuilder.ApplyConfiguration(new ToamaisutaaRefreshTokenConfiguration());
         modelBuilder.ApplyConfiguration(new ToamaisutaaPasswordResetTokenConfiguration());
         modelBuilder.ApplyConfiguration(new ToamaisutaaInvitationTokenConfiguration());
+        modelBuilder.ApplyConfiguration(new ToamaisutaaEmailVerificationTokenConfiguration());
         modelBuilder.ApplyConfiguration(new ToamaisutaaUserTwoFactorConfiguration());
         modelBuilder.ApplyConfiguration(new ToamaisutaaRecoveryCodeConfiguration());
         modelBuilder.ApplyConfiguration(new ToamaisutaaTwoFactorChallengeConfiguration());

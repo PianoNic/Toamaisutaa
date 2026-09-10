@@ -38,6 +38,8 @@ public class ToamaisutaaDbContext : DbContext
 
     public DbSet<ToamaisutaaInvitationToken> InvitationTokens => Set<ToamaisutaaInvitationToken>();
 
+    public DbSet<ToamaisutaaEmailVerificationToken> EmailVerificationTokens => Set<ToamaisutaaEmailVerificationToken>();
+
     public DbSet<ToamaisutaaUserTwoFactor> UserTwoFactors => Set<ToamaisutaaUserTwoFactor>();
 
     public DbSet<ToamaisutaaRecoveryCode> RecoveryCodes => Set<ToamaisutaaRecoveryCode>();

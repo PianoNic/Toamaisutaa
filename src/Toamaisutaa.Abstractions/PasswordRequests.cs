@@ -29,6 +29,13 @@ public sealed record CreateUserRequest(string UserName, string? Email, string? P
 /// <see cref="IAdminPasswordIssuedNotifier"/> rather than returned from the endpoint.</summary>
 public sealed record SetUserPasswordRequest(string? Password);
 
+/// <summary><see cref="CurrentPassword"/> is always required, including when
+/// <see cref="NewEmail"/> is the address the account already has - which is how a verification link
+/// is asked for again.</summary>
+public sealed record ChangeEmailRequest(string NewEmail, string CurrentPassword);
+
+public sealed record VerifyEmailRequest(string Token);
+
 public sealed record CreateInvitationRequest(string Email);
 
 public sealed record CompleteInvitationRequest(string Token, string UserName, string Password);

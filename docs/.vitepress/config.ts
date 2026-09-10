@@ -54,6 +54,7 @@ export default defineConfig({
               { text: 'Breached passwords', link: '/breached-passwords' },
               { text: 'Customizing local login', link: '/customizing-password-login' },
               { text: 'Provisioning accounts', link: '/provisioning-accounts' },
+              { text: 'Email verification', link: '/email-verification' },
             ],
           },
           { text: 'Two-factor authentication', link: '/two-factor' },

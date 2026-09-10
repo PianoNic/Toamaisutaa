@@ -25,6 +25,7 @@ public sealed class ToamaisutaaPasswordCredentialConfiguration : IEntityTypeConf
 
         builder.Property(credential => credential.CreatedAt).HasConversion(InstantConverters.Instant);
         builder.Property(credential => credential.UpdatedAt).HasConversion(InstantConverters.Instant);
+        builder.Property(credential => credential.EmailConfirmedAt).HasConversion(InstantConverters.NullableInstant);
         builder.Property(credential => credential.FirstFailedAttemptAt).HasConversion(InstantConverters.NullableInstant);
         builder.Property(credential => credential.LockedOutUntil).HasConversion(InstantConverters.NullableInstant);
 

@@ -38,6 +38,28 @@ public interface IPasswordAccountService
     Task<AccountResult> AdminSetPasswordAsync(Guid userId, string? password, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Issues a verification token for <paramref name="newEmail"/> and hands it to
+    /// <see cref="IEmailVerificationNotifier"/>, which mails it there rather than to the address the
+    /// account currently has. Nothing on the account moves until the token comes back to
+    /// <see cref="VerifyEmailAsync"/>.
+    /// </summary>
+    /// <remarks>
+    /// <paramref name="currentPassword"/> is required even when <paramref name="newEmail"/> is the
+    /// address already on the credential, which is how a verification link is asked for a second
+    /// time. One rule rather than two, and the second address is the one that matters: whoever holds
+    /// a borrowed session should not be able to point an account at a mailbox of their own.
+    /// </remarks>
+    Task<AccountResult> RequestEmailChangeAsync(Guid userId, string newEmail, string currentPassword, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Redeems a verification token: writes the address it names onto the credential and stamps
+    /// <see cref="ToamaisutaaPasswordCredential.EmailConfirmedAt"/>. A silent, single failure for a
+    /// token that is unknown, already used or expired, the same reasoning
+    /// <see cref="ResetPasswordAsync"/> uses.
+    /// </summary>
+    Task<AccountResult> VerifyEmailAsync(string verificationToken, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Reserves an account with nothing but an email - no user name, no credential - and hands an
     /// invitation token to <see cref="IInvitationNotifier"/>. Never returned from this call.
     /// </summary>
@@ -65,6 +87,13 @@ public enum PasswordResetRequestOutcome
     /// <summary>The token was issued and stored, but <see cref="IPasswordResetNotifier"/> threw.
     /// Grep for this when someone reports that no mail arrived and the account is local.</summary>
     NotificationFailed,
+
+    /// <summary>
+    /// <see cref="ToamaisutaaLocalLoginOptions.RequireVerifiedEmailForPasswordReset"/> is on and
+    /// nobody has proven this address. Grep for this when someone reports that no mail arrived,
+    /// the account is local, and the option was switched on over an existing database.
+    /// </summary>
+    EmailNotVerified,
 }
 
 public sealed record AccountResult

@@ -85,6 +85,10 @@ builder.Services.AddSingleton<IPasswordResetNotifier, LoggingPasswordResetNotifi
 // long as an audit table is kept.
 builder.Services.AddToamaisutaaAuthenticationEventSink<LoggingAuditSink>();
 
+// Optional, unlike the reset notifier, and registering it is what puts /auth/email and
+// /auth/email/verify on the wire at all. Comment this line out and both endpoints are gone.
+builder.Services.AddSingleton<IEmailVerificationNotifier, LoggingEmailVerificationNotifier>();
+
 // Toamaisutaa's own endpoints already answer 401 for a stale security stamp. This covers YOUR
 // endpoints: anything calling ICurrentUser.GetOrProvisionAsync can meet a token that was issued
 // before a credential changed, and without this it surfaces as a 500 for something the client only
@@ -109,7 +113,7 @@ app.UseAuthorization();
 app.MapToamaisutaaConfiguration();
 
 // POST /auth/login, /auth/refresh, /auth/logout, /auth/register, /auth/password,
-// /auth/password/forgot, /auth/password/reset.
+// /auth/password/forgot, /auth/password/reset, /auth/email, /auth/email/verify.
 app.MapToamaisutaaPasswordEndpoints();
 
 // GET /auth/2fa, POST /auth/2fa/begin, /auth/2fa/confirm, /auth/2fa/disable,
@@ -291,6 +295,21 @@ internal sealed class LoggingPasswordResetNotifier(ILogger<LoggingPasswordResetN
     {
         logger.LogWarning("No postman in this sample, so the gate master reads it aloud.");
         logger.LogWarning("PASSWORD RESET for {Email}: token {Token}", user.Email, resetToken);
+        return Task.CompletedTask;
+    }
+}
+
+/// <summary>
+/// The same stand-in, for the address somebody is claiming. Note which address this is handed: it is
+/// the one being verified, not the one the account currently has, and that is the entire mechanism -
+/// paste the token into /auth/email/verify.
+/// </summary>
+internal sealed class LoggingEmailVerificationNotifier(ILogger<LoggingEmailVerificationNotifier> logger) : IEmailVerificationNotifier
+{
+    public Task SendAsync(ToamaisutaaUser user, string email, string verificationToken, CancellationToken cancellationToken = default)
+    {
+        logger.LogWarning("The gate master reads this one aloud too, at the door it was addressed to.");
+        logger.LogWarning("EMAIL VERIFICATION for {Email}: token {Token}", email, verificationToken);
         return Task.CompletedTask;
     }
 }

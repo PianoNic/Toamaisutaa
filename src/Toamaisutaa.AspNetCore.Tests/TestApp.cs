@@ -45,7 +45,8 @@ internal sealed class TestApp : IAsyncDisposable
         HttpClient client,
         MutableTimeProvider time,
         List<(Guid UserId, string Password)> issuedPasswords,
-        List<(Guid UserId, string Token)> issuedInvitations)
+        List<(Guid UserId, string Token)> issuedInvitations,
+        List<(Guid UserId, string Email, string Token)> issuedEmailVerifications)
     {
         _app = app;
         _connection = connection;
@@ -53,6 +54,7 @@ internal sealed class TestApp : IAsyncDisposable
         Time = time;
         IssuedPasswords = issuedPasswords;
         IssuedInvitations = issuedInvitations;
+        IssuedEmailVerifications = issuedEmailVerifications;
     }
 
     public HttpClient Client { get; }
@@ -71,6 +73,10 @@ internal sealed class TestApp : IAsyncDisposable
     /// <summary>What <c>IInvitationNotifier</c> was handed - the only place an invitation token can
     /// be observed, since it is never in an HTTP response.</summary>
     public List<(Guid UserId, string Token)> IssuedInvitations { get; }
+
+    /// <summary>What <c>IEmailVerificationNotifier</c> was handed. The address is kept alongside the
+    /// token, because which mailbox the link went to is the half of that flow that matters.</summary>
+    public List<(Guid UserId, string Email, string Token)> IssuedEmailVerifications { get; }
 
     /// <summary>
     /// Advance it to cross a TOTP step. Anchored at the real clock and never moved far, because the
@@ -96,6 +102,10 @@ internal sealed class TestApp : IAsyncDisposable
     /// On by default, so <c>/auth/invitations</c> and <c>/auth/invitations/complete</c> are mapped
     /// and most tests can use them. Off to prove they are not mapped at all without one.
     /// </param>
+    /// <param name="includeEmailVerificationNotifier">
+    /// On by default, so <c>/auth/email</c> and <c>/auth/email/verify</c> are mapped and most tests
+    /// can use them. Off to prove they are not mapped at all without one.
+    /// </param>
     /// <param name="includeOpenApi">
     /// Adds <c>AddToamaisutaaOpenApi</c> and maps <c>/openapi/v1.json</c>. Off by default: it is a
     /// document generator no other test needs, and it makes the discovery fetch resolve back into
@@ -108,6 +118,7 @@ internal sealed class TestApp : IAsyncDisposable
         Action<IServiceCollection>? configureServices = null,
         bool includeAdminPasswordNotifier = true,
         bool includeInvitationNotifier = true,
+        bool includeEmailVerificationNotifier = true,
         bool includeOpenApi = false)
     {
         var settings = new Dictionary<string, string?>
@@ -150,12 +161,16 @@ internal sealed class TestApp : IAsyncDisposable
 
         var issuedPasswords = new List<(Guid UserId, string Password)>();
         var issuedInvitations = new List<(Guid UserId, string Token)>();
+        var issuedEmailVerifications = new List<(Guid UserId, string Email, string Token)>();
 
         if (includeAdminPasswordNotifier)
             builder.Services.AddSingleton<IAdminPasswordIssuedNotifier>(new CapturingAdminPasswordIssuedNotifier(issuedPasswords));
 
         if (includeInvitationNotifier)
             builder.Services.AddSingleton<IInvitationNotifier>(new CapturingInvitationNotifier(issuedInvitations));
+
+        if (includeEmailVerificationNotifier)
+            builder.Services.AddSingleton<IEmailVerificationNotifier>(new CapturingEmailVerificationNotifier(issuedEmailVerifications));
 
         if (includeOpenApi)
         {
@@ -211,7 +226,7 @@ internal sealed class TestApp : IAsyncDisposable
 
         await app.StartAsync();
 
-        return new TestApp(app, connection, app.GetTestClient(), time, issuedPasswords, issuedInvitations);
+        return new TestApp(app, connection, app.GetTestClient(), time, issuedPasswords, issuedInvitations, issuedEmailVerifications);
     }
 
     /// <summary>
@@ -266,6 +281,15 @@ internal sealed class TestApp : IAsyncDisposable
         public Task SendAsync(ToamaisutaaUser user, string invitationToken, CancellationToken cancellationToken = default)
         {
             sent.Add((user.Id, invitationToken));
+            return Task.CompletedTask;
+        }
+    }
+
+    private sealed class CapturingEmailVerificationNotifier(List<(Guid UserId, string Email, string Token)> sent) : IEmailVerificationNotifier
+    {
+        public Task SendAsync(ToamaisutaaUser user, string email, string verificationToken, CancellationToken cancellationToken = default)
+        {
+            sent.Add((user.Id, email, verificationToken));
             return Task.CompletedTask;
         }
     }
