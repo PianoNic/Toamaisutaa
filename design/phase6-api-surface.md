@@ -223,12 +223,12 @@ Write it down next to the code, because the natural instinct is to issue first a
 
 These are the ones I went looking for after last phase. Each fails silently.
 
-**6.1 — Step-up is the first in-place mutation of a refresh row.** Everything else in this package
+**6.1 - Step-up is the first in-place mutation of a refresh row.** Everything else in this package
 rotates. The comment D1 asks for is necessary but not sufficient; the store method is named
 `UpdateSecondFactorAsync` rather than anything generic so that a future caller reaching for it has to
 notice what it is for.
 
-**6.2 — A signed-out session can still step up.** `SignOutAsync` revokes the family, but the access
+**6.2 - A signed-out session can still step up.** `SignOutAsync` revokes the family, but the access
 token stays valid until it expires - up to fifteen minutes. Nothing today stops that token calling
 step-up. The update would find no live row and, without a check, step-up would issue a fresh access
 token for a session the user deliberately ended.
@@ -237,7 +237,7 @@ token for a session the user deliberately ended.
 `bool` rather than `void`, and it needs a named test - it is the one place where step-up could
 resurrect something.
 
-**6.3 — `toa_2fa_source` moving is a second write-once-to-mutable boundary, and D7 is right that it
+**6.3 - `toa_2fa_source` moving is a second write-once-to-mutable boundary, and D7 is right that it
 is easy to miss.** Adding to it: a device-trusted session carries `amr: ["pwd","mfa"]` with **no
 `otp`**. After a live TOTP step-up the source becomes `otp` - but `amr` still has no `otp`, because
 `amr` is carried on the family and describes how the *session* was established. I think that is
@@ -247,17 +247,17 @@ finds it. Either it is documented as deliberate or `amr` has to move too, and mo
 change than this phase wants. **I propose documenting it, and I want this one explicitly signed
 off.**
 
-**6.4 — Lockout counters live on the password credential.** D6 says step-up participates in lockout.
+**6.4 - Lockout counters live on the password credential.** D6 says step-up participates in lockout.
 `IPasswordCredentialStore` holds those counters, so a user with a locally issued token always has a
 credential row to count against - local sign-in cannot happen without one. That holds, but it is an
 assumption worth stating, because it is the thing that would break first if local tokens were ever
 issued through another route.
 
-**6.5 — A step-up challenge outliving its session.** If the family is revoked between issuing the
+**6.5 - A step-up challenge outliving its session.** If the family is revoked between issuing the
 challenge and verifying it, 6.2 already refuses at step 2. Listed only so it is clear the ordering
 covers it rather than by accident.
 
-**6.6 — Two step-ups in flight for one session.** Both challenges are live, both bound to the same
+**6.6 - Two step-ups in flight for one session.** Both challenges are live, both bound to the same
 family; the first redeemed wins and the second is spent-or-expired on its own terms. No new
 mechanism, but it is a case somebody will ask about.
 

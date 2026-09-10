@@ -19,15 +19,23 @@ export default defineConfig({
   ],
   sitemap: { hostname: 'https://docs.toamaisutaa.pianonic.ch' },
   themeConfig: {
+    // One entry per sidebar section, so the bar stays readable as features land. The pages
+    // themselves live in the sidebar and in the dropdown.
     nav: [
       { text: 'Intro', link: '/intro' },
       { text: 'Getting started', link: '/getting-started' },
-      { text: 'OIDC', link: '/oidc' },
-      { text: 'Password login', link: '/password-login' },
-      { text: 'Two-factor', link: '/two-factor' },
-      { text: 'Passkeys', link: '/passkeys' },
-      { text: 'Devices', link: '/trusted-devices' },
-      { text: 'Sessions', link: '/sessions' },
+      {
+        text: 'Signing in',
+        items: [
+          { text: 'OIDC bearer validation', link: '/oidc' },
+          { text: 'Local password login', link: '/password-login' },
+          { text: 'Two-factor authentication', link: '/two-factor' },
+          { text: 'Passkeys', link: '/passkeys' },
+          { text: 'Trusted devices', link: '/trusted-devices' },
+          { text: 'Sessions', link: '/sessions' },
+          { text: 'Audit events', link: '/audit-events' },
+        ],
+      },
       { text: 'From a SPA', link: '/spa' },
       { text: 'Metrics', link: '/metrics' },
       { text: 'Development', link: '/dev-setup' },

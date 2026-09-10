@@ -26,13 +26,13 @@ Three do not.**
 
 The two "No" rows are the interesting ones, and they differ:
 
-**Recovery code redeemed — do not bump the stamp.** Bumping it here would revoke the refresh family
+**Recovery code redeemed - do not bump the stamp.** Bumping it here would revoke the refresh family
 of the session being established, which means redeeming a recovery code would sign the user out
 mid-sign-in. The trust revocation has to be explicit and scoped to devices only. This is exactly the
 case the brief names as most important - a recovery code means the device is gone - and it is the one
 place where D3 does not cover it.
 
-**Refresh token reuse — do not bump the stamp either**, for a subtler reason: reuse is detected on a
+**Refresh token reuse - do not bump the stamp either**, for a subtler reason: reuse is detected on a
 chain, and the user may legitimately hold other live sessions. Revoking those is arguably right but
 is a behaviour change to Phase 3 that is not in scope. Revoke device trusts explicitly, leave the
 stamp alone, and say so.
@@ -255,26 +255,26 @@ pair - no challenge - and a **rotated** device token.
 These are the ones I went looking for after the `AuthenticationMethods` lesson. Each fails silently
 in the unsafe direction.
 
-**8.1 — A device token must never be issued from a device-trusted sign-in.**
+**8.1 - A device token must never be issued from a device-trusted sign-in.**
 
 If it were, the loop is: present device token → skip challenge → receive a fresh device token. If
 that reset `FamilyStartedAt`, D6's absolute lifetime would never be reached and "30 days" would mean
 "forever, as long as you sign in monthly". Rotation preserves `FamilyStartedAt` and `SecondFactorAt`;
 only a **live** challenge starts a new family. Named test.
 
-**8.2 — Two tabs racing on the same device token.**
+**8.2 - Two tabs racing on the same device token.**
 
 Rotation plus reuse detection means the second request sees `RotatedAt` set and revokes the family,
 so a user with two tabs open loses the device. Refresh tokens already behave this way and it is the
 right trade, but it is worth knowing before someone reports it as a bug. Documented, not fixed.
 
-**8.3 — A device token for a user who is no longer enrolled.**
+**8.3 - A device token for a user who is no longer enrolled.**
 
 Disabling 2FA bumps the stamp, so D3 already rejects it. But the row survives until the sweep, and
 `ListAsync` would show a device that does nothing. Reject, delete, continue - the same path as a
 stamp mismatch.
 
-**8.4 — Lockout is checked before the device token, not after.**
+**8.4 - Lockout is checked before the device token, not after.**
 
 D8 says a trusted device does not bypass lockout. Concretely that means the lockout check stays
 where it is in `SignInAsync`, before any device logic, and the device token is consulted only after

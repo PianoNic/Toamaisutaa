@@ -90,6 +90,9 @@ those in place of `AddToamaisutaaEntityFrameworkStores`.
 | `IRecoveryCodeStore` | Hashed single-use recovery codes |
 | `ITwoFactorChallengeStore` | Half-finished sign-ins |
 | `ITrustedDeviceStore` | Trusted device families |
+| `IMagicLinkTokenStore` | Single-use magic-link tokens, hashed |
+| `IPasskeyCredentialStore` | Registered passkeys, one row per credential |
+| `IPasskeyChallengeStore` | Outstanding passkey registration and assertion challenges |
 
 Register whichever the features you use require - the startup checks name the missing one rather
 than failing at the first request:
