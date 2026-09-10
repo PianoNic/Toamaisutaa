@@ -18,6 +18,7 @@ internal sealed class PasswordHarness
         bool withTrustedDevices,
         bool withAdminPasswordNotifier,
         bool withInvitationNotifier,
+        bool withThrowingEventSink,
         IPasswordValidator? validator)
     {
         TrustedDeviceOptions = trustedDeviceOptions;
@@ -54,6 +55,14 @@ internal sealed class PasswordHarness
             Clock,
             NullLogger<TwoFactorVerifier>.Instance);
 
+        Events = new RecordingEventSink();
+
+        // The recorder goes second on purpose, so a test about a sink that throws also proves the
+        // next one still gets the event.
+        var publisher = new AuthenticationEventPublisher(
+            withThrowingEventSink ? [new ThrowingEventSink(), Events] : [Events],
+            NullLogger<AuthenticationEventPublisher>.Instance);
+
         var provider = new FakeServiceProvider();
 
         // Registered by default, so most tests get it for free; the one test about the missing-
@@ -84,10 +93,11 @@ internal sealed class PasswordHarness
 
         var deviceGate = new TrustedDeviceGate(
             provider,
+            publisher,
             Microsoft.Extensions.Options.Options.Create(trustedDeviceOptions),
             NullLogger<TrustedDeviceGate>.Instance);
 
-        TrustedDevices = new TrustedDeviceService(Devices, Clock, NullLogger<TrustedDeviceService>.Instance);
+        TrustedDevices = new TrustedDeviceService(Devices, publisher, Clock, NullLogger<TrustedDeviceService>.Instance);
 
         SignIn = new PasswordSignInService(
             Passwords,
@@ -100,6 +110,7 @@ internal sealed class PasswordHarness
             gate,
             deviceGate,
             Metrics,
+            publisher,
             wrapped,
             Clock,
             NullLogger<PasswordSignInService>.Instance);
@@ -115,6 +126,7 @@ internal sealed class PasswordHarness
             Notifier,
             SignIn,
             deviceGate,
+            publisher,
             wrapped,
             Clock,
             NullLogger<PasswordAccountService>.Instance,
@@ -130,12 +142,16 @@ internal sealed class PasswordHarness
             Protector,
             Verifier,
             deviceGate,
+            publisher,
             wrappedTwoFactor,
             Clock,
             NullLogger<TwoFactorService>.Instance);
     }
 
     internal FixedTimeProvider Clock { get; }
+
+    /// <summary>Everything the flows published, in order.</summary>
+    internal RecordingEventSink Events { get; }
 
     internal ToamaisutaaLocalLoginOptions Options { get; }
 
@@ -208,6 +224,7 @@ internal sealed class PasswordHarness
         bool withTrustedDevices = false,
         bool withAdminPasswordNotifier = true,
         bool withInvitationNotifier = true,
+        bool withThrowingEventSink = false,
         IPasswordValidator? validator = null)
     {
         // Iterations far below the production floor: these tests run many derivations and the floor
@@ -233,6 +250,7 @@ internal sealed class PasswordHarness
             withTrustedDevices,
             withAdminPasswordNotifier,
             withInvitationNotifier,
+            withThrowingEventSink,
             validator);
     }
 

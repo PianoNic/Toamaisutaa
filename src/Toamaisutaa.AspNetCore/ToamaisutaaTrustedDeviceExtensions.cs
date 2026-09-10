@@ -48,6 +48,7 @@ public static class ToamaisutaaTrustedDeviceExtensions
     {
         services.TryAddSingleton(TimeProvider.System);
 
+        services.TryAddScoped<AuthenticationEventPublisher>();
         services.TryAddScoped<TrustedDeviceService>();
         services.TryAddScoped<ITrustedDeviceService>(provider => provider.GetRequiredService<TrustedDeviceService>());
         services.TryAddScoped<TrustedDeviceGate>();

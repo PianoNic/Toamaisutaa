@@ -88,6 +88,7 @@ public static class ToamaisutaaTwoFactorExtensions
         // it, and the gate answers harmlessly when no device store exists.
         services.AddOptions<ToamaisutaaTrustedDeviceOptions>();
         services.TryAddScoped<TrustedDeviceGate>();
+        services.TryAddScoped<AuthenticationEventPublisher>();
         services.TryAddScoped<ITwoFactorService, TwoFactorService>();
 
         services.TryAddEnumerable(

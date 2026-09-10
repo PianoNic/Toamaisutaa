@@ -16,6 +16,7 @@ namespace Toamaisutaa.Core;
 /// </remarks>
 internal sealed class TrustedDeviceGate(
     IServiceProvider provider,
+    AuthenticationEventPublisher events,
     IOptions<ToamaisutaaTrustedDeviceOptions> options,
     ILogger<TrustedDeviceGate> logger)
 {
@@ -57,7 +58,7 @@ internal sealed class TrustedDeviceGate(
                 stored.RotatedAt,
                 stored.FamilyId);
 
-            await devices.RevokeFamilyAsync(stored.FamilyId, "device-token-reuse", now, cancellationToken);
+            await RevokeFamilyAsync(devices, stored, "device-token-reuse", now, cancellationToken);
             return DeviceTrustResult.NotTrusted;
         }
 
@@ -73,7 +74,7 @@ internal sealed class TrustedDeviceGate(
                 stored.FamilyId,
                 stored.UserId);
 
-            await devices.RevokeFamilyAsync(stored.FamilyId, "absolute-lifetime-reached", now, cancellationToken);
+            await RevokeFamilyAsync(devices, stored, "absolute-lifetime-reached", now, cancellationToken);
             return DeviceTrustResult.NotTrusted;
         }
 
@@ -87,7 +88,7 @@ internal sealed class TrustedDeviceGate(
                 stored.FamilyId,
                 stored.UserId);
 
-            await devices.RevokeFamilyAsync(stored.FamilyId, "security-stamp-changed", now, cancellationToken);
+            await RevokeFamilyAsync(devices, stored, "security-stamp-changed", now, cancellationToken);
             return DeviceTrustResult.NotTrusted;
         }
 
@@ -100,7 +101,7 @@ internal sealed class TrustedDeviceGate(
 
             if (enrolment is not { ConfirmedAt: not null })
             {
-                await devices.RevokeFamilyAsync(stored.FamilyId, "no-enrolment", now, cancellationToken);
+                await RevokeFamilyAsync(devices, stored, "no-enrolment", now, cancellationToken);
                 return DeviceTrustResult.NotTrusted;
             }
         }
@@ -175,17 +176,19 @@ internal sealed class TrustedDeviceGate(
 
         var settings = options.Value;
         var raw = SecureTokens.Create();
+        var family = Guid.CreateVersion7(now);
+        var label = Truncate(request.DeviceLabel, 128);
 
         await devices.CreateAsync(
             new ToamaisutaaTrustedDevice
             {
                 Id = Guid.CreateVersion7(now),
-                FamilyId = Guid.CreateVersion7(now),
+                FamilyId = family,
                 UserId = user.Id,
                 TokenHash = SecureTokens.HashToken(raw),
                 SecurityStamp = user.SecurityStamp,
                 SecondFactorAt = now,
-                Label = Truncate(request.DeviceLabel, 128),
+                Label = label,
                 UserAgent = Truncate(request.UserAgent, 256),
                 IpAddress = ResolveAddress(request.IpAddress, settings.IpAddressStorage),
                 CreatedAt = now,
@@ -196,6 +199,16 @@ internal sealed class TrustedDeviceGate(
             cancellationToken);
 
         await EnforceDeviceCapAsync(devices, user.Id, now, cancellationToken);
+
+        await events.PublishAsync(
+            new TrustedDeviceAdded
+            {
+                OccurredAt = now,
+                UserId = user.Id,
+                DeviceId = family,
+                Label = label,
+            },
+            cancellationToken);
 
         logger.LogInformation("User {UserId} trusted a new device; it expires at {ExpiresAt}.", user.Id, now + settings.Lifetime);
 
@@ -214,8 +227,16 @@ internal sealed class TrustedDeviceGate(
 
         var revoked = await devices.RevokeAllForUserAsync(userId, reason, now, cancellationToken);
 
-        if (revoked > 0)
-            logger.LogWarning("Revoked {Count} trusted device(s) for user {UserId}: {Reason}.", revoked, userId, reason);
+        if (revoked == 0)
+            return;
+
+        logger.LogWarning("Revoked {Count} trusted device(s) for user {UserId}: {Reason}.", revoked, userId, reason);
+
+        // One event for the lot, with no device named: what happened is that this account stopped
+        // trusting anything, not that some number of individual devices each went.
+        await events.PublishAsync(
+            new TrustedDeviceRevoked { OccurredAt = now, UserId = userId, Reason = reason },
+            cancellationToken);
     }
 
     /// <summary>Oldest family out. Every live device is a second factor somebody is not being asked
@@ -232,9 +253,33 @@ internal sealed class TrustedDeviceGate(
 
         foreach (var stale in active.OrderByDescending(device => device.FamilyStartedAt).Skip(cap))
         {
-            await devices.RevokeFamilyAsync(stale.FamilyId, "device-limit-reached", now, cancellationToken);
+            await RevokeFamilyAsync(devices, stale, "device-limit-reached", now, cancellationToken);
             logger.LogInformation("Revoked trusted device {FamilyId} for user {UserId}: the per-user limit was reached.", stale.FamilyId, userId);
         }
+    }
+
+    /// <summary>
+    /// Revokes one family and publishes it, so the reason written to the row and the reason an
+    /// audit sink is handed are one string rather than two literals free to drift apart.
+    /// </summary>
+    private async Task RevokeFamilyAsync(
+        ITrustedDeviceStore devices,
+        ToamaisutaaTrustedDevice stored,
+        string reason,
+        DateTimeOffset now,
+        CancellationToken cancellationToken)
+    {
+        await devices.RevokeFamilyAsync(stored.FamilyId, reason, now, cancellationToken);
+
+        await events.PublishAsync(
+            new TrustedDeviceRevoked
+            {
+                OccurredAt = now,
+                UserId = stored.UserId,
+                DeviceId = stored.FamilyId,
+                Reason = reason,
+            },
+            cancellationToken);
     }
 
     private static string? Truncate(string? value, int length) =>

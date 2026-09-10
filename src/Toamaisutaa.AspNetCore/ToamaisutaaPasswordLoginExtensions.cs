@@ -73,6 +73,11 @@ public static class ToamaisutaaPasswordLoginExtensions
         services.AddOptions<ToamaisutaaTrustedDeviceOptions>();
         services.TryAddScoped<TrustedDeviceGate>();
 
+        // Registered with the sign-in path rather than on its own, because that path publishes
+        // unconditionally: with no IAuthenticationEventSink registered this hands the event to
+        // nobody, which is cheaper than a null check at every call site.
+        services.TryAddScoped<AuthenticationEventPublisher>();
+
         services.TryAddScoped<IPasswordSignInService, PasswordSignInService>();
         services.TryAddScoped<IPasswordAccountService, PasswordAccountService>();
 

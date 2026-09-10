@@ -16,6 +16,7 @@ internal sealed class PasswordSignInService(
     TwoFactorGate twoFactor,
     TrustedDeviceGate trustedDevices,
     ToamaisutaaMetrics metrics,
+    AuthenticationEventPublisher events,
     IOptions<ToamaisutaaLocalLoginOptions> options,
     TimeProvider timeProvider,
     ILogger<PasswordSignInService> logger) : IPasswordSignInService
@@ -36,6 +37,12 @@ internal sealed class PasswordSignInService(
             // will not.
             VerifyDummy(password);
             logger.LogInformation("Sign-in refused: no local credential matches the identifier presented.");
+
+            // The one event that names nobody. There is no account to attribute it to, and the
+            // identifier that was tried is not put in its place: somebody types their password into
+            // the user name box eventually, and this is not the place to keep it.
+            await events.PublishAsync(new SignInFailed { OccurredAt = now, Reason = SignInOutcome.UnknownUser }, cancellationToken);
+
             return Refused(SignInOutcome.UnknownUser);
         }
 
@@ -46,6 +53,11 @@ internal sealed class PasswordSignInService(
                 "Sign-in refused for user {UserId}: locked out until {LockedOutUntil}.",
                 credential.UserId,
                 credential.LockedOutUntil);
+
+            await events.PublishAsync(
+                new SignInFailed { OccurredAt = now, UserId = credential.UserId, Reason = SignInOutcome.LockedOut },
+                cancellationToken);
+
             return Refused(SignInOutcome.LockedOut);
         }
 
@@ -61,15 +73,26 @@ internal sealed class PasswordSignInService(
 
             // Asked after the fact rather than inferred from the count, because the policy owns the
             // threshold and the window reset - and it was not locked a line ago, so a lock now is
-            // this attempt's doing.
-            if (LockoutPolicy.IsLockedOut(credential, now))
+            // this attempt's doing. The event says the same thing to an audit table, once, as the
+            // lock goes on: the attempts refused afterwards never reach this line.
+            if (credential.LockedOutUntil is { } lockedOutUntil && LockoutPolicy.IsLockedOut(credential, now))
+            {
                 metrics.LockedOut();
+
+                await events.PublishAsync(
+                    new AccountLockedOut { OccurredAt = now, UserId = credential.UserId, LockedOutUntil = lockedOutUntil },
+                    cancellationToken);
+            }
 
             logger.LogWarning(
                 "Sign-in refused for user {UserId}: wrong password. {FailedAttempts} failed attempt(s) in the current window{Locked}.",
                 credential.UserId,
                 credential.FailedAttemptCount,
                 credential.LockedOutUntil is { } until ? $"; locked out until {until:O}" : string.Empty);
+
+            await events.PublishAsync(
+                new SignInFailed { OccurredAt = now, UserId = credential.UserId, Reason = SignInOutcome.InvalidPassword },
+                cancellationToken);
 
             return Refused(SignInOutcome.InvalidPassword);
         }
@@ -128,6 +151,7 @@ internal sealed class PasswordSignInService(
                 twoFactorSource: TwoFactorSource.Device,
                 secondFactorAt: trust.SecondFactorAt,
                 trustedDevice: trust.RotatedToken,
+                newSignIn: true,
                 now,
                 cancellationToken);
 
@@ -148,6 +172,7 @@ internal sealed class PasswordSignInService(
             twoFactorSource: null,
             secondFactorAt: null,
             trustedDevice: null,
+            newSignIn: true,
             now,
             cancellationToken);
 
@@ -163,16 +188,28 @@ internal sealed class PasswordSignInService(
         var redemption = await twoFactor.RedeemChallengeAsync(request.ChallengeToken, request.Code, now, cancellationToken);
 
         if (redemption.Outcome != SignInOutcome.Succeeded)
-            return Refused(redemption.Outcome);
+        {
+            await events.PublishAsync(
+                new TwoFactorFailed { OccurredAt = now, UserId = redemption.UserId, Reason = redemption.Outcome },
+                cancellationToken);
 
-        var user = await users.FindByIdAsync(redemption.UserId, cancellationToken)
+            return Refused(redemption.Outcome);
+        }
+
+        var user = await users.FindByIdAsync(redemption.UserId!.Value, cancellationToken)
             ?? throw new InvalidOperationException($"Challenge points at user {redemption.UserId}, which does not exist.");
 
         // A recovery code means the authenticator is gone. Trusting devices at that moment is
         // exactly backwards, and the security stamp cannot carry this one: bumping it here would
         // revoke the refresh family of the session being established.
         if (redemption.UsedRecoveryCode)
+        {
+            await events.PublishAsync(
+                new RecoveryCodeUsed { OccurredAt = now, UserId = user.Id, RunningLow = redemption.RecoveryCodesRunningLow },
+                cancellationToken);
+
             await trustedDevices.RevokeAllAsync(user.Id, "recovery-code-redeemed", now, cancellationToken);
+        }
 
         // Only here. A device-trusted sign-in never reaches this method, which is what stops a
         // family from renewing itself past its absolute lifetime.
@@ -195,6 +232,7 @@ internal sealed class PasswordSignInService(
             twoFactorSource: redemption.UsedRecoveryCode ? TwoFactorSource.Recovery : TwoFactorSource.Otp,
             secondFactorAt: now,
             trustedDevice: issued,
+            newSignIn: true,
             now,
             cancellationToken);
 
@@ -264,7 +302,18 @@ internal sealed class PasswordSignInService(
                     request.UserId,
                     credential.FailedAttemptCount,
                     credential.LockedOutUntil is { } until ? $"; locked out until {until:O}" : string.Empty);
+
+                if (credential.LockedOutUntil is { } lockedOutUntil && LockoutPolicy.IsLockedOut(credential, now))
+                {
+                    await events.PublishAsync(
+                        new AccountLockedOut { OccurredAt = now, UserId = request.UserId, LockedOutUntil = lockedOutUntil },
+                        cancellationToken);
+                }
             }
+
+            await events.PublishAsync(
+                new TwoFactorFailed { OccurredAt = now, UserId = request.UserId, Reason = redemption.Outcome },
+                cancellationToken);
 
             return new StepUpResult { Outcome = redemption.Outcome };
         }
@@ -276,7 +325,13 @@ internal sealed class PasswordSignInService(
         // A recovery code means the authenticator is gone, and that inference does not change based
         // on which endpoint it was typed into. Same revocation as at sign-in.
         if (redemption.UsedRecoveryCode)
+        {
+            await events.PublishAsync(
+                new RecoveryCodeUsed { OccurredAt = now, UserId = request.UserId, RunningLow = redemption.RecoveryCodesRunningLow },
+                cancellationToken);
+
             await trustedDevices.RevokeAllAsync(request.UserId, "recovery-code-redeemed", now, cancellationToken);
+        }
 
         var user = await users.FindByIdAsync(request.UserId, cancellationToken)
             ?? throw new InvalidOperationException($"Step-up names user {request.UserId}, which does not exist.");
@@ -450,7 +505,11 @@ internal sealed class PasswordSignInService(
 
             metrics.RefreshTokenReuseDetected();
 
-            await refreshTokens.RevokeFamilyAsync(stored.FamilyId, "refresh-token-reuse", now, cancellationToken);
+            await events.PublishAsync(
+                new RefreshTokenReuseDetected { OccurredAt = now, UserId = stored.UserId, SessionId = stored.FamilyId },
+                cancellationToken);
+
+            await RevokeFamilyAsync(stored, "refresh-token-reuse", now, cancellationToken);
 
             // Explicit, because the stamp cannot carry this one either: bumping it would revoke
             // this user's other legitimate sessions, which is a behaviour change beyond what reuse
@@ -475,7 +534,7 @@ internal sealed class PasswordSignInService(
                 stored.UserId,
                 stored.FamilyId);
 
-            await refreshTokens.RevokeFamilyAsync(stored.FamilyId, "absolute-lifetime-reached", now, cancellationToken);
+            await RevokeFamilyAsync(stored, "absolute-lifetime-reached", now, cancellationToken);
             return Failed(SignInOutcome.RefreshTokenExpired);
         }
 
@@ -493,7 +552,7 @@ internal sealed class PasswordSignInService(
                 stored.UserId,
                 stored.FamilyId);
 
-            await refreshTokens.RevokeFamilyAsync(stored.FamilyId, "security-stamp-changed", now, cancellationToken);
+            await RevokeFamilyAsync(stored, "security-stamp-changed", now, cancellationToken);
             return Failed(SignInOutcome.SecurityStampChanged);
         }
 
@@ -512,6 +571,7 @@ internal sealed class PasswordSignInService(
             twoFactorSource: stored.TwoFactorSource,
             secondFactorAt: stored.SecondFactorAt,
             trustedDevice: null,
+            newSignIn: false,
             now,
             cancellationToken);
     }
@@ -526,8 +586,31 @@ internal sealed class PasswordSignInService(
 
         // The whole family, not just this token: signing out on one device should not leave a
         // rotated sibling alive somewhere else.
-        await refreshTokens.RevokeFamilyAsync(stored.FamilyId, "signed-out", timeProvider.GetUtcNow(), cancellationToken);
+        await RevokeFamilyAsync(stored, "signed-out", timeProvider.GetUtcNow(), cancellationToken);
         logger.LogInformation("Signed out user {UserId}; revoked refresh family {FamilyId}.", stored.UserId, stored.FamilyId);
+    }
+
+    /// <summary>
+    /// Revokes a family and publishes it, so the reason stored on the rows and the reason an audit
+    /// sink is handed are one string rather than two literals free to drift apart.
+    /// </summary>
+    private async Task RevokeFamilyAsync(
+        ToamaisutaaRefreshToken stored,
+        string reason,
+        DateTimeOffset now,
+        CancellationToken cancellationToken)
+    {
+        await refreshTokens.RevokeFamilyAsync(stored.FamilyId, reason, now, cancellationToken);
+
+        await events.PublishAsync(
+            new SessionRevoked
+            {
+                OccurredAt = now,
+                UserId = stored.UserId,
+                SessionId = stored.FamilyId,
+                Reason = reason,
+            },
+            cancellationToken);
     }
 
     private async Task<SignInResult> IssueAsync(
@@ -539,6 +622,7 @@ internal sealed class PasswordSignInService(
         string? twoFactorSource,
         DateTimeOffset? secondFactorAt,
         TrustedDeviceToken? trustedDevice,
+        bool newSignIn,
         DateTimeOffset now,
         CancellationToken cancellationToken)
     {
@@ -583,6 +667,23 @@ internal sealed class PasswordSignInService(
                 SecondFactorAt = secondFactorAt,
             },
             cancellationToken);
+
+        // A refresh lands here too, and it is not a sign-in: it proved nothing, it renewed
+        // something already proved. An audit table that counted rotations as sign-ins would report
+        // one every AccessTokenLifetime for anyone who left a tab open.
+        if (newSignIn)
+        {
+            await events.PublishAsync(
+                new SignInSucceeded
+                {
+                    OccurredAt = now,
+                    UserId = user.Id,
+                    AuthenticationMethods = methods,
+                    SessionId = family,
+                    TwoFactorSource = twoFactorSource,
+                },
+                cancellationToken);
+        }
 
         return new SignInResult
         {

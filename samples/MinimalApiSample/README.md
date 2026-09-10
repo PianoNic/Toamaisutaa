@@ -74,6 +74,14 @@ toamaisutaa.two_factor.verifications 1 source=recovery, result=succeeded
 A real deployment does the same thing with one `AddMeter(ToamaisutaaDefaults.MeterName)` line - see
 [the metrics page](../../docs/metrics.md).
 
+## The ledger
+
+`LoggingAuditSink` is registered as an `IAuthenticationEventSink`, so every outcome above also
+arrives as an `Audit: <kind> for user <id>` line: `sign-in-succeeded`, `sign-in-failed`,
+`account-locked-out`, `refresh-token-reuse-detected`, `session-revoked` and the rest. Log in with
+the wrong password five times and read them in order - that sequence is what an audit table is for,
+and none of it is in any response body. See [Audit events](https://docs.toamaisutaa.pianonic.ch/audit-events).
+
 ## The breach check
 
 `Toamaisutaa.PasswordValidation.Hibp` is registered, so try registering with `password` and watch it

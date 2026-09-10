@@ -16,6 +16,7 @@ internal sealed class PasswordAccountService(
     IPasswordResetNotifier notifier,
     IPasswordSignInService signIn,
     TrustedDeviceGate trustedDevices,
+    AuthenticationEventPublisher events,
     IOptions<ToamaisutaaLocalLoginOptions> options,
     TimeProvider timeProvider,
     ILogger<PasswordAccountService> logger,
@@ -128,9 +129,11 @@ internal sealed class PasswordAccountService(
         // A password change ends the other sessions. It is the one moment the account holder is
         // most likely to be reacting to someone else having access.
         await users.UpdateSecurityStampAsync(userId, SecureTokens.Create(), cancellationToken);
-        await refreshTokens.RevokeAllForUserAsync(userId, "password-changed", now, cancellationToken);
+        await RevokeAllSessionsAsync(userId, "password-changed", now, cancellationToken);
         await trustedDevices.RevokeAllAsync(userId, "password-changed", now, cancellationToken);
         await resetTokens.InvalidateAllForUserAsync(userId, now, cancellationToken);
+
+        await events.PublishAsync(new PasswordChanged { OccurredAt = now, UserId = userId }, cancellationToken);
 
         return new AccountResult { Succeeded = true, UserId = userId };
     }
@@ -229,9 +232,13 @@ internal sealed class PasswordAccountService(
         // Same reasoning as a self-service change: whoever is now holding this password should not
         // find the account's other sessions still alive.
         await users.UpdateSecurityStampAsync(userId, SecureTokens.Create(), cancellationToken);
-        await refreshTokens.RevokeAllForUserAsync(userId, "admin-password-set", now, cancellationToken);
+        await RevokeAllSessionsAsync(userId, "admin-password-set", now, cancellationToken);
         await trustedDevices.RevokeAllAsync(userId, "admin-password-set", now, cancellationToken);
         await resetTokens.InvalidateAllForUserAsync(userId, now, cancellationToken);
+
+        await events.PublishAsync(
+            new PasswordChanged { OccurredAt = now, UserId = userId, SetByAdministrator = true },
+            cancellationToken);
 
         logger.LogInformation("Admin set the password for user {UserId}; all local sessions revoked.", userId);
 
@@ -438,11 +445,26 @@ internal sealed class PasswordAccountService(
         // Nothing on the external side is touched: the external logins stay linked, and a token the
         // identity provider issued keeps working until it expires, because we cannot revoke it.
         await users.UpdateSecurityStampAsync(stored.UserId, SecureTokens.Create(), cancellationToken);
-        await refreshTokens.RevokeAllForUserAsync(stored.UserId, "password-reset", now, cancellationToken);
+        await RevokeAllSessionsAsync(stored.UserId, "password-reset", now, cancellationToken);
         await trustedDevices.RevokeAllAsync(stored.UserId, "password-reset", now, cancellationToken);
+
+        await events.PublishAsync(new PasswordReset { OccurredAt = now, UserId = stored.UserId }, cancellationToken);
 
         logger.LogInformation("Password reset completed for user {UserId}; all local sessions revoked.", stored.UserId);
         return new AccountResult { Succeeded = true, UserId = stored.UserId };
+    }
+
+    /// <summary>
+    /// Ends every session and publishes it, so the reason written to the rows and the reason an
+    /// audit sink is handed are one string rather than two literals free to drift apart.
+    /// </summary>
+    private async Task RevokeAllSessionsAsync(Guid userId, string reason, DateTimeOffset now, CancellationToken cancellationToken)
+    {
+        await refreshTokens.RevokeAllForUserAsync(userId, reason, now, cancellationToken);
+
+        await events.PublishAsync(
+            new SessionRevoked { OccurredAt = now, UserId = userId, Reason = reason },
+            cancellationToken);
     }
 
     private ToamaisutaaPasswordCredential BuildCredential(Guid userId, string userName, string? email, string password, DateTimeOffset now) =>
