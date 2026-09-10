@@ -9,8 +9,9 @@ public static class ToamaisutaaHealthCheckExtensions
 {
     /// <summary>
     /// Probes the issuer discovery document the bearer handler validates against. Unhealthy when it
-    /// cannot be fetched at all, degraded once a cached document is being served past its refresh
-    /// interval, healthy otherwise.
+    /// cannot be fetched at all, degraded while a fetch that succeeded within
+    /// <c>Oidc:HealthCheck:DegradedFor</c> is all this process has, unhealthy again once even that
+    /// is older than it, healthy otherwise.
     /// </summary>
     /// <remarks>
     /// <para>

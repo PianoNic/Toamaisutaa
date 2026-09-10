@@ -68,3 +68,36 @@ already is, so nothing new has to be bound and `AddToamaisutaaHealthChecks()` ta
 defaults to twelve hours, and a probe that reaches the issuer twice a day would tell an operator
 nothing at deploy time. Five minutes is short enough to be current and long enough that a fleet of
 replicas being probed every few seconds does not become load on the issuer.
+
+## Degraded is bounded by `DegradedFor`, and does not report on the handler
+
+As shipped, `_lastSuccess` was written only by this check's own probe and never expired. One fetch
+that succeeded therefore made the `cached is null` branch unreachable for the life of the process, so
+every later failure answered degraded, which `MapHealthChecks` turns into 200. A pod whose issuer
+disappeared a minute after it started stayed in the load balancer indefinitely while every
+authenticated request 401ed - the exact outcome issue #72 exists to prevent, arrived at from the
+other side.
+
+`Oidc:HealthCheck:DegradedFor` bounds it: past that age the last successful fetch stops counting and
+the check reports unhealthy. Fifteen minutes, three refresh intervals, is long enough to ride out an
+identity provider restart and short enough to be out of rotation well before signing keys rotate.
+`00:00:00` opts out of degraded entirely.
+
+The other half was wording. The message said "the bearer handler is still serving the document
+fetched Xm ago", and the docs table said the same. This check cannot see that. The handler's document
+is in `JwtBearerOptions.ConfigurationManager`, on its own refresh interval, loaded lazily on the
+first request that carries a token - a process serving only anonymous traffic has none, and the check
+would still have said it was being served. Reading the handler's `ConfigurationManager` to make the
+claim true was considered and not taken: `GetBaseConfigurationAsync` is not a free cache peek, and a
+health check that can start a network call into the authentication stack to decide what to report is
+worse than one that reports only what it fetched itself. Both messages now say "this process last
+fetched", which is what there is evidence for.
+
+## The `ready` tag is asserted over HTTP
+
+`HealthCheckService` aggregates an empty selection to healthy, and `MapHealthChecks` answers 200 for
+it. A predicate that matches nothing is therefore indistinguishable from a passing probe, so renaming
+or dropping the `ready` tag would leave every test green and every consumer's `/ready` permanently
+green while checking nothing. The tag is now covered the way `CheckName` and `HttpClientName` already
+were - written out as a literal in the test rather than read from `ToamaisutaaDefaults`, against an
+unreachable issuer so that a 200 can only mean the predicate selected nothing.
