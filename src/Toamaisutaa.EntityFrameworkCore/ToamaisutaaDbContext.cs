@@ -50,6 +50,10 @@ public class ToamaisutaaDbContext : DbContext
 
     public DbSet<ToamaisutaaTrustedDevice> TrustedDevices => Set<ToamaisutaaTrustedDevice>();
 
+    public DbSet<ToamaisutaaPasskeyCredential> PasskeyCredentials => Set<ToamaisutaaPasskeyCredential>();
+
+    public DbSet<ToamaisutaaPasskeyChallenge> PasskeyChallenges => Set<ToamaisutaaPasskeyChallenge>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);

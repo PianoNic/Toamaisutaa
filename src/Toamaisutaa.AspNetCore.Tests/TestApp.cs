@@ -59,6 +59,10 @@ internal sealed class TestApp : IAsyncDisposable
         IssuedMagicLinks = issuedMagicLinks;
     }
 
+    /// <summary>Where the test host serves from, and so the only origin a WebAuthn ceremony here
+    /// can claim. The browser puts this in the client data and the package checks it.</summary>
+    public const string Origin = "http://localhost";
+
     public HttpClient Client { get; }
 
     /// <summary>The host's own container. For the few assertions that have to read what landed in
@@ -153,6 +157,10 @@ internal sealed class TestApp : IAsyncDisposable
             ["TwoFactor:EncryptionKey"] = Convert.ToBase64String(new byte[32]),
             ["TrustedDevices:IpAddressStorage"] = "Truncated",
             ["LocalLogin:IpAddressStorage"] = "Truncated",
+            // The test host serves everything from http://localhost, so that is the only origin a
+            // ceremony can honestly claim to have happened on.
+            ["Passkeys:RelyingPartyId"] = "localhost",
+            ["Passkeys:Origins:0"] = Origin,
         };
 
         configure?.Invoke(settings);
@@ -178,6 +186,7 @@ internal sealed class TestApp : IAsyncDisposable
         builder.Services.AddToamaisutaaPasswordLogin(builder.Configuration);
         builder.Services.AddToamaisutaaTwoFactor(builder.Configuration);
         builder.Services.AddToamaisutaaTrustedDevices(builder.Configuration);
+        builder.Services.AddToamaisutaaPasskeys(builder.Configuration);
         builder.Services.AddSingleton<IPasswordResetNotifier, SilentResetNotifier>();
 
         var issuedPasswords = new List<(Guid UserId, string Password)>();
@@ -241,6 +250,7 @@ internal sealed class TestApp : IAsyncDisposable
         app.MapToamaisutaaTwoFactorEndpoints();
         app.MapToamaisutaaTrustedDeviceEndpoints();
         app.MapToamaisutaaSessionEndpoints();
+        app.MapToamaisutaaPasskeyEndpoints();
 
         // Stands in for an ordinary protected endpoint of the application's own.
         app.MapGet("/test/me", async (ICurrentUser currentUser, CancellationToken cancellationToken) =>

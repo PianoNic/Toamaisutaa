@@ -33,7 +33,8 @@ internal sealed class ToamaisutaaMetrics : IDisposable
     /// carries them.</summary>
     private const string MethodsTag = "amr";
 
-    /// <summary>Which second factor was presented: <c>otp</c>, <c>recovery</c> or <c>device</c>.</summary>
+    /// <summary>Which second factor was presented: <c>otp</c>, <c>recovery</c>, <c>device</c> or
+    /// <c>passkey</c>.</summary>
     private const string SourceTag = "source";
 
     private const string Succeeded = "succeeded";
@@ -164,6 +165,7 @@ internal sealed class ToamaisutaaMetrics : IDisposable
         SignInOutcome.SessionEnded => "session_ended",
         SignInOutcome.TwoFactorNotEnrolled => "two_factor_not_enrolled",
         SignInOutcome.NotALocalSession => "not_a_local_session",
+        SignInOutcome.InvalidPasskey => "invalid_passkey",
         _ => outcome.ToString(),
     };
 

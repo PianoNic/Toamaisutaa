@@ -283,6 +283,17 @@ public enum SignInOutcome
     /// same reasoning a reset link uses: they are the same answer to whoever is holding it.
     /// </summary>
     InvalidMagicLink,
+
+    /// <summary>
+    /// A WebAuthn assertion did not verify: a wrong signature, an origin or relying party that does
+    /// not match, a credential nobody has registered, a counter that went backwards, or user
+    /// verification that was asked for and not performed.
+    /// </summary>
+    /// <remarks>
+    /// One value for all of them, because the endpoint answers one body regardless and a sink
+    /// reading this gets the detail from the log line the ceremony wrote alongside it.
+    /// </remarks>
+    InvalidPasskey,
 }
 
 /// <summary>How the second factor was satisfied. Written to <c>toa_2fa_source</c>.</summary>
@@ -294,6 +305,13 @@ public static class TwoFactorSource
 
     /// <summary>Cached from an earlier live challenge on a trusted device.</summary>
     public const string Device = "device";
+
+    /// <summary>
+    /// A WebAuthn assertion the authenticator verified the user for. One ceremony proved possession
+    /// of the key and a PIN or a biometric, which is why a passkey sign-in is not asked for a TOTP
+    /// code on top.
+    /// </summary>
+    public const string Passkey = "passkey";
 }
 
 /// <summary>

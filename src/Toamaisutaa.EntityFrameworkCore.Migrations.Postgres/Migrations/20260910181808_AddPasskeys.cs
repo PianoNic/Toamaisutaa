@@ -1,0 +1,100 @@
+﻿using System;
+using Microsoft.EntityFrameworkCore.Migrations;
+
+#nullable disable
+
+namespace Toamaisutaa.EntityFrameworkCore.Migrations.Postgres.Migrations
+{
+    /// <inheritdoc />
+    public partial class AddPasskeys : Migration
+    {
+        /// <inheritdoc />
+        protected override void Up(MigrationBuilder migrationBuilder)
+        {
+            migrationBuilder.CreateTable(
+                name: "ToamaisutaaPasskeyChallenges",
+                columns: table => new
+                {
+                    Id = table.Column<Guid>(type: "uuid", nullable: false),
+                    UserId = table.Column<Guid>(type: "uuid", nullable: true),
+                    TokenHash = table.Column<string>(type: "character varying(64)", maxLength: 64, nullable: false),
+                    Options = table.Column<string>(type: "text", nullable: false),
+                    Ceremony = table.Column<int>(type: "integer", nullable: false),
+                    CreatedAt = table.Column<long>(type: "bigint", nullable: false),
+                    ExpiresAt = table.Column<long>(type: "bigint", nullable: false),
+                    ConsumedAt = table.Column<long>(type: "bigint", nullable: true)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_ToamaisutaaPasskeyChallenges", x => x.Id);
+                    table.ForeignKey(
+                        name: "FK_ToamaisutaaPasskeyChallenges_ToamaisutaaUsers_UserId",
+                        column: x => x.UserId,
+                        principalTable: "ToamaisutaaUsers",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Cascade);
+                });
+
+            migrationBuilder.CreateTable(
+                name: "ToamaisutaaPasskeyCredentials",
+                columns: table => new
+                {
+                    Id = table.Column<Guid>(type: "uuid", nullable: false),
+                    UserId = table.Column<Guid>(type: "uuid", nullable: false),
+                    CredentialId = table.Column<byte[]>(type: "bytea", maxLength: 256, nullable: false),
+                    PublicKey = table.Column<byte[]>(type: "bytea", maxLength: 1024, nullable: false),
+                    SignCount = table.Column<long>(type: "bigint", nullable: false),
+                    AaGuid = table.Column<Guid>(type: "uuid", nullable: false),
+                    Transports = table.Column<string>(type: "character varying(128)", maxLength: 128, nullable: true),
+                    AttestationFormat = table.Column<string>(type: "character varying(64)", maxLength: 64, nullable: true),
+                    IsBackupEligible = table.Column<bool>(type: "boolean", nullable: false),
+                    IsBackedUp = table.Column<bool>(type: "boolean", nullable: false),
+                    Label = table.Column<string>(type: "character varying(128)", maxLength: 128, nullable: true),
+                    CreatedAt = table.Column<long>(type: "bigint", nullable: false),
+                    LastUsedAt = table.Column<long>(type: "bigint", nullable: true)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_ToamaisutaaPasskeyCredentials", x => x.Id);
+                    table.ForeignKey(
+                        name: "FK_ToamaisutaaPasskeyCredentials_ToamaisutaaUsers_UserId",
+                        column: x => x.UserId,
+                        principalTable: "ToamaisutaaUsers",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Cascade);
+                });
+
+            migrationBuilder.CreateIndex(
+                name: "IX_ToamaisutaaPasskeyChallenges_TokenHash",
+                table: "ToamaisutaaPasskeyChallenges",
+                column: "TokenHash",
+                unique: true);
+
+            migrationBuilder.CreateIndex(
+                name: "IX_ToamaisutaaPasskeyChallenges_UserId",
+                table: "ToamaisutaaPasskeyChallenges",
+                column: "UserId");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_ToamaisutaaPasskeyCredentials_CredentialId",
+                table: "ToamaisutaaPasskeyCredentials",
+                column: "CredentialId",
+                unique: true);
+
+            migrationBuilder.CreateIndex(
+                name: "IX_ToamaisutaaPasskeyCredentials_UserId",
+                table: "ToamaisutaaPasskeyCredentials",
+                column: "UserId");
+        }
+
+        /// <inheritdoc />
+        protected override void Down(MigrationBuilder migrationBuilder)
+        {
+            migrationBuilder.DropTable(
+                name: "ToamaisutaaPasskeyChallenges");
+
+            migrationBuilder.DropTable(
+                name: "ToamaisutaaPasskeyCredentials");
+        }
+    }
+}

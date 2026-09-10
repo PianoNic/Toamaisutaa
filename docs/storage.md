@@ -136,6 +136,8 @@ Three things the EF implementations do that yours must also do, because `Core` r
 | `ToamaisutaaUserTwoFactors` | One TOTP enrolment per user, its secret encrypted at rest |
 | `ToamaisutaaRecoveryCodes` | Hashed single-use recovery codes |
 | `ToamaisutaaTwoFactorChallenges` | Half-finished sign-ins waiting on a second factor |
+| `ToamaisutaaPasskeyCredentials` | Registered WebAuthn credentials, their public keys and signature counters |
+| `ToamaisutaaPasskeyChallenges` | WebAuthn ceremonies in flight, with the options that were sent |
 
 Credentials live in their own table rather than as columns on the user, and the reason is worth
 knowing: `ToamaisutaaUsers.Email` is a profile field that OIDC provisioning rewrites whenever the

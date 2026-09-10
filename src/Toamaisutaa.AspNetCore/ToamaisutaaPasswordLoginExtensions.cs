@@ -82,6 +82,10 @@ public static class ToamaisutaaPasswordLoginExtensions
         // nobody, which is cheaper than a null check at every call site.
         services.TryAddScoped<AuthenticationEventPublisher>();
 
+        // Shared with the passkey package, which mints the same session from a different ceremony.
+        // Registered here as well as there, because either call may come first.
+        services.TryAddScoped<LocalSessionIssuer>();
+
         services.TryAddScoped<IPasswordSignInService, PasswordSignInService>();
         services.TryAddScoped<IPasswordAccountService, PasswordAccountService>();
 

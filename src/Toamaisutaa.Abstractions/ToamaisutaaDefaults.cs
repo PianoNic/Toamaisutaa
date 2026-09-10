@@ -71,6 +71,20 @@ public static class ToamaisutaaDefaults
     /// </remarks>
     public const string MagicLinkMethod = "email";
 
+    /// <summary>
+    /// RFC 8176's "proof-of-possession of a hardware-secured key", written to <c>amr</c> for a
+    /// passkey. It is the possession half of what a WebAuthn assertion proves.
+    /// </summary>
+    public const string HardwareKeyMethod = "hwk";
+
+    /// <summary>
+    /// RFC 8176's user-presence test, written to <c>amr</c> for a passkey. Every WebAuthn assertion
+    /// requires it, so it is on every one of them; <see cref="MultiFactorMethod"/> is what
+    /// distinguishes an assertion the authenticator also verified the user for - a PIN or a
+    /// fingerprint - from one that only proved somebody touched the key.
+    /// </summary>
+    public const string UserPresenceMethod = "user";
+
     /// <summary>Carries <see cref="ToamaisutaaUser.SecurityStamp"/> on a locally issued token.</summary>
     public const string SecurityStampClaim = "toa_stamp";
 
@@ -83,7 +97,11 @@ public static class ToamaisutaaDefaults
     /// <summary>Configuration section trusted devices bind from.</summary>
     public const string TrustedDevicesConfigurationSection = "TrustedDevices";
 
-    /// <summary>How the second factor was satisfied: <c>otp</c>, <c>recovery</c> or <c>device</c>.</summary>
+    /// <summary>Configuration section passkeys bind from.</summary>
+    public const string PasskeysConfigurationSection = "Passkeys";
+
+    /// <summary>How the second factor was satisfied: <c>otp</c>, <c>recovery</c>, <c>device</c> or
+    /// <c>passkey</c>.</summary>
     public const string TwoFactorSourceClaim = "toa_2fa_source";
 
     /// <summary>

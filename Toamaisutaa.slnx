@@ -13,6 +13,7 @@
 	<Project Path="src/Toamaisutaa.Email.Smtp.Tests/Toamaisutaa.Email.Smtp.Tests.csproj" />
 	<Project Path="src/Toamaisutaa.OpenApi/Toamaisutaa.OpenApi.csproj" />
 	<Project Path="src/Toamaisutaa.OpenIdConnect/Toamaisutaa.OpenIdConnect.csproj" />
+	<Project Path="src/Toamaisutaa.Passkeys/Toamaisutaa.Passkeys.csproj" />
 	<Project Path="src/Toamaisutaa.PasswordHashing.Argon2/Toamaisutaa.PasswordHashing.Argon2.csproj" />
 	<Project Path="src/Toamaisutaa.PasswordHashing.Argon2.Tests/Toamaisutaa.PasswordHashing.Argon2.Tests.csproj" />
 	<Project Path="src/Toamaisutaa.PasswordValidation.Hibp/Toamaisutaa.PasswordValidation.Hibp.csproj" />

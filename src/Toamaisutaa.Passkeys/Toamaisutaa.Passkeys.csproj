@@ -1,0 +1,35 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <Description>Opt-in passkey (WebAuthn) authentication for Toamaisutaa: registration and assertion endpoints, a per-user credential list, and passwordless sign-in that satisfies the two-factor policy on its own. Nothing else references this package - install it only if you want passkeys, and are willing to carry the FIDO2 dependency they need.</Description>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Toamaisutaa.Abstractions\Toamaisutaa.Abstractions.csproj" />
+    <!-- Core, for the one place a local session is minted. A passkey assertion ends in exactly the
+         token pair a password sign-in does, and writing a second one would be a second answer to
+         "what does this token carry now" - the question that has been the bug three phases running. -->
+    <ProjectReference Include="..\Toamaisutaa.Core\Toamaisutaa.Core.csproj" />
+    <!-- AspNetCore, because this package maps endpoints and they have to behave like the ones next
+         to them: the same stale-stamp filter, the same rate limiter on the anonymous ones, and the
+         same token response body as /auth/login. -->
+    <ProjectReference Include="..\Toamaisutaa.AspNetCore\Toamaisutaa.AspNetCore.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- No Microsoft.Extensions.* references: the framework reference above already carries them,
+         and naming them again is what NU1510 is for. -->
+    <!-- The one external dependency this package exists to isolate. .NET 10 does ship WebAuthn, but
+         only inside ASP.NET Core Identity, where it is bound to that library's user manager and
+         stores rather than being callable on its own - so a package that is not Identity cannot
+         reuse it. Fido2 (the fido2-net-lib project) is the established .NET implementation: MIT,
+         maintained, and the one every other non-Identity WebAuthn integration is built on. It is
+         kept out of Core deliberately - a consumer who will not take it does not install this. -->
+    <PackageReference Include="Fido2" />
+  </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="Toamaisutaa.AspNetCore.Tests" />
+  </ItemGroup>
+</Project>

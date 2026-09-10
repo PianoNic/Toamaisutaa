@@ -109,6 +109,14 @@ internal sealed class PasswordHarness
 
         TrustedDevices = new TrustedDeviceService(Devices, publisher, Clock, NullLogger<TrustedDeviceService>.Instance);
 
+        SessionIssuer = new LocalSessionIssuer(
+            Issuer,
+            Passwords,
+            new EmptyUserRoleProvider(),
+            gate,
+            publisher,
+            wrapped);
+
         SignIn = new PasswordSignInService(
             Passwords,
             Users,
@@ -117,6 +125,7 @@ internal sealed class PasswordHarness
             Hasher,
             Issuer,
             new EmptyUserRoleProvider(),
+            SessionIssuer,
             new DummyPasswordHash(Hasher),
             gate,
             deviceGate,
@@ -215,6 +224,10 @@ internal sealed class PasswordHarness
     internal TrustedDeviceService TrustedDevices { get; }
 
     internal SessionService Sessions { get; }
+
+    /// <summary>The one place a token pair is minted. Shared with the passkey package, so a test
+    /// that drives it here is testing what a passkey sign-in ends in too.</summary>
+    internal LocalSessionIssuer SessionIssuer { get; }
 
     internal ToamaisutaaTrustedDeviceOptions TrustedDeviceOptions { get; }
 
