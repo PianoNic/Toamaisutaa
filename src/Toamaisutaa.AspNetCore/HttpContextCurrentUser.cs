@@ -34,10 +34,13 @@ internal sealed class HttpContextCurrentUser(
         ?? Find(ClaimTypes.Email);
 
     /// <summary>
-    /// The configured claim first, then <see cref="ClaimTypes.Role"/> - the same fallback
-    /// <see cref="Subject"/> and <see cref="Name"/> make, and for the same reason: a principal that
-    /// did not come from this package's bearer pipeline carries the .NET type instead, and that is
-    /// also the one <c>RequireRole</c> would have read there.
+    /// The configured claim first, then whatever each identity names as its own role claim type.
+    /// That second read is what <c>RequireRole</c> makes, so the two answer alike: it is
+    /// <see cref="ClaimTypes.Role"/> for a principal that did not come from this package's bearer
+    /// pipeline, and the configured claim for one that did. Reading the .NET type unconditionally
+    /// instead reports a role on this pipeline's own principals that the authorization layer
+    /// refuses, and being permissive where <c>[Authorize]</c> is not is the worse of the two
+    /// disagreements.
     /// </summary>
     public IReadOnlyList<string> Roles
     {
@@ -49,8 +52,10 @@ internal sealed class HttpContextCurrentUser(
 
             var roles = new List<string>();
 
-            Collect(roles, principal, oidcOptions.Value.RoleClaim);
-            Collect(roles, principal, ClaimTypes.Role);
+            Collect(roles, principal.FindAll(oidcOptions.Value.RoleClaim));
+
+            foreach (var identity in principal.Identities)
+                Collect(roles, identity.FindAll(identity.RoleClaimType));
 
             return roles;
         }
@@ -106,11 +111,11 @@ internal sealed class HttpContextCurrentUser(
         return null;
     }
 
-    // Deduplicated because the two claim types can name the same thing - a role claim configured as
-    // ClaimTypes.Role, or a principal enriched from userinfo with what the token already carried.
-    private static void Collect(List<string> roles, ClaimsPrincipal principal, string claimType)
+    // Deduplicated because the claim types can name the same thing - a role claim type that is the
+    // configured claim, or a principal enriched from userinfo with what the token already carried.
+    private static void Collect(List<string> roles, IEnumerable<Claim> claims)
     {
-        foreach (var claim in principal.FindAll(claimType))
+        foreach (var claim in claims)
         {
             if (!string.IsNullOrWhiteSpace(claim.Value) && !roles.Contains(claim.Value, StringComparer.Ordinal))
                 roles.Add(claim.Value);
