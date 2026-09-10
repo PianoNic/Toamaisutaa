@@ -41,6 +41,7 @@ internal sealed class PasswordHarness
         Totp = new TotpProvider(wrappedTwoFactor);
         RecoveryCodes = new RecoveryCodeProvider();
         Protector = new AesGcmSecretProtector(wrappedTwoFactor);
+        Metrics = new ToamaisutaaMetrics();
 
         Verifier = new TwoFactorVerifier(
             TwoFactorStore,
@@ -48,6 +49,7 @@ internal sealed class PasswordHarness
             Totp,
             RecoveryCodes,
             Protector,
+            Metrics,
             wrappedTwoFactor,
             Clock,
             NullLogger<TwoFactorVerifier>.Instance);
@@ -97,6 +99,7 @@ internal sealed class PasswordHarness
             new DummyPasswordHash(Hasher),
             gate,
             deviceGate,
+            Metrics,
             wrapped,
             Clock,
             NullLogger<PasswordSignInService>.Instance);
@@ -161,6 +164,10 @@ internal sealed class PasswordHarness
     internal AesGcmSecretProtector Protector { get; }
 
     internal TwoFactorVerifier Verifier { get; }
+
+    /// <summary>This harness's own meter, so a metrics assertion measures this harness and not
+    /// whichever others happen to be running beside it.</summary>
+    internal ToamaisutaaMetrics Metrics { get; }
 
     internal PasswordSignInService SignIn { get; }
 

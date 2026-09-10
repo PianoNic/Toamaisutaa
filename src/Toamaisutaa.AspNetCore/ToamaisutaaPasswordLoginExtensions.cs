@@ -53,6 +53,10 @@ public static class ToamaisutaaPasswordLoginExtensions
         services.AddToamaisutaaProvisioning();
         services.AddToamaisutaaCurrentUser();
 
+        // One meter for the whole package, so every instrument on it appears and disappears
+        // together for whoever subscribed to the name.
+        services.TryAddSingleton<ToamaisutaaMetrics>();
+
         services.TryAddSingleton<IPasswordHasher, Pbkdf2PasswordHasher>();
         services.TryAddSingleton<IPasswordValidator, DefaultPasswordValidator>();
         services.TryAddSingleton<IUserRoleProvider, EmptyUserRoleProvider>();

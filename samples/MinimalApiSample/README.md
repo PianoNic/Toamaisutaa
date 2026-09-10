@@ -57,6 +57,23 @@ say:
 Self-registration is on here because it makes the sample usable. It is off by default in the
 package.
 
+## The metrics
+
+Nothing switches them on. `MetricsToTheLog` in `Program.cs` subscribes to the `Toamaisutaa` meter
+and writes each measurement to the log, standing in for an exporter so the sample needs no metrics
+package. Sign in, mistype a password a few times, redeem a recovery code, and watch:
+
+```
+toamaisutaa.password.verification.duration 0.081 result=succeeded
+toamaisutaa.sign_in.attempts 1 result=succeeded, amr=pwd
+toamaisutaa.sign_in.attempts 1 result=invalid_password, amr=none
+toamaisutaa.lockouts 1
+toamaisutaa.two_factor.verifications 1 source=recovery, result=succeeded
+```
+
+A real deployment does the same thing with one `AddMeter(ToamaisutaaDefaults.MeterName)` line - see
+[the metrics page](../../docs/metrics.md).
+
 ## The breach check
 
 `Toamaisutaa.PasswordValidation.Hibp` is registered, so try registering with `password` and watch it

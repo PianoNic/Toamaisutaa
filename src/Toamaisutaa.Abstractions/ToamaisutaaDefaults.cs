@@ -20,6 +20,14 @@ public static class ToamaisutaaDefaults
     /// prints it as.</summary>
     public const string DiscoveryHealthCheckName = "toamaisutaa-oidc-discovery";
 
+    /// <summary>
+    /// The <c>System.Diagnostics.Metrics</c> meter every instrument in this package is published on.
+    /// Public because a metrics pipeline is subscribed by name and nothing else -
+    /// <c>AddMeter(ToamaisutaaDefaults.MeterName)</c> - and a typo in a string literal produces no
+    /// error, just a dashboard that stays empty.
+    /// </summary>
+    public const string MeterName = "Toamaisutaa";
+
     /// <summary>Where the SPA's runtime configuration is served from.</summary>
     public const string ConfigurationEndpointPattern = "/api/app";
 
