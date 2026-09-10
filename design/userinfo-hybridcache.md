@@ -42,7 +42,39 @@ and the wrong one to store: a HybridCache value can be serialised into a consume
 
 ## What consumers get and do not get
 
-Nothing to configure. `AddToamaisutaaBearer` calls `AddHybridCache`; an application that has
-registered an `IDistributedCache` gets a shared second level from its own registration, and one that
-has not gets an in-memory first level and the stampede protection, which is the half that matters
-on a cold start.
+`AddToamaisutaaBearer` calls `AddHybridCache`, and every consumer gets the in-memory first level and
+the stampede protection, which is the half that matters on a cold start. The second level is a
+switch, for the reason below.
+
+## The second level is opt-in, and the key names the deployment (issue #91)
+
+Corrects both of the decisions above. As shipped, the key was
+`toamaisutaa:userinfo:{scheme}:sub:{subject}` and the entry options carried no
+`HybridCacheEntryFlags`, so an application that had registered an `IDistributedCache` for its own
+reasons found this package reading its authorization input out of that store, under a key whose only
+varying part was the subject: `{scheme}` is `Bearer` for every consumer of `AddToamaisutaaBearer`.
+
+Two services against one issuer sharing an unprefixed Redis is not an exotic deployment - an admin
+API and a public API in one org is the ordinary case - and the two hold different scopes, so the
+same subject has different claims in each. Whichever fetched first decided for both. That is a
+privilege escalation, and neither service asked for it or could see it.
+
+Two changes, both cheap:
+
+- The key carries a SHA-256 of the authority and the accepted audiences (`ValidAudiences`, or
+  `ClientId` when that list is empty). Hashed rather than spelled out because an authority is a URL.
+  Authority alone would not have been enough: the co-deployed case shares one issuer, and it is the
+  audience that tells the two services apart.
+- `ShareUserInfoCacheAcrossInstances`, off by default, decides between
+  `HybridCacheEntryFlags.None` and `HybridCacheEntryFlags.DisableDistributedCache`. Having a Redis
+  registered is not a statement that a package may write claims into it.
+
+The key scoping is the correctness fix and the flag is the one that would still hold if the key were
+wrong again, which is why both are here rather than either alone.
+
+`UserInfoCacheTests` now builds its `HybridCache` over a recording `IDistributedCache` for three
+tests: nothing reaches it by default, an opted-in second enricher is served from it without calling
+userinfo, and two enrichers with different audiences are not. Note for anyone extending them that
+`AddDistributedMemoryCache()` does not work here - HybridCache recognises `MemoryDistributedCache`
+and declines to use it as an L2 - so the fake is a dictionary behind `IDistributedCache`, which it
+does use.

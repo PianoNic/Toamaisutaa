@@ -27,7 +27,8 @@ Everything binds from the `Oidc` section.
 | `Oidc:NameClaim` | `name` | |
 | `Oidc:RoleClaim` | `roles` | Set to `groups` for Pocket ID, Authentik and Entra |
 | `Oidc:FetchClaimsFromUserInfo` | `true` | Reads roles from userinfo when the access token omits them |
-| `Oidc:UserInfoCacheDuration` | `00:05:00` | Cached per subject |
+| `Oidc:UserInfoCacheDuration` | `00:05:00` | Cached per subject, per issuer and audience |
+| `Oidc:ShareUserInfoCacheAcrossInstances` | `false` | Lets the userinfo cache use your `IDistributedCache` as a second level |
 | `Oidc:Scope` | `openid profile email roles` | Served to the client |
 | `Oidc:RedirectUri` | derived | Falls back to `PublicUrl`, then the request origin |
 | `Oidc:PostLogoutRedirectUri` | `RedirectUri` | |
@@ -64,14 +65,13 @@ turns a valid login into a 500.
 
 Results are cached per subject for `Oidc:UserInfoCacheDuration`, through
 [`HybridCache`](https://learn.microsoft.com/aspnet/core/performance/caching/hybrid). Two things
-follow from that, and neither needs configuring:
+follow from that:
 
 - Requests carrying the same token that arrive together share one userinfo call. A page reload
   against a cold cache fires a dozen requests before any of them has answered, and that used to be
   a dozen calls to your issuer.
-- If your application registers an `IDistributedCache` - Redis, SQL Server, whatever you already
-  run - the entry is shared across instances. Registering it is the whole configuration; there is
-  no switch here.
+- Every instance fetches once. Sharing the entry between them takes
+  `Oidc:ShareUserInfoCacheAcrossInstances`, below.
 
 `AddToamaisutaaBearer` registers `HybridCache` itself. Calling `AddHybridCache` yourself, with your
 own options, keeps working: the registration is additive and your options still apply.
@@ -79,6 +79,21 @@ own options, keeps working: the registration is additive and your options still 
 A failed read is never cached, so an issuer that comes back up is used on the very next request.
 
 Set `Oidc:FetchClaimsFromUserInfo` to `false` to stop the package calling your issuer at all.
+
+### Sharing the cache between instances
+
+`Oidc:ShareUserInfoCacheAcrossInstances` is `false`, and registering an `IDistributedCache` does not
+change that on its own. Turn it on and the entries use your Redis or SQL Server as a second level,
+so a scaled-out deployment warms each subject once rather than once per instance.
+
+It is a switch rather than the default because of what these entries are. They decide authorization,
+and they carry whatever else your issuer puts in userinfo, which is usually an email and a name. On
+the way in, they become a plaintext value in a store the package does not own, next to every other
+tenant of it. Deciding that is fine is a reasonable thing to do, and it is not something the package
+can decide on your behalf from the presence of a Redis connection string.
+
+The key names the issuer and the audiences this service accepts, so two services against one issuer
+sharing an unprefixed Redis do not read each other's entries even when they share the store.
 
 ## Health check
 
