@@ -198,6 +198,11 @@ in again every four guesses and never reach the limit.
 A mistyped code does not spend the challenge, so the person typing it can try again without going
 back to the password.
 
+The same count covers the proof `/auth/2fa/disable` and `/auth/2fa/recovery-codes` ask for, and all
+three code-taking management endpoints (`confirm`, `disable`, `recovery-codes`) sit behind the
+per-address rate limiter. The count lives on the password credential, so an account an identity
+provider owns has only the rate limiter.
+
 ## Recovery codes
 
 Ten of them, shown exactly once, stored as unsalted SHA-256 - the same reasoning as refresh tokens:

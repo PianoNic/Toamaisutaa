@@ -61,6 +61,7 @@ public static class ToamaisutaaTwoFactorEndpointExtensions
 
         group.MapPost("/confirm", ConfirmAsync)
             .RequireAuthorization()
+            .AddEndpointFilter<PasswordRateLimitFilter>()
             .WithName($"{endpointNamePrefix}ToamaisutaaTwoFactorConfirm")
             .WithSummary("Proves the authenticator holds the secret, and turns the second factor on.")
             .WithDescription(
@@ -69,25 +70,34 @@ public static class ToamaisutaaTwoFactorEndpointExtensions
                 + "before the next request.")
             .Produces<TwoFactorEnrolmentCompleted>()
             .Produces<ValidationErrorResponse>(StatusCodes.Status400BadRequest)
-            .Produces<ErrorResponse>(StatusCodes.Status401Unauthorized);
+            .Produces<ErrorResponse>(StatusCodes.Status401Unauthorized)
+            .Produces(StatusCodes.Status429TooManyRequests);
 
+        // Both take a code as proof, so both are a guessing oracle without the limiter here and the
+        // account-wide count in the service.
         group.MapPost("/disable", DisableAsync)
             .RequireAuthorization()
+            .AddEndpointFilter<PasswordRateLimitFilter>()
             .WithName($"{endpointNamePrefix}ToamaisutaaTwoFactorDisable")
             .WithSummary("Turns the second factor off. Requires a current code as proof.")
-            .WithDescription("An authenticated session is not enough: a stolen access token must not be able to do this.")
+            .WithDescription(
+                "An authenticated session is not enough: a stolen access token must not be able to do this. "
+                + "Wrong codes count toward the account lockout.")
             .Produces(StatusCodes.Status204NoContent)
             .Produces<ValidationErrorResponse>(StatusCodes.Status400BadRequest)
-            .Produces<ErrorResponse>(StatusCodes.Status401Unauthorized);
+            .Produces<ErrorResponse>(StatusCodes.Status401Unauthorized)
+            .Produces(StatusCodes.Status429TooManyRequests);
 
         group.MapPost("/recovery-codes", RegenerateAsync)
             .RequireAuthorization()
+            .AddEndpointFilter<PasswordRateLimitFilter>()
             .WithName($"{endpointNamePrefix}ToamaisutaaTwoFactorRecoveryCodes")
             .WithSummary("Issues a fresh set of recovery codes and invalidates every previous one.")
             .WithDescription("Shown exactly once, and never logged. Same proof requirement as disabling.")
             .Produces<TwoFactorEnrolmentCompleted>()
             .Produces<ValidationErrorResponse>(StatusCodes.Status400BadRequest)
-            .Produces<ErrorResponse>(StatusCodes.Status401Unauthorized);
+            .Produces<ErrorResponse>(StatusCodes.Status401Unauthorized)
+            .Produces(StatusCodes.Status429TooManyRequests);
 
         group.MapPost("/step-up", BeginStepUpAsync)
             .RequireAuthorization()
