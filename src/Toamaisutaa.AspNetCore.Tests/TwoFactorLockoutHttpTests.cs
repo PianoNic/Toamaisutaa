@@ -95,6 +95,62 @@ public class TwoFactorLockoutHttpTests
         await Assert.That(begin.StatusCode).IsNotEqualTo(HttpStatusCode.OK);
     }
 
+    /// <summary>
+    /// Both endpoints take a code as proof and pay out the second factor itself - ten fresh recovery
+    /// codes, or no second factor at all - so a stolen access token must not be able to guess there
+    /// either. A wrong proof does not move the security stamp, so the token survives every guess.
+    /// </summary>
+    [Test]
+    [Arguments("/auth/2fa/recovery-codes")]
+    [Arguments("/auth/2fa/disable")]
+    public async Task Wrong_proofs_lock_the_account_so_the_right_code_is_refused(string path)
+    {
+        await using var app = await TestApp.StartAsync();
+        var account = await Account.RegisterAsync(app);
+        await account.EnrolAsync();
+
+        for (var i = 0; i < Threshold; i++)
+        {
+            app.Time.AdvanceToNextTotpStep();
+            var wrong = await app.Client.PostJson(path, new { proof = Wrong(account, app) }, account.AccessToken);
+            await Assert.That(wrong.StatusCode).IsEqualTo(HttpStatusCode.BadRequest);
+        }
+
+        app.Time.AdvanceToNextTotpStep();
+        var right = await app.Client.PostJson(path, new { proof = Totp.Code(account.Secret!, app.Time.Now) }, account.AccessToken);
+
+        await Assert.That(right.StatusCode).IsEqualTo(HttpStatusCode.BadRequest);
+        await Assert.That((await app.Client.Get("/auth/2fa", account.AccessToken)).Json().Result.Bool("enabled")).IsTrue();
+    }
+
+    /// <summary>
+    /// The account-wide count cannot reach an account an identity provider owns, which has no
+    /// password to keep it on, so the per-address limit has to be on these routes too.
+    /// </summary>
+    [Test]
+    [Arguments("/auth/2fa/confirm")]
+    [Arguments("/auth/2fa/recovery-codes")]
+    [Arguments("/auth/2fa/disable")]
+    public async Task The_code_taking_management_endpoints_are_rate_limited(string path)
+    {
+        await using var app = await TestApp.StartAsync(configure: settings =>
+        {
+            settings["LocalLogin:RateLimit:Enabled"] = "true";
+            settings["LocalLogin:RateLimit:PermitLimit"] = "10";
+            settings["LocalLogin:RateLimit:Window"] = "01:00:00";
+        });
+
+        var account = await Account.RegisterAsync(app);
+        await account.EnrolAsync();
+
+        var statuses = new List<HttpStatusCode>();
+
+        for (var i = 0; i < 10; i++)
+            statuses.Add((await app.Client.PostJson(path, new { code = "000000", proof = "000000" }, account.AccessToken)).StatusCode);
+
+        await Assert.That(statuses).Contains(HttpStatusCode.TooManyRequests);
+    }
+
     private static async Task<string> ChallengeAsync(Account account)
     {
         var body = await (await account.LoginAsync()).Json();

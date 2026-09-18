@@ -180,6 +180,7 @@ internal sealed class PasswordHarness
             deviceGate,
             publisher,
             wrappedTwoFactor,
+            provider,
             Clock,
             NullLogger<TwoFactorService>.Instance);
     }

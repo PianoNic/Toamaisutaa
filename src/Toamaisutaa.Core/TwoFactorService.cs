@@ -1,4 +1,5 @@
 using System.Security.Cryptography;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Toamaisutaa.Abstractions;
@@ -17,6 +18,7 @@ internal sealed class TwoFactorService(
     TrustedDeviceGate trustedDevices,
     AuthenticationEventPublisher events,
     IOptions<ToamaisutaaTwoFactorOptions> options,
+    IServiceProvider provider,
     TimeProvider timeProvider,
     ILogger<TwoFactorService> logger) : ITwoFactorService
 {
@@ -133,16 +135,10 @@ internal sealed class TwoFactorService(
     public async Task<TwoFactorResult> DisableAsync(Guid userId, string proof, CancellationToken cancellationToken = default)
     {
         var now = timeProvider.GetUtcNow();
-        var verification = await verifier.VerifyAsync(userId, proof, requireConfirmed: true, cancellationToken);
+        var (verification, refusal) = await VerifyProofAsync(userId, proof, now, cancellationToken);
 
-        if (!verification.Succeeded)
-        {
-            await events.PublishAsync(
-                new TwoFactorFailed { OccurredAt = now, UserId = userId, Reason = SignInOutcome.InvalidTwoFactorCode },
-                cancellationToken);
-
-            return TwoFactorResult.Failure("That code is not right.");
-        }
+        if (refusal is not null)
+            return TwoFactorResult.Failure(refusal);
 
         await PublishRecoveryCodeUseAsync(userId, verification, now, cancellationToken);
 
@@ -160,16 +156,10 @@ internal sealed class TwoFactorService(
     public async Task<TwoFactorEnrolmentCompleted> RegenerateRecoveryCodesAsync(Guid userId, string proof, CancellationToken cancellationToken = default)
     {
         var now = timeProvider.GetUtcNow();
-        var verification = await verifier.VerifyAsync(userId, proof, requireConfirmed: true, cancellationToken);
+        var (verification, refusal) = await VerifyProofAsync(userId, proof, now, cancellationToken);
 
-        if (!verification.Succeeded)
-        {
-            await events.PublishAsync(
-                new TwoFactorFailed { OccurredAt = now, UserId = userId, Reason = SignInOutcome.InvalidTwoFactorCode },
-                cancellationToken);
-
-            throw new TwoFactorEnrolmentException("That code is not right.");
-        }
+        if (refusal is not null)
+            throw new TwoFactorEnrolmentException(refusal);
 
         await PublishRecoveryCodeUseAsync(userId, verification, now, cancellationToken);
 
@@ -181,6 +171,78 @@ internal sealed class TwoFactorService(
 
         return new TwoFactorEnrolmentCompleted { RecoveryCodes = codes };
     }
+
+    /// <summary>
+    /// The proof disabling and regenerating ask for, counted against the account exactly as a wrong
+    /// code at sign-in or step-up is. Without the count, whoever holds a stolen access token has an
+    /// unthrottled six-digit oracle whose prize is the second factor itself.
+    /// </summary>
+    /// <remarks>
+    /// The count lives on the password credential, so an account with none - one an identity
+    /// provider owns - is left to the rate limiter.
+    /// </remarks>
+    private async Task<(TwoFactorVerification Verification, string? Refusal)> VerifyProofAsync(
+        Guid userId,
+        string proof,
+        DateTimeOffset now,
+        CancellationToken cancellationToken)
+    {
+        var passwords = provider.GetService<IPasswordCredentialStore>();
+        var credential = passwords is null ? null : await passwords.FindByUserIdAsync(userId, cancellationToken);
+
+        // Before the code is looked at, so a locked account neither spends a recovery code nor learns
+        // whether a guess was right.
+        if (credential is not null && LockoutPolicy.IsLockedOut(credential, now))
+        {
+            logger.LogWarning(
+                "Two-factor proof refused for user {UserId}: locked out until {LockedOutUntil}.",
+                userId,
+                credential.LockedOutUntil);
+
+            await PublishWrongProofAsync(userId, SignInOutcome.LockedOut, now, cancellationToken);
+            return (default, "Too many wrong codes. Try again later.");
+        }
+
+        var verification = await verifier.VerifyAsync(userId, proof, requireConfirmed: true, cancellationToken);
+
+        if (verification.Succeeded)
+        {
+            if (credential is not null)
+            {
+                LockoutPolicy.RegisterSuccess(credential);
+                credential.UpdatedAt = now;
+                await passwords!.UpdateAsync(credential, cancellationToken);
+            }
+
+            return (verification, null);
+        }
+
+        if (credential is not null)
+        {
+            LockoutPolicy.RegisterFailure(credential, provider.GetRequiredService<IOptions<ToamaisutaaLocalLoginOptions>>().Value, now);
+            credential.UpdatedAt = now;
+            await passwords!.UpdateAsync(credential, cancellationToken);
+
+            logger.LogWarning(
+                "Two-factor proof refused for user {UserId}: wrong code. {FailedAttempts} failed attempt(s) in the current window{Locked}.",
+                userId,
+                credential.FailedAttemptCount,
+                credential.LockedOutUntil is { } until ? $"; locked out until {until:O}" : string.Empty);
+
+            if (credential.LockedOutUntil is { } lockedOutUntil && LockoutPolicy.IsLockedOut(credential, now))
+            {
+                await events.PublishAsync(
+                    new AccountLockedOut { OccurredAt = now, UserId = userId, LockedOutUntil = lockedOutUntil },
+                    cancellationToken);
+            }
+        }
+
+        await PublishWrongProofAsync(userId, SignInOutcome.InvalidTwoFactorCode, now, cancellationToken);
+        return (verification, "That code is not right.");
+    }
+
+    private Task PublishWrongProofAsync(Guid userId, SignInOutcome reason, DateTimeOffset now, CancellationToken cancellationToken) =>
+        events.PublishAsync(new TwoFactorFailed { OccurredAt = now, UserId = userId, Reason = reason }, cancellationToken);
 
     private async Task<IReadOnlyList<string>> IssueRecoveryCodesAsync(Guid userId, DateTimeOffset now, CancellationToken cancellationToken)
     {
