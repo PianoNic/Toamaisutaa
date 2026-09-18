@@ -129,11 +129,8 @@ internal sealed class PasswordAccountService(
             if (currentPassword is null)
                 return AccountResult.Failure("Give your current password.");
 
-            if (hasher.Verify(currentPassword, credential.PasswordHash) == PasswordVerificationResult.Failed)
-            {
-                logger.LogWarning("Password change refused for user {UserId}: the current password is wrong.", userId);
-                return AccountResult.Failure("Your current password is not correct.");
-            }
+            if (await CheckCurrentPasswordAsync(credential, currentPassword, "Password change", now, cancellationToken) is { } refusal)
+                return AccountResult.Failure(refusal);
 
             await ApplyNewPasswordAsync(credential, newPassword, now, cancellationToken);
             logger.LogInformation("Changed the password for user {UserId}.", userId);
@@ -311,11 +308,8 @@ internal sealed class PasswordAccountService(
             return AccountResult.Failure("This account has no local password, so its email address is not ours to change.");
         }
 
-        if (hasher.Verify(currentPassword, credential.PasswordHash) == PasswordVerificationResult.Failed)
-        {
-            logger.LogWarning("Email change refused for user {UserId}: the current password is wrong.", userId);
-            return AccountResult.Failure("Your current password is not correct.");
-        }
+        if (await CheckCurrentPasswordAsync(credential, currentPassword, "Email change", timeProvider.GetUtcNow(), cancellationToken) is { } refusal)
+            return AccountResult.Failure(refusal);
 
         var trimmed = newEmail.Trim();
         var normalized = Normalizer.Normalize(trimmed);
@@ -815,6 +809,52 @@ internal sealed class PasswordAccountService(
             CreatedAt = now,
             UpdatedAt = now,
         };
+
+    /// <summary>
+    /// The current-password check a signed-in caller answers, counted against the account exactly as
+    /// a wrong password at sign-in is. Without the count, a stolen access token turns these endpoints
+    /// into an unthrottled way to guess the password, and it is the one they could not otherwise get.
+    /// </summary>
+    /// <returns>Null when the password is right, otherwise what to tell the caller.</returns>
+    private async Task<string?> CheckCurrentPasswordAsync(
+        ToamaisutaaPasswordCredential credential,
+        string currentPassword,
+        string action,
+        DateTimeOffset now,
+        CancellationToken cancellationToken)
+    {
+        if (LockoutPolicy.IsLockedOut(credential, now))
+        {
+            logger.LogWarning(
+                "{Action} refused for user {UserId}: locked out until {LockedOutUntil}.",
+                action,
+                credential.UserId,
+                credential.LockedOutUntil);
+
+            return "Too many wrong passwords. Try again later.";
+        }
+
+        if (hasher.Verify(currentPassword, credential.PasswordHash) != PasswordVerificationResult.Failed)
+            return null;
+
+        (credential, var lockedByThisAttempt) = await credentials.RegisterFailureAsync(credential, options.Value, now, cancellationToken);
+
+        logger.LogWarning(
+            "{Action} refused for user {UserId}: the current password is wrong. {FailedAttempts} failed attempt(s) in the current window{Locked}.",
+            action,
+            credential.UserId,
+            credential.FailedAttemptCount,
+            credential.LockedOutUntil is { } until ? $"; locked out until {until:O}" : string.Empty);
+
+        if (lockedByThisAttempt && credential.LockedOutUntil is { } lockedOutUntil)
+        {
+            await events.PublishAsync(
+                new AccountLockedOut { OccurredAt = now, UserId = credential.UserId, LockedOutUntil = lockedOutUntil },
+                cancellationToken);
+        }
+
+        return "Your current password is not correct.";
+    }
 
     private Task ApplyNewPasswordAsync(
         ToamaisutaaPasswordCredential credential,
