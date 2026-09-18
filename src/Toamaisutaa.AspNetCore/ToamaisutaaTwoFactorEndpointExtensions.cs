@@ -159,15 +159,23 @@ public static class ToamaisutaaTwoFactorEndpointExtensions
     /// why nothing here or downstream ever logs what it returned.
     /// </summary>
     private static async Task<IResult> BeginAsync(
+        BeginTwoFactorRequest? request,
+        HttpContext context,
         ICurrentUser currentUser,
         ITwoFactorService twoFactor,
         CancellationToken cancellationToken)
     {
         var user = await currentUser.GetOrProvisionAsync(cancellationToken);
 
+        var proof = new TwoFactorEnrolmentProof
+        {
+            CurrentPassword = request?.CurrentPassword,
+            AuthenticatedAt = CallerAuthentication.AuthenticatedAt(context.User),
+        };
+
         try
         {
-            var started = await twoFactor.BeginEnrolmentAsync(user.Id, cancellationToken);
+            var started = await twoFactor.BeginEnrolmentAsync(user.Id, proof, cancellationToken);
             return Results.Ok(started);
         }
         catch (TwoFactorEnrolmentException exception)

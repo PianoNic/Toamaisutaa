@@ -187,6 +187,9 @@ internal sealed class PasswordHarness
 
     internal FixedTimeProvider Clock { get; }
 
+    /// <summary>Enrolment proof from a caller who signed in just now.</summary>
+    internal TwoFactorEnrolmentProof FreshSignIn => new() { AuthenticatedAt = Clock.GetUtcNow() };
+
     /// <summary>Everything the flows published, in order.</summary>
     internal RecordingEventSink Events { get; }
 
@@ -358,7 +361,7 @@ internal sealed class PasswordHarness
     /// and hands back the plaintext secret and the recovery codes.</summary>
     internal async Task<(byte[] Secret, IReadOnlyList<string> RecoveryCodes)> EnrolAsync(Guid userId)
     {
-        var started = await TwoFactor.BeginEnrolmentAsync(userId);
+        var started = await TwoFactor.BeginEnrolmentAsync(userId, FreshSignIn);
 
         if (!Base32.TryDecode(started.Secret, out var secret))
             throw new InvalidOperationException("The enrolment secret is not valid base32.");

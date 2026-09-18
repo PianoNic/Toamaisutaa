@@ -150,8 +150,13 @@ refreshing:
 Four steps, and the third one is the one people miss.
 
 ```js
-// 1. Generate a secret. Nothing is enabled yet.
-const { secret, uri } = await api('/auth/2fa/begin', { method: 'POST' }).then(r => r.json())
+// 1. Generate a secret. Nothing is enabled yet. The current password proves this is the account
+//    holder and not somebody holding their token.
+const { secret, uri } = await api('/auth/2fa/begin', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({ currentPassword }),
+}).then(r => r.json())
 
 // 2. Render `uri` as a QR code, and show `secret` for anyone typing it by hand.
 //    The package ships no QR renderer - that would be a graphics dependency.

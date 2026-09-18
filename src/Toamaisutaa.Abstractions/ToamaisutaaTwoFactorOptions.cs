@@ -44,6 +44,12 @@ public sealed class ToamaisutaaTwoFactorOptions
     /// <summary>The name the authenticator app shows. Defaults to the application's name.</summary>
     public string? Issuer { get; set; }
 
+    /// <summary>
+    /// How recent a sign-in has to be to enrol without the current password. Whoever enrols is the
+    /// only one who can answer the second factor afterwards, so enrolling takes more than a token.
+    /// </summary>
+    public TimeSpan EnrolmentProofWindow { get; set; } = TimeSpan.FromMinutes(5);
+
     // ── Recovery codes ──
 
     public int RecoveryCodeCount { get; set; } = 10;

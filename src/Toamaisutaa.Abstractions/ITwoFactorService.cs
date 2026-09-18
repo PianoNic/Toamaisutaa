@@ -13,7 +13,15 @@ public interface ITwoFactorService
     /// Generates a secret and stores it UNCONFIRMED. Deliberately does not enable anything - see
     /// <see cref="ConfirmEnrolmentAsync"/>.
     /// </summary>
-    Task<TwoFactorEnrolmentStarted> BeginEnrolmentAsync(Guid userId, CancellationToken cancellationToken = default);
+    /// <remarks>
+    /// Refused without <paramref name="proof"/>: the current password, or a sign-in within
+    /// <c>TwoFactor:EnrolmentProofWindow</c>. Whoever enrols the second factor is the only one who can
+    /// answer it afterwards, so a bearer token alone would let a thief lock the owner out.
+    /// </remarks>
+    Task<TwoFactorEnrolmentStarted> BeginEnrolmentAsync(
+        Guid userId,
+        TwoFactorEnrolmentProof? proof = null,
+        CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Enables the second factor, and only now, once the user has proved the authenticator actually
@@ -32,6 +40,18 @@ public interface ITwoFactorService
 }
 
 public sealed record TwoFactorStatus(bool Enabled, bool EnrolmentPending, int RecoveryCodesRemaining);
+
+/// <summary>What <see cref="ITwoFactorService.BeginEnrolmentAsync"/> accepts as proof that the caller
+/// is the account holder rather than somebody holding their token. Either half is enough.</summary>
+public sealed record TwoFactorEnrolmentProof
+{
+    /// <summary>The account's current password, for an account that has one.</summary>
+    public string? CurrentPassword { get; init; }
+
+    /// <summary>When the caller last actually authenticated - a live second factor or an
+    /// identity-provider sign-in. Take it from the caller's own token, never from a request body.</summary>
+    public DateTimeOffset? AuthenticatedAt { get; init; }
+}
 
 public sealed record TwoFactorEnrolmentStarted
 {

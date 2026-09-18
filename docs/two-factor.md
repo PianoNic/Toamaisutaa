@@ -50,8 +50,19 @@ the exception: it ends a sign-in, so it returns the same RFC 6749 token body as
 { "enabled": false, "enrolmentPending": false, "recoveryCodesRemaining": 0 }
 ```
 
-**`POST /auth/2fa/begin`** takes no body. Render `uri` as a QR code; show `secret` for anyone typing
-it in by hand.
+**`POST /auth/2fa/begin`** wants proof that the caller is the account holder rather than somebody
+holding their token: whoever enrols is the only one who can answer the second factor afterwards.
+Send the current password:
+
+```json
+{ "currentPassword": "correct horse battery staple" }
+```
+
+An account with no password - one an identity provider owns, or a passkey-only one - sends no body
+and instead needs a sign-in within `TwoFactor:EnrolmentProofWindow` (five minutes by default), read
+off the token's `auth_time` or `toa_2fa_at`. A wrong password counts toward the account lockout.
+
+Render `uri` as a QR code; show `secret` for anyone typing it in by hand.
 
 ```json
 {
@@ -373,6 +384,7 @@ their own account, so it says exactly what is wrong.
 | `DriftSteps` | `1` | Steps either side accepted, for clock drift |
 | `SecretSizeBytes` | `20` | The RFC 4226 recommendation |
 | `Issuer` | `Toamaisutaa` | The name the authenticator app shows |
+| `EnrolmentProofWindow` | `00:05:00` | How recent a sign-in must be to enrol without the current password |
 | `RecoveryCodeCount` | `10` | |
 | `RecoveryCodeLowWaterMark` | `3` | At or below this, a redemption warns |
 | `ChallengeLifetime` | `00:05:00` | |

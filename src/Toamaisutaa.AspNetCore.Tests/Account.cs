@@ -84,7 +84,7 @@ internal sealed class Account(TestApp app, string userName, string password)
     /// </summary>
     public async Task EnrolAsync()
     {
-        var begin = await app.Client.PostEmpty("/auth/2fa/begin", AccessToken);
+        var begin = await app.Client.PostJson("/auth/2fa/begin", new { currentPassword = Password }, AccessToken);
         Secret = (await begin.Json()).String("secret")!;
 
         app.Time.AdvanceToNextTotpStep();

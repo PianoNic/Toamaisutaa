@@ -438,46 +438,31 @@ internal sealed class PasskeyService(
                 + "step-up, then register while it is still fresh.");
         }
 
-        // Counted exactly as a wrong password at sign-in is. A stolen access token reaches this, and
-        // without the count it is an unthrottled way to guess the one thing the token did not carry.
-        if (LockoutPolicy.IsLockedOut(credential, now))
-        {
-            logger.LogWarning(
-                "Passkey registration refused for user {UserId}: locked out until {LockedOutUntil}.",
-                userId,
-                credential.LockedOutUntil);
-
-            throw new PasskeyRegistrationException("Too many wrong passwords. Try again later.");
-        }
-
         var hasher = provider.GetService<IPasswordHasher>();
 
-        if (hasher is null || string.IsNullOrEmpty(proof.CurrentPassword)
-            || hasher.Verify(proof.CurrentPassword, credential.PasswordHash) == PasswordVerificationResult.Failed)
+        if (hasher is null || string.IsNullOrEmpty(proof.CurrentPassword))
         {
-            // A missing password is not a guess, so only a wrong one counts.
-            if (hasher is not null && !string.IsNullOrEmpty(proof.CurrentPassword))
-            {
-                (var written, var lockedByThisAttempt) = await passwords!.RegisterFailureAsync(
-                    credential,
-                    localLogin.Value,
-                    now,
-                    cancellationToken);
-
-                if (lockedByThisAttempt && written.LockedOutUntil is { } lockedOutUntil)
-                {
-                    await events.PublishAsync(
-                        new AccountLockedOut { OccurredAt = now, UserId = userId, LockedOutUntil = lockedOutUntil },
-                        cancellationToken);
-                }
-            }
-
-            logger.LogWarning("Passkey registration refused for user {UserId}: the current password is missing or wrong.", userId);
+            logger.LogWarning("Passkey registration refused for user {UserId}: no current password was given.", userId);
 
             throw new PasskeyRegistrationException(
                 "Registering a passkey needs proof of a credential this account already has. Send currentPassword, or "
                 + "complete a step-up, then register while it is still fresh.");
         }
+
+        // Counted exactly as a wrong password at sign-in is: a stolen access token reaches this.
+        var refusal = await passwords!.CheckCurrentPasswordAsync(
+            credential,
+            proof.CurrentPassword,
+            hasher,
+            events,
+            localLogin.Value,
+            logger,
+            "Passkey registration",
+            now,
+            cancellationToken);
+
+        if (refusal is not null)
+            throw new PasskeyRegistrationException(refusal);
     }
 
     /// <summary>
