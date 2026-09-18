@@ -128,16 +128,21 @@ public static class ToamaisutaaPasswordEndpointExtensions
 
         // Explicitly authorised rather than relying on the fallback policy, which an application is
         // free to turn off.
+        // Limited like the anonymous endpoints: it checks a password, and a stolen access token is
+        // all it takes to ask.
         group.MapPost("/password", ChangePasswordAsync)
             .RequireAuthorization()
+            .AddEndpointFilter<PasswordRateLimitFilter>()
             .WithName($"{endpointNamePrefix}ToamaisutaaChangePassword")
             .WithSummary("Sets a first password or changes an existing one.")
             .WithDescription(
                 "Send `currentPassword` when the account already has one and omit it when an "
-                + "identity provider owns the account and it is gaining its first.")
+                + "identity provider owns the account and it is gaining its first. A wrong "
+                + "`currentPassword` counts toward the account lockout.")
             .Produces(StatusCodes.Status204NoContent)
             .Produces<ValidationErrorResponse>(StatusCodes.Status400BadRequest)
-            .Produces<ErrorResponse>(StatusCodes.Status401Unauthorized);
+            .Produces<ErrorResponse>(StatusCodes.Status401Unauthorized)
+            .Produces(StatusCodes.Status429TooManyRequests);
 
         group.MapPost("/password/forgot", ForgotPasswordAsync)
             .AllowAnonymous()
@@ -163,16 +168,18 @@ public static class ToamaisutaaPasswordEndpointExtensions
         {
             group.MapPost("/email", ChangeEmailAsync)
                 .RequireAuthorization()
+                .AddEndpointFilter<PasswordRateLimitFilter>()
                 .WithName($"{endpointNamePrefix}ToamaisutaaChangeEmail")
                 .WithSummary("Sends a verification link to an address, and changes nothing yet.")
                 .WithDescription(
                     "`currentPassword` is required, including when `newEmail` is the address the account already has - "
                     + "which is how a verification link is asked for again. The account moves only when the link is "
-                    + "redeemed at /auth/email/verify.")
+                    + "redeemed at /auth/email/verify. A wrong `currentPassword` counts toward the account lockout.")
                 .Produces(StatusCodes.Status204NoContent)
                 .Produces<ValidationErrorResponse>(StatusCodes.Status400BadRequest)
                 .Produces<ValidationErrorResponse>(StatusCodes.Status409Conflict)
-                .Produces<ErrorResponse>(StatusCodes.Status401Unauthorized);
+                .Produces<ErrorResponse>(StatusCodes.Status401Unauthorized)
+                .Produces(StatusCodes.Status429TooManyRequests);
 
             group.MapPost("/email/verify", VerifyEmailAsync)
                 .AllowAnonymous()
