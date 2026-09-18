@@ -99,16 +99,14 @@ internal sealed class PasswordSignInService(
             return Refused(SignInOutcome.InvalidPassword);
         }
 
-        if (verification == PasswordVerificationResult.SucceededRehashNeeded)
+        var rehashed = verification == PasswordVerificationResult.SucceededRehashNeeded;
+
+        if (rehashed)
         {
             // The only moment the plaintext exists. Take it.
             credential.PasswordHash = hasher.Hash(password);
             logger.LogInformation("Rehashed the stored password for user {UserId} with current parameters.", credential.UserId);
         }
-
-        LockoutPolicy.RegisterSuccess(credential);
-        credential.UpdatedAt = now;
-        await credentials.UpdateAsync(credential, cancellationToken);
 
         var user = await users.FindByIdAsync(credential.UserId, cancellationToken)
             ?? throw new InvalidOperationException($"Credential for user {credential.UserId} has no user row.");
@@ -130,6 +128,15 @@ internal sealed class PasswordSignInService(
 
             if (!trust.Trusted)
             {
+                // The failure count is left standing. A right password is half a sign-in, and
+                // clearing the count here would let anyone who has it guess codes indefinitely by
+                // signing in again every few attempts.
+                if (rehashed)
+                {
+                    credential.UpdatedAt = now;
+                    await credentials.UpdateAsync(credential, cancellationToken);
+                }
+
                 var challenge = await twoFactor.IssueChallengeAsync(
                     user.Id,
                     now,
@@ -142,6 +149,8 @@ internal sealed class PasswordSignInService(
 
                 return new SignInResult { Outcome = SignInOutcome.TwoFactorRequired, Challenge = challenge };
             }
+
+            await RegisterSuccessAsync(credential, now, cancellationToken);
 
             logger.LogInformation("Sign-in succeeded for user {UserId} with a cached second factor.", user.Id);
 
@@ -166,6 +175,8 @@ internal sealed class PasswordSignInService(
             metrics.SignInCompleted(cachedResult.Outcome, cached);
             return cachedResult;
         }
+
+        await RegisterSuccessAsync(credential, now, cancellationToken);
 
         logger.LogInformation("Sign-in succeeded for user {UserId}.", user.Id);
 
@@ -194,16 +205,38 @@ internal sealed class PasswordSignInService(
         ArgumentNullException.ThrowIfNull(request);
 
         var now = timeProvider.GetUtcNow();
-        var redemption = await twoFactor.RedeemChallengeAsync(request.ChallengeToken, request.Code, now, cancellationToken);
+
+        // Found through the challenge, which is the only thing here that names the account. Null for
+        // an account with no password, a passkey-only one, which has no count to put a guess against.
+        ToamaisutaaPasswordCredential? credential = null;
+
+        var redemption = await twoFactor.RedeemChallengeAsync(
+            request.ChallengeToken,
+            request.Code,
+            now,
+            cancellationToken,
+            isLockedOut: async userId =>
+            {
+                credential = await credentials.FindByUserIdAsync(userId, cancellationToken);
+                return credential is not null && LockoutPolicy.IsLockedOut(credential, now);
+            });
 
         if (redemption.Outcome != SignInOutcome.Succeeded)
         {
+            // Counted exactly as a wrong code at step-up is. Without it one challenge takes
+            // unlimited guesses and the per-address limiter is the only thing in the way.
+            if (redemption.Outcome == SignInOutcome.InvalidTwoFactorCode && credential is not null)
+                await RegisterWrongCodeAsync(credential, "Sign-in", now, cancellationToken);
+
             await events.PublishAsync(
                 new TwoFactorFailed { OccurredAt = now, UserId = redemption.UserId, Reason = redemption.Outcome },
                 cancellationToken);
 
             return Refused(redemption.Outcome);
         }
+
+        if (credential is not null)
+            await RegisterSuccessAsync(credential, now, cancellationToken);
 
         var user = await users.FindByIdAsync(redemption.UserId!.Value, cancellationToken)
             ?? throw new InvalidOperationException($"Challenge points at user {redemption.UserId}, which does not exist.");
@@ -369,27 +402,7 @@ internal sealed class PasswordSignInService(
             // a stolen access token can lock the owner out of step-up, and that is the right trade:
             // the alternative is an unthrottled six-digit oracle handed to that same person.
             if (redemption.Outcome == SignInOutcome.InvalidTwoFactorCode)
-            {
-                LockoutPolicy.RegisterFailure(credential, options.Value, now);
-                credential.UpdatedAt = now;
-                await credentials.UpdateAsync(credential, cancellationToken);
-
-                if (LockoutPolicy.IsLockedOut(credential, now))
-                    metrics.LockedOut();
-
-                logger.LogWarning(
-                    "Step-up refused for user {UserId}: wrong code. {FailedAttempts} failed attempt(s) in the current window{Locked}.",
-                    request.UserId,
-                    credential.FailedAttemptCount,
-                    credential.LockedOutUntil is { } until ? $"; locked out until {until:O}" : string.Empty);
-
-                if (credential.LockedOutUntil is { } lockedOutUntil && LockoutPolicy.IsLockedOut(credential, now))
-                {
-                    await events.PublishAsync(
-                        new AccountLockedOut { OccurredAt = now, UserId = request.UserId, LockedOutUntil = lockedOutUntil },
-                        cancellationToken);
-                }
-            }
+                await RegisterWrongCodeAsync(credential, "Step-up", now, cancellationToken);
 
             await events.PublishAsync(
                 new TwoFactorFailed { OccurredAt = now, UserId = request.UserId, Reason = redemption.Outcome },
@@ -398,9 +411,7 @@ internal sealed class PasswordSignInService(
             return new StepUpResult { Outcome = redemption.Outcome };
         }
 
-        LockoutPolicy.RegisterSuccess(credential);
-        credential.UpdatedAt = now;
-        await credentials.UpdateAsync(credential, cancellationToken);
+        await RegisterSuccessAsync(credential, now, cancellationToken);
 
         // A recovery code means the authenticator is gone, and that inference does not change based
         // on which endpoint it was typed into. Same revocation as at sign-in.
@@ -789,5 +800,43 @@ internal sealed class PasswordSignInService(
         var started = Stopwatch.GetTimestamp();
         dummy.Verify(password);
         metrics.PasswordVerified(started, result: null);
+    }
+
+    /// <summary>The count comes off only when a sign-in or step-up has finished, never after a
+    /// first factor that still owes a second.</summary>
+    private async Task RegisterSuccessAsync(ToamaisutaaPasswordCredential credential, DateTimeOffset now, CancellationToken cancellationToken)
+    {
+        LockoutPolicy.RegisterSuccess(credential);
+        credential.UpdatedAt = now;
+        await credentials.UpdateAsync(credential, cancellationToken);
+    }
+
+    /// <summary>A wrong second factor counts against the account exactly as a wrong password does,
+    /// wherever it was typed.</summary>
+    private async Task RegisterWrongCodeAsync(
+        ToamaisutaaPasswordCredential credential,
+        string ceremony,
+        DateTimeOffset now,
+        CancellationToken cancellationToken)
+    {
+        LockoutPolicy.RegisterFailure(credential, options.Value, now);
+        credential.UpdatedAt = now;
+        await credentials.UpdateAsync(credential, cancellationToken);
+
+        logger.LogWarning(
+            "{Ceremony} refused for user {UserId}: wrong code. {FailedAttempts} failed attempt(s) in the current window{Locked}.",
+            ceremony,
+            credential.UserId,
+            credential.FailedAttemptCount,
+            credential.LockedOutUntil is { } until ? $"; locked out until {until:O}" : string.Empty);
+
+        if (credential.LockedOutUntil is { } lockedOutUntil && LockoutPolicy.IsLockedOut(credential, now))
+        {
+            metrics.LockedOut();
+
+            await events.PublishAsync(
+                new AccountLockedOut { OccurredAt = now, UserId = credential.UserId, LockedOutUntil = lockedOutUntil },
+                cancellationToken);
+        }
     }
 }

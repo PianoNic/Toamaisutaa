@@ -93,13 +93,18 @@ internal sealed class TwoFactorGate(
     /// The session presenting it, for <see cref="TwoFactorChallengePurpose.StepUp"/>. A challenge
     /// bound to a different family belongs to another of this user's sessions and is refused.
     /// </param>
+    /// <param name="isLockedOut">
+    /// Asked once the challenge names its user and before the code is checked, so a locked account
+    /// neither spends a recovery code nor learns whether a guess was right.
+    /// </param>
     internal async Task<ChallengeRedemption> RedeemChallengeAsync(
         string challengeToken,
         string code,
         DateTimeOffset now,
         CancellationToken cancellationToken,
         TwoFactorChallengePurpose purpose = TwoFactorChallengePurpose.SignIn,
-        Guid? familyId = null)
+        Guid? familyId = null,
+        Func<Guid, Task<bool>>? isLockedOut = null)
     {
         var challenges = Required<ITwoFactorChallengeStore>();
         var stored = await challenges.FindByHashAsync(SecureTokens.HashToken(challengeToken), cancellationToken);
@@ -153,6 +158,9 @@ internal sealed class TwoFactorGate(
             await challenges.MarkConsumedAsync(stored.Id, now, cancellationToken);
             return ChallengeRedemption.Failed(SignInOutcome.InvalidChallenge, stored.UserId);
         }
+
+        if (isLockedOut is not null && await isLockedOut(stored.UserId))
+            return ChallengeRedemption.Failed(SignInOutcome.LockedOut, stored.UserId);
 
         var verifier = Required<TwoFactorVerifier>();
         var verification = await verifier.VerifyAsync(stored.UserId, code, requireConfirmed: true, cancellationToken);
