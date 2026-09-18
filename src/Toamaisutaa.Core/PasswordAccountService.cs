@@ -49,7 +49,7 @@ internal sealed class PasswordAccountService(
 
         try
         {
-            await credentials.CreateAsync(
+            await credentials.CreateCheckedAsync(
                 BuildCredential(user.Id, request.UserName.Trim(), request.Email, request.Password, now),
                 cancellationToken);
         }
@@ -113,7 +113,7 @@ internal sealed class PasswordAccountService(
 
             try
             {
-                await credentials.CreateAsync(
+                await credentials.CreateCheckedAsync(
                     BuildCredential(userId, userName.Trim(), user.Email, newPassword, now),
                     cancellationToken);
             }
@@ -184,7 +184,7 @@ internal sealed class PasswordAccountService(
 
         try
         {
-            await credentials.CreateAsync(BuildCredential(user.Id, userName.Trim(), email, effectivePassword, now), cancellationToken);
+            await credentials.CreateCheckedAsync(BuildCredential(user.Id, userName.Trim(), email, effectivePassword, now), cancellationToken);
         }
         catch (PasswordIdentifierConflictException)
         {
@@ -228,7 +228,7 @@ internal sealed class PasswordAccountService(
 
             try
             {
-                await credentials.CreateAsync(BuildCredential(userId, identifier.Trim(), user.Email, effectivePassword, now), cancellationToken);
+                await credentials.CreateCheckedAsync(BuildCredential(userId, identifier.Trim(), user.Email, effectivePassword, now), cancellationToken);
             }
             catch (PasswordIdentifierConflictException)
             {
@@ -315,9 +315,9 @@ internal sealed class PasswordAccountService(
         var normalized = Normalizer.Normalize(trimmed);
 
         // Checked here as well as on redemption. Doing it only on redemption would mail a link that
-        // cannot work, and the person holding it has no way to tell that from a broken link.
-        var holder = await credentials.FindByNormalizedEmailAsync(normalized, cancellationToken);
-        if (holder is not null && holder.UserId != userId)
+        // cannot work, and the person holding it has no way to tell that from a broken link. Against
+        // user names too: the sign-in box takes either, so they are one namespace.
+        if (await credentials.IsTakenByAnotherAsync(userId, normalized, cancellationToken))
         {
             logger.LogInformation("Email change refused for user {UserId}: another local account already uses that address.", userId);
             return AccountResult.Taken("That email address is already in use.");
@@ -373,8 +373,7 @@ internal sealed class PasswordAccountService(
         // Checked again, because the link may have sat in a mailbox for a day while somebody else
         // took the address. The unique index would answer this too, as an exception rather than a
         // sentence the person can read.
-        var holder = await credentials.FindByNormalizedEmailAsync(normalized, cancellationToken);
-        if (holder is not null && holder.UserId != stored.UserId)
+        if (await credentials.IsTakenByAnotherAsync(stored.UserId, normalized, cancellationToken))
         {
             logger.LogInformation("Email verification refused for user {UserId}: another local account now uses that address.", stored.UserId);
             return AccountResult.Taken("That email address is already in use.");
@@ -603,7 +602,7 @@ internal sealed class PasswordAccountService(
 
         try
         {
-            await credentials.CreateAsync(BuildCredential(user.Id, trimmedUserName, user.Email, password, now), cancellationToken);
+            await credentials.CreateCheckedAsync(BuildCredential(user.Id, trimmedUserName, user.Email, password, now), cancellationToken);
         }
         catch (PasswordIdentifierConflictException)
         {
