@@ -75,6 +75,7 @@ internal sealed class PasswordAccountService(
         Guid userId,
         string? currentPassword,
         string newPassword,
+        DateTimeOffset? authenticatedAt = null,
         CancellationToken cancellationToken = default)
     {
         var user = await users.FindByIdAsync(userId, cancellationToken);
@@ -94,6 +95,17 @@ internal sealed class PasswordAccountService(
             // time. There is no current password to prove, because there is none.
             if (currentPassword is not null)
                 return AccountResult.Failure("This account has no password yet, so there is no current password to give.");
+
+            // A time ahead of now is a clock problem, not a fresh sign-in.
+            if (authenticatedAt is not { } at || at > now || now - at > options.Value.FirstPasswordProofWindow)
+            {
+                logger.LogWarning(
+                    "First password refused for user {UserId}: the caller has not authenticated within the proof window.",
+                    userId);
+
+                return AccountResult.Failure(
+                    "Adding a first password needs a recent sign-in. Sign in again, then add it while that sign-in is fresh.");
+            }
 
             var userName = user.UserName ?? user.Email;
             if (string.IsNullOrWhiteSpace(userName))

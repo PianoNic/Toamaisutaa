@@ -107,6 +107,12 @@ user straight in.
 **`POST /auth/password`** - authenticated. Omit `currentPassword` when the account arrived through an
 identity provider and is gaining its first password. Answers 204 or 400.
 
+A first password has no current one to prove, so it needs a recent sign-in instead: the caller's
+token must carry an `auth_time` from the identity provider, or a `toa_2fa_at`, within
+`LocalLogin:FirstPasswordProofWindow` (five minutes by default). Otherwise a stolen access token would
+be enough to add a password that outlives it. Send the user back through the identity provider with
+`max_age` or `prompt=login` first, so the token they come back with is fresh.
+
 ```json
 { "currentPassword": "the old one", "newPassword": "the new one" }
 ```
@@ -333,6 +339,7 @@ hands you - rather than expecting to construct one.
 | `LocalLogin:LockoutEnabled` | `true` | |
 | `LocalLogin:MaxFailedAttempts` | `5` | |
 | `LocalLogin:LockoutWindow` / `LockoutDuration` | `00:15:00` | |
+| `LocalLogin:FirstPasswordProofWindow` | `00:05:00` | How recent a sign-in must be to give a passwordless account its first password |
 | `LocalLogin:MinimumPasswordLength` | `8` | NIST: a length floor, no composition rules |
 | `LocalLogin:MaximumPasswordLength` | `128` | Not a strength rule - a bound on an anonymous endpoint |
 | `LocalLogin:PasswordResetTokenLifetime` | `01:00:00` | Single use |

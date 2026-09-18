@@ -1,4 +1,5 @@
 using System.Net;
+using System.Globalization;
 using System.Security.Claims;
 using System.Security.Cryptography;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
@@ -69,7 +70,7 @@ public class IdentityProviderTokenHttpTests
     /// Minted rather than doctored, for the reason <c>TestApp.MintTokenWithoutSession</c> gives:
     /// editing a real token breaks its signature, so the request never reaches the code under test.
     /// </summary>
-    private static string Mint(TestApp app, SecurityKey key, string algorithm, string issuer, string subject) =>
+    private static string Mint(TestApp app, SecurityKey key, string algorithm, string issuer, string subject, params Claim[] extra) =>
         new JsonWebTokenHandler().CreateToken(new SecurityTokenDescriptor
         {
             Issuer = issuer,
@@ -78,6 +79,7 @@ public class IdentityProviderTokenHttpTests
             [
                 new Claim("sub", subject),
                 new Claim("preferred_username", "grace"),
+                .. extra,
             ]),
             IssuedAt = app.Time.Now.UtcDateTime,
             NotBefore = app.Time.Now.UtcDateTime,
@@ -155,4 +157,51 @@ public class IdentityProviderTokenHttpTests
 
         await Assert.That(response.StatusCode).IsEqualTo(HttpStatusCode.Unauthorized);
     }
+
+    /// <summary>
+    /// A first password has no current one to prove, so a bare access token used to be enough to add
+    /// a permanent way into an identity-provider account - one that survives the provider disabling it.
+    /// </summary>
+    [Test]
+    public async Task A_first_password_is_refused_without_a_recent_sign_in_at_the_identity_provider()
+    {
+        using var identityProviderKey = RSA.Create(2048);
+        using var localKey = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+
+        await using var app = await StartAsync(identityProviderKey, localKey);
+        var key = new RsaSecurityKey(identityProviderKey) { KeyId = IdentityProviderKeyId };
+
+        var noAuthTime = Mint(app, key, SecurityAlgorithms.RsaSha256, IdentityProvider, "grace-subject");
+        var staleAuthTime = Mint(app, key, SecurityAlgorithms.RsaSha256, IdentityProvider, "grace-subject", AuthTime(app.Time.Now.AddHours(-1)));
+
+        foreach (var token in new[] { noAuthTime, staleAuthTime })
+        {
+            var response = await app.Client.PostJson("/auth/password", new { newPassword = Account.DefaultPassword }, token);
+            await Assert.That(response.StatusCode).IsEqualTo(HttpStatusCode.BadRequest);
+        }
+
+        var login = await app.Client.PostJson("/auth/login", new { identifier = "grace", password = Account.DefaultPassword });
+        await Assert.That(login.StatusCode).IsEqualTo(HttpStatusCode.Unauthorized);
+    }
+
+    [Test]
+    public async Task A_first_password_is_set_after_a_recent_sign_in_at_the_identity_provider()
+    {
+        using var identityProviderKey = RSA.Create(2048);
+        using var localKey = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+
+        await using var app = await StartAsync(identityProviderKey, localKey);
+        var key = new RsaSecurityKey(identityProviderKey) { KeyId = IdentityProviderKeyId };
+
+        var fresh = Mint(app, key, SecurityAlgorithms.RsaSha256, IdentityProvider, "grace-subject", AuthTime(app.Time.Now.AddMinutes(-1)));
+
+        var response = await app.Client.PostJson("/auth/password", new { newPassword = Account.DefaultPassword }, fresh);
+        await Assert.That(response.StatusCode).IsEqualTo(HttpStatusCode.NoContent);
+
+        var login = await app.Client.PostJson("/auth/login", new { identifier = "grace", password = Account.DefaultPassword });
+        await Assert.That(login.StatusCode).IsEqualTo(HttpStatusCode.OK);
+    }
+
+    private static Claim AuthTime(DateTimeOffset at) =>
+        new("auth_time", at.ToUnixTimeSeconds().ToString(CultureInfo.InvariantCulture), ClaimValueTypes.Integer64);
 }
