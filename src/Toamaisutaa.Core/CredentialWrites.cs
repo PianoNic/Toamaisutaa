@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging;
 using Toamaisutaa.Abstractions;
 
 namespace Toamaisutaa.Core;
@@ -71,6 +72,57 @@ internal static class CredentialWrites
             cancellationToken);
 
         return (credential, lockedByThisAttempt);
+    }
+
+    /// <summary>
+    /// The current password a signed-in caller answers, counted against the account exactly as a
+    /// wrong password at sign-in is. A stolen access token reaches every place that asks for one, and
+    /// without the count each of them is an unthrottled way to guess the one thing the token lacks.
+    /// </summary>
+    /// <returns>Null when the password is right, otherwise what to tell the caller.</returns>
+    internal static async Task<string?> CheckCurrentPasswordAsync(
+        this IPasswordCredentialStore store,
+        ToamaisutaaPasswordCredential credential,
+        string currentPassword,
+        IPasswordHasher hasher,
+        AuthenticationEventPublisher events,
+        ToamaisutaaLocalLoginOptions options,
+        ILogger logger,
+        string action,
+        DateTimeOffset now,
+        CancellationToken cancellationToken)
+    {
+        if (LockoutPolicy.IsLockedOut(credential, now))
+        {
+            logger.LogWarning(
+                "{Action} refused for user {UserId}: locked out until {LockedOutUntil}.",
+                action,
+                credential.UserId,
+                credential.LockedOutUntil);
+
+            return "Too many wrong passwords. Try again later.";
+        }
+
+        if (hasher.Verify(currentPassword, credential.PasswordHash) != PasswordVerificationResult.Failed)
+            return null;
+
+        (credential, var lockedByThisAttempt) = await store.RegisterFailureAsync(credential, options, now, cancellationToken);
+
+        logger.LogWarning(
+            "{Action} refused for user {UserId}: the current password is wrong. {FailedAttempts} failed attempt(s) in the current window{Locked}.",
+            action,
+            credential.UserId,
+            credential.FailedAttemptCount,
+            credential.LockedOutUntil is { } until ? $"; locked out until {until:O}" : string.Empty);
+
+        if (lockedByThisAttempt && credential.LockedOutUntil is { } lockedOutUntil)
+        {
+            await events.PublishAsync(
+                new AccountLockedOut { OccurredAt = now, UserId = credential.UserId, LockedOutUntil = lockedOutUntil },
+                cancellationToken);
+        }
+
+        return "Your current password is not correct.";
     }
 
     /// <summary>Clears the count once a sign-in or step-up has finished.</summary>

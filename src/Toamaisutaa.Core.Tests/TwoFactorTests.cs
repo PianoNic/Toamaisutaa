@@ -21,7 +21,7 @@ public class TwoFactorTests
         var harness = Harness();
         var user = await harness.RegisterAsync();
 
-        await harness.TwoFactor.BeginEnrolmentAsync(user.Id);
+        await harness.TwoFactor.BeginEnrolmentAsync(user.Id, harness.FreshSignIn);
 
         var status = await harness.TwoFactor.GetStatusAsync(user.Id);
         await Assert.That(status.Enabled).IsFalse();
@@ -54,7 +54,7 @@ public class TwoFactorTests
         var harness = Harness();
         var user = await harness.RegisterAsync();
 
-        await harness.TwoFactor.BeginEnrolmentAsync(user.Id);
+        await harness.TwoFactor.BeginEnrolmentAsync(user.Id, harness.FreshSignIn);
 
         await Assert.That(async () => await harness.TwoFactor.ConfirmEnrolmentAsync(user.Id, "000000"))
             .Throws<TwoFactorEnrolmentException>();
@@ -73,13 +73,13 @@ public class TwoFactorTests
         var harness = Harness();
         var user = await harness.RegisterAsync();
 
-        var first = await harness.TwoFactor.BeginEnrolmentAsync(user.Id);
+        var first = await harness.TwoFactor.BeginEnrolmentAsync(user.Id, harness.FreshSignIn);
 
         if (!Base32.TryDecode(first.Secret, out var firstSecret))
             throw new InvalidOperationException("The enrolment secret is not valid base32.");
 
         harness.Clock.Now = harness.Clock.Now.AddMinutes(1);
-        await harness.TwoFactor.BeginEnrolmentAsync(user.Id);
+        await harness.TwoFactor.BeginEnrolmentAsync(user.Id, harness.FreshSignIn);
 
         var exception = await Assert.ThrowsAsync<TwoFactorEnrolmentException>(
             async () => await harness.TwoFactor.ConfirmEnrolmentAsync(user.Id, harness.CurrentCode(firstSecret)));
@@ -96,7 +96,7 @@ public class TwoFactorTests
 
         await harness.EnrolAsync(user.Id);
 
-        await Assert.That(async () => await harness.TwoFactor.BeginEnrolmentAsync(user.Id))
+        await Assert.That(async () => await harness.TwoFactor.BeginEnrolmentAsync(user.Id, harness.FreshSignIn))
             .Throws<TwoFactorEnrolmentException>();
     }
 

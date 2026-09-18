@@ -124,7 +124,10 @@ Authorization: Bearer {{token}}
 ### Begin. Returns the secret and an otpauth:// URI - scan it, or type the secret in by hand.
 ### Nothing is enabled yet, and signing in is unchanged until the next request succeeds.
 POST {{host}}/auth/2fa/begin
+Content-Type: application/json
 Authorization: Bearer {{token}}
+
+{ "currentPassword": "correct horse battery" }
 
 ### Confirm with the code your authenticator is showing. Returns the recovery codes, once.
 POST {{host}}/auth/2fa/confirm

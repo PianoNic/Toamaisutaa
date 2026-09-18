@@ -202,6 +202,29 @@ public class IdentityProviderTokenHttpTests
         await Assert.That(login.StatusCode).IsEqualTo(HttpStatusCode.OK);
     }
 
+    /// <summary>
+    /// An account an identity provider owns has no password to give, so a recent sign-in there is
+    /// the proof enrolment takes instead.
+    /// </summary>
+    [Test]
+    public async Task Enrolling_an_identity_provider_account_needs_a_recent_sign_in_there()
+    {
+        using var identityProviderKey = RSA.Create(2048);
+        using var localKey = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+
+        await using var app = await StartAsync(identityProviderKey, localKey);
+        var key = new RsaSecurityKey(identityProviderKey) { KeyId = IdentityProviderKeyId };
+
+        var stale = Mint(app, key, SecurityAlgorithms.RsaSha256, IdentityProvider, "grace-subject", AuthTime(app.Time.Now.AddHours(-1)));
+        var fresh = Mint(app, key, SecurityAlgorithms.RsaSha256, IdentityProvider, "grace-subject", AuthTime(app.Time.Now.AddMinutes(-1)));
+
+        var refused = await app.Client.PostEmpty("/auth/2fa/begin", stale);
+        await Assert.That(refused.StatusCode).IsEqualTo(HttpStatusCode.BadRequest);
+
+        var begun = await app.Client.PostEmpty("/auth/2fa/begin", fresh);
+        await Assert.That(begun.StatusCode).IsEqualTo(HttpStatusCode.OK);
+    }
+
     private static Claim AuthTime(DateTimeOffset at) =>
         new("auth_time", at.ToUnixTimeSeconds().ToString(CultureInfo.InvariantCulture), ClaimValueTypes.Integer64);
 }

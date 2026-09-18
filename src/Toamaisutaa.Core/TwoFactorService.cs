@@ -35,7 +35,10 @@ internal sealed class TwoFactorService(
             RecoveryCodesRemaining: enrolment.IsEnabled ? await recoveryCodes.CountUnusedAsync(userId, cancellationToken) : 0);
     }
 
-    public async Task<TwoFactorEnrolmentStarted> BeginEnrolmentAsync(Guid userId, CancellationToken cancellationToken = default)
+    public async Task<TwoFactorEnrolmentStarted> BeginEnrolmentAsync(
+        Guid userId,
+        TwoFactorEnrolmentProof? proof = null,
+        CancellationToken cancellationToken = default)
     {
         var user = await users.FindByIdAsync(userId, cancellationToken)
             ?? throw new InvalidOperationException($"User {userId} does not exist.");
@@ -51,6 +54,8 @@ internal sealed class TwoFactorService(
 
         var settings = options.Value;
         var now = timeProvider.GetUtcNow();
+
+        await RequireEnrolmentProofAsync(userId, proof, now, cancellationToken);
         var secret = RandomNumberGenerator.GetBytes(settings.SecretSizeBytes);
 
         try
@@ -170,6 +175,50 @@ internal sealed class TwoFactorService(
         logger.LogInformation("Regenerated recovery codes for user {UserId}; every previous code is now dead.", userId);
 
         return new TwoFactorEnrolmentCompleted { RecoveryCodes = codes };
+    }
+
+    /// <summary>
+    /// Whoever enrols is the only one who can answer the second factor afterwards, so a bearer token
+    /// alone must not be enough: the one lifted from a log would lock the owner out of their account.
+    /// </summary>
+    private async Task RequireEnrolmentProofAsync(
+        Guid userId,
+        TwoFactorEnrolmentProof? proof,
+        DateTimeOffset now,
+        CancellationToken cancellationToken)
+    {
+        // A time ahead of now is a clock problem, not a fresh sign-in.
+        if (proof?.AuthenticatedAt is { } at && at <= now && now - at <= options.Value.EnrolmentProofWindow)
+            return;
+
+        var passwords = provider.GetService<IPasswordCredentialStore>();
+        var credential = passwords is null ? null : await passwords.FindByUserIdAsync(userId, cancellationToken);
+        var hasher = provider.GetService<IPasswordHasher>();
+
+        if (credential is null || hasher is null || string.IsNullOrEmpty(proof?.CurrentPassword))
+        {
+            logger.LogWarning(
+                "Two-factor enrolment refused for user {UserId}: no current password and no recent sign-in.",
+                userId);
+
+            throw new TwoFactorEnrolmentException(credential is null
+                ? "Enrolling needs a recent sign-in. Sign in again, then enrol while that sign-in is fresh."
+                : "Enrolling needs your current password. Send currentPassword.");
+        }
+
+        var refusal = await passwords!.CheckCurrentPasswordAsync(
+            credential,
+            proof.CurrentPassword,
+            hasher,
+            events,
+            provider.GetRequiredService<IOptions<ToamaisutaaLocalLoginOptions>>().Value,
+            logger,
+            "Two-factor enrolment",
+            now,
+            cancellationToken);
+
+        if (refusal is not null)
+            throw new TwoFactorEnrolmentException(refusal);
     }
 
     /// <summary>

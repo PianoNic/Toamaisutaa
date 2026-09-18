@@ -1,5 +1,9 @@
 namespace Toamaisutaa.Abstractions;
 
+/// <summary><see cref="CurrentPassword"/> is optional only for a caller who signed in within
+/// <c>TwoFactor:EnrolmentProofWindow</c>, which the endpoint reads off their token.</summary>
+public sealed record BeginTwoFactorRequest(string? CurrentPassword = null);
+
 /// <summary><see cref="Code"/> comes from the authenticator app that just scanned the QR code. It
 /// proves the app actually holds the secret, which is what turns the enrolment on.</summary>
 public sealed record ConfirmTwoFactorRequest(string Code);

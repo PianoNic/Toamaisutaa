@@ -1,5 +1,3 @@
-using System.Globalization;
-using System.Security.Claims;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.DependencyInjection;
@@ -488,34 +486,12 @@ public static class ToamaisutaaPasswordEndpointExtensions
             user.Id,
             request.CurrentPassword,
             request.NewPassword,
-            AuthenticatedAt(context.User),
+            CallerAuthentication.AuthenticatedAt(context.User),
             cancellationToken);
 
         return result.Succeeded
             ? Results.NoContent()
             : Results.BadRequest(new ValidationErrorResponse { Errors = result.Errors });
-    }
-
-    /// <summary>
-    /// The later of a local second factor (<c>toa_2fa_at</c>) and an identity-provider sign-in
-    /// (<c>auth_time</c>). Read off the caller's own token, never the body, which is the one place a
-    /// caller could otherwise vouch for themselves. Neither moves on a refresh.
-    /// </summary>
-    private static DateTimeOffset? AuthenticatedAt(ClaimsPrincipal principal)
-    {
-        DateTimeOffset? latest = null;
-
-        foreach (var type in new[] { ToamaisutaaDefaults.SecondFactorAtClaim, "auth_time" })
-        {
-            if (long.TryParse(principal.FindFirst(type)?.Value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var unixSeconds))
-            {
-                var at = DateTimeOffset.FromUnixTimeSeconds(unixSeconds);
-                if (latest is null || at > latest)
-                    latest = at;
-            }
-        }
-
-        return latest;
     }
 
     private static async Task<IResult> ForgotPasswordAsync(

@@ -62,7 +62,7 @@ public class SecurityStampHttpTests
         await using var app = await TestApp.StartAsync();
         var account = await Account.RegisterAsync(app);
 
-        var begin = await app.Client.PostEmpty("/auth/2fa/begin", account.AccessToken);
+        var begin = await app.Client.PostJson("/auth/2fa/begin", new { currentPassword = account.Password }, account.AccessToken);
         var secret = (await begin.Json()).String("secret")!;
 
         app.Time.AdvanceToNextTotpStep();
