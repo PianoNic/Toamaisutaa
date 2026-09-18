@@ -274,15 +274,18 @@ namespace Toamaisutaa.EntityFrameworkCore.Migrations.SqlServer.Migrations
                         .HasColumnType("bigint");
 
                     b.Property<int>("FailedAttemptCount")
+                        .IsConcurrencyToken()
                         .HasColumnType("int");
 
                     b.Property<long?>("FirstFailedAttemptAt")
                         .HasColumnType("bigint");
 
                     b.Property<long?>("LockedOutUntil")
+                        .IsConcurrencyToken()
                         .HasColumnType("bigint");
 
                     b.Property<string>("NormalizedEmail")
+                        .IsConcurrencyToken()
                         .HasMaxLength(256)
                         .HasColumnType("nvarchar(256)");
 
@@ -292,6 +295,7 @@ namespace Toamaisutaa.EntityFrameworkCore.Migrations.SqlServer.Migrations
                         .HasColumnType("nvarchar(256)");
 
                     b.Property<string>("PasswordHash")
+                        .IsConcurrencyToken()
                         .IsRequired()
                         .HasMaxLength(512)
                         .HasColumnType("nvarchar(512)");

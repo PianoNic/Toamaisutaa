@@ -208,20 +208,18 @@ internal sealed class TwoFactorService(
         if (verification.Succeeded)
         {
             if (credential is not null)
-            {
-                LockoutPolicy.RegisterSuccess(credential);
-                credential.UpdatedAt = now;
-                await passwords!.UpdateAsync(credential, cancellationToken);
-            }
+                await passwords!.RegisterSuccessAsync(credential, now, cancellationToken);
 
             return (verification, null);
         }
 
         if (credential is not null)
         {
-            LockoutPolicy.RegisterFailure(credential, provider.GetRequiredService<IOptions<ToamaisutaaLocalLoginOptions>>().Value, now);
-            credential.UpdatedAt = now;
-            await passwords!.UpdateAsync(credential, cancellationToken);
+            (credential, var lockedByThisAttempt) = await passwords!.RegisterFailureAsync(
+                credential,
+                provider.GetRequiredService<IOptions<ToamaisutaaLocalLoginOptions>>().Value,
+                now,
+                cancellationToken);
 
             logger.LogWarning(
                 "Two-factor proof refused for user {UserId}: wrong code. {FailedAttempts} failed attempt(s) in the current window{Locked}.",
@@ -229,7 +227,7 @@ internal sealed class TwoFactorService(
                 credential.FailedAttemptCount,
                 credential.LockedOutUntil is { } until ? $"; locked out until {until:O}" : string.Empty);
 
-            if (credential.LockedOutUntil is { } lockedOutUntil && LockoutPolicy.IsLockedOut(credential, now))
+            if (lockedByThisAttempt && credential.LockedOutUntil is { } lockedOutUntil)
             {
                 await events.PublishAsync(
                     new AccountLockedOut { OccurredAt = now, UserId = userId, LockedOutUntil = lockedOutUntil },

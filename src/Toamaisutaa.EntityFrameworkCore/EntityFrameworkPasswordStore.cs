@@ -58,8 +58,32 @@ internal sealed class EntityFrameworkPasswordStore<TContext>(TContext context)
 
     public async Task UpdateAsync(ToamaisutaaPasswordCredential credential, CancellationToken cancellationToken = default)
     {
-        context.Set<ToamaisutaaPasswordCredential>().Update(credential);
-        await context.SaveChangesAsync(cancellationToken);
+        var entry = context.Entry(credential);
+
+        // Tracked is the normal case - the flows update the row they just read - and it is what makes
+        // this safe: only changed columns are written, and the concurrency tokens are compared against
+        // the values that were read. Update() would mark every column modified and write the whole
+        // stale row back.
+        if (entry.State == EntityState.Detached)
+        {
+            var tracked = await context.Set<ToamaisutaaPasswordCredential>()
+                .FirstOrDefaultAsync(stored => stored.UserId == credential.UserId, cancellationToken)
+                ?? throw new InvalidOperationException($"There is no credential for user {credential.UserId} to update.");
+
+            entry = context.Entry(tracked);
+            entry.CurrentValues.SetValues(credential);
+        }
+
+        try
+        {
+            await context.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateConcurrencyException exception)
+        {
+            // So the caller's next read sees the row as it is now rather than this context's copy.
+            await entry.ReloadAsync(cancellationToken);
+            throw new CredentialConcurrencyException(exception);
+        }
     }
 
     private async Task<bool> IdentifierTakenAsync(ToamaisutaaPasswordCredential credential, CancellationToken cancellationToken) =>

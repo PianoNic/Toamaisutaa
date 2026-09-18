@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Toamaisutaa.EntityFrameworkCore;
 
@@ -10,9 +11,11 @@ using Toamaisutaa.EntityFrameworkCore;
 namespace Toamaisutaa.EntityFrameworkCore.Migrations.MySql.Migrations
 {
     [DbContext(typeof(ToamaisutaaDbContext))]
-    partial class ToamaisutaaDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260918092557_CredentialConcurrencyTokens")]
+    partial class CredentialConcurrencyTokens
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder

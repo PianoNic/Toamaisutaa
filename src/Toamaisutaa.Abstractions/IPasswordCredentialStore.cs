@@ -16,7 +16,29 @@ public interface IPasswordCredentialStore
     /// name or email is already held by another credential.</summary>
     Task CreateAsync(ToamaisutaaPasswordCredential credential, CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Writes what changed since the credential was read. Throws
+    /// <see cref="CredentialConcurrencyException"/> when the row has moved underneath it since then,
+    /// and leaves the next <see cref="FindByUserIdAsync"/> answering with what the row holds now.
+    /// </summary>
+    /// <remarks>
+    /// A store that writes blindly instead still works, but loses whatever the other writer did:
+    /// failed-attempt counts that never reach the lockout, and a sign-in that read the row before a
+    /// reset writing the old hash back over the new one.
+    /// </remarks>
     Task UpdateAsync(ToamaisutaaPasswordCredential credential, CancellationToken cancellationToken = default);
+}
+
+/// <summary>
+/// The credential changed between being read and being written. The flows above the store read it
+/// again and reapply their change, so one never silently undoes another.
+/// </summary>
+public sealed class CredentialConcurrencyException : Exception
+{
+    public CredentialConcurrencyException(Exception? innerException = null)
+        : base("The password credential was changed by another request while this one was using it.", innerException)
+    {
+    }
 }
 
 /// <summary>
