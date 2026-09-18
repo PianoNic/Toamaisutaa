@@ -125,6 +125,45 @@ internal static class CredentialWrites
         return "Your current password is not correct.";
     }
 
+    /// <summary>
+    /// Creates a credential in the one namespace the sign-in box reads. It takes a user name or an
+    /// email, so a value one account holds in either column must not appear in the other column of a
+    /// different account: a user name equal to somebody's address sent their sign-ins to the wrong row.
+    /// </summary>
+    /// <remarks>
+    /// The unique indexes cover each column only against itself, which is why this asks the store the
+    /// same question sign-in does rather than trusting the insert to fail.
+    /// </remarks>
+    internal static async Task CreateCheckedAsync(
+        this IPasswordCredentialStore store,
+        ToamaisutaaPasswordCredential credential,
+        CancellationToken cancellationToken)
+    {
+        await ThrowIfTakenAsync(store, credential.UserId, credential.NormalizedUserName, cancellationToken);
+        await ThrowIfTakenAsync(store, credential.UserId, credential.NormalizedEmail, cancellationToken);
+
+        await store.CreateAsync(credential, cancellationToken);
+    }
+
+    /// <summary>Whether another account answers to <paramref name="normalizedIdentifier"/> in
+    /// either column.</summary>
+    internal static async Task<bool> IsTakenByAnotherAsync(
+        this IPasswordCredentialStore store,
+        Guid userId,
+        string normalizedIdentifier,
+        CancellationToken cancellationToken) =>
+        await store.FindByIdentifierAsync(normalizedIdentifier, cancellationToken) is { } holder && holder.UserId != userId;
+
+    private static async Task ThrowIfTakenAsync(
+        IPasswordCredentialStore store,
+        Guid userId,
+        string? normalizedIdentifier,
+        CancellationToken cancellationToken)
+    {
+        if (normalizedIdentifier is not null && await store.IsTakenByAnotherAsync(userId, normalizedIdentifier, cancellationToken))
+            throw new PasswordIdentifierConflictException();
+    }
+
     /// <summary>Clears the count once a sign-in or step-up has finished.</summary>
     internal static Task<ToamaisutaaPasswordCredential> RegisterSuccessAsync(
         this IPasswordCredentialStore store,

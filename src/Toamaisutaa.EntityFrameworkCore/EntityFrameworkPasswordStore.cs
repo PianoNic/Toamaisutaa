@@ -23,12 +23,25 @@ internal sealed class EntityFrameworkPasswordStore<TContext>(TContext context)
         await context.Set<ToamaisutaaPasswordCredential>()
             .FirstOrDefaultAsync(credential => credential.UserId == userId, cancellationToken);
 
-    public async Task<ToamaisutaaPasswordCredential?> FindByIdentifierAsync(string normalizedIdentifier, CancellationToken cancellationToken = default) =>
-        await context.Set<ToamaisutaaPasswordCredential>()
-            .FirstOrDefaultAsync(
-                credential => credential.NormalizedUserName == normalizedIdentifier
-                    || credential.NormalizedEmail == normalizedIdentifier,
-                cancellationToken);
+    public async Task<ToamaisutaaPasswordCredential?> FindByIdentifierAsync(string normalizedIdentifier, CancellationToken cancellationToken = default)
+    {
+        var matches = await context.Set<ToamaisutaaPasswordCredential>()
+            .Where(credential => credential.NormalizedUserName == normalizedIdentifier
+                || credential.NormalizedEmail == normalizedIdentifier)
+            .Take(2)
+            .ToListAsync(cancellationToken);
+
+        if (matches.Count < 2)
+            return matches.SingleOrDefault();
+
+        // One account's user name is another's address - written before creation checked across both
+        // columns, or by a race with it. Each unique index still holds, so one row matched each column.
+        // Chosen by what the identifier looks like rather than whichever row the database returns
+        // first, so a user name squatting somebody's address cannot take their email sign-ins.
+        return normalizedIdentifier.Contains('@')
+            ? matches.Single(credential => credential.NormalizedEmail == normalizedIdentifier)
+            : matches.Single(credential => credential.NormalizedUserName == normalizedIdentifier);
+    }
 
     public async Task<ToamaisutaaPasswordCredential?> FindByNormalizedEmailAsync(string normalizedEmail, CancellationToken cancellationToken = default) =>
         await context.Set<ToamaisutaaPasswordCredential>()
