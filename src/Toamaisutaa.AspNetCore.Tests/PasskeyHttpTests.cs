@@ -75,6 +75,25 @@ public class PasskeyHttpTests
     }
 
     /// <summary>
+    /// The password asked for here is guessable by whoever holds the token, so a wrong one counts
+    /// against the account like a wrong password at sign-in.
+    /// </summary>
+    [Test]
+    public async Task Wrong_passwords_at_registration_lock_the_account()
+    {
+        await using var app = await TestApp.StartAsync();
+        var account = await Account.RegisterAsync(app);
+
+        for (var i = 0; i < 5; i++)
+            await Passkeys.BeginRegistrationAsync(app, account.AccessToken, "not the password");
+
+        var right = await Passkeys.BeginRegistrationAsync(app, account.AccessToken, account.Password);
+
+        await Assert.That(right.StatusCode).IsEqualTo(HttpStatusCode.BadRequest);
+        await Assert.That((await account.LoginAsync()).StatusCode).IsEqualTo(HttpStatusCode.Unauthorized);
+    }
+
+    /// <summary>
     /// The other proof, and the one an account with no password has: a second factor presented
     /// within <c>Passkeys:RegistrationProofWindow</c>. It is the <c>toa_2fa_at</c> claim
     /// <c>RequireFreshSecondFactor</c> reads, so a step-up satisfies this too.
