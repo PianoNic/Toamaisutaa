@@ -135,8 +135,7 @@ internal sealed class PasswordAccountService(
                 return AccountResult.Failure("Your current password is not correct.");
             }
 
-            ApplyNewPassword(credential, newPassword, now);
-            await credentials.UpdateAsync(credential, cancellationToken);
+            await ApplyNewPasswordAsync(credential, newPassword, now, cancellationToken);
             logger.LogInformation("Changed the password for user {UserId}.", userId);
         }
 
@@ -243,8 +242,7 @@ internal sealed class PasswordAccountService(
         {
             // Unconditional, unlike the self-service path: there is no current password to prove,
             // because the caller here is acting on someone else's account, not their own.
-            ApplyNewPassword(credential, effectivePassword, now);
-            await credentials.UpdateAsync(credential, cancellationToken);
+            await ApplyNewPasswordAsync(credential, effectivePassword, now, cancellationToken);
         }
 
         // Same reasoning as a self-service change: whoever is now holding this password should not
@@ -390,12 +388,16 @@ internal sealed class PasswordAccountService(
 
         var previousEmail = credential.Email;
 
-        credential.Email = stored.Email;
-        credential.NormalizedEmail = normalized;
-        credential.EmailConfirmedAt = now;
-        credential.UpdatedAt = now;
-
-        await credentials.UpdateAsync(credential, cancellationToken);
+        await credentials.UpdateAsync(
+            credential,
+            current =>
+            {
+                current.Email = stored.Email;
+                current.NormalizedEmail = normalized;
+                current.EmailConfirmedAt = now;
+                current.UpdatedAt = now;
+            },
+            cancellationToken);
         await emailVerificationTokens.MarkConsumedAsync(stored.Id, now, cancellationToken);
         await emailVerificationTokens.InvalidateAllForUserAsync(stored.UserId, now, cancellationToken);
 
@@ -740,8 +742,7 @@ internal sealed class PasswordAccountService(
         if (credential is null)
             return AccountResult.Failure("That reset link is no longer valid. Request a new one.");
 
-        ApplyNewPassword(credential, newPassword, now);
-        await credentials.UpdateAsync(credential, cancellationToken);
+        await ApplyNewPasswordAsync(credential, newPassword, now, cancellationToken);
 
         await resetTokens.MarkConsumedAsync(stored.Id, now, cancellationToken);
         await resetTokens.InvalidateAllForUserAsync(stored.UserId, now, cancellationToken);
@@ -815,13 +816,27 @@ internal sealed class PasswordAccountService(
             UpdatedAt = now,
         };
 
-    private void ApplyNewPassword(ToamaisutaaPasswordCredential credential, string newPassword, DateTimeOffset now)
+    private Task ApplyNewPasswordAsync(
+        ToamaisutaaPasswordCredential credential,
+        string newPassword,
+        DateTimeOffset now,
+        CancellationToken cancellationToken)
     {
-        credential.PasswordHash = hasher.Hash(newPassword);
-        credential.UpdatedAt = now;
+        // Hashed once, outside the retry: it is the expensive half, and the value does not depend on
+        // what the row held.
+        var hash = hasher.Hash(newPassword);
 
-        // Whoever just proved they own the account should not still be locked out of it.
-        LockoutPolicy.RegisterSuccess(credential);
+        return credentials.UpdateAsync(
+            credential,
+            current =>
+            {
+                current.PasswordHash = hash;
+                current.UpdatedAt = now;
+
+                // Whoever just proved they own the account should not still be locked out of it.
+                LockoutPolicy.RegisterSuccess(current);
+            },
+            cancellationToken);
     }
 
     /// <summary>

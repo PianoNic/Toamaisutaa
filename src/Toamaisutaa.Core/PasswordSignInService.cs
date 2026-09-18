@@ -69,15 +69,12 @@ internal sealed class PasswordSignInService(
 
         if (verification == PasswordVerificationResult.Failed)
         {
-            LockoutPolicy.RegisterFailure(credential, options.Value, now);
-            credential.UpdatedAt = now;
-            await credentials.UpdateAsync(credential, cancellationToken);
+            (credential, var lockedByThisAttempt) = await credentials.RegisterFailureAsync(credential, options.Value, now, cancellationToken);
 
             // Asked after the fact rather than inferred from the count, because the policy owns the
-            // threshold and the window reset - and it was not locked a line ago, so a lock now is
-            // this attempt's doing. The event says the same thing to an audit table, once, as the
-            // lock goes on: the attempts refused afterwards never reach this line.
-            if (credential.LockedOutUntil is { } lockedOutUntil && LockoutPolicy.IsLockedOut(credential, now))
+            // threshold and the window reset. The event says the same thing to an audit table, once,
+            // as the lock goes on: a parallel attempt that lost the race to lock it does not repeat it.
+            if (lockedByThisAttempt && credential.LockedOutUntil is { } lockedOutUntil)
             {
                 metrics.LockedOut();
 
@@ -100,6 +97,7 @@ internal sealed class PasswordSignInService(
         }
 
         var rehashed = verification == PasswordVerificationResult.SucceededRehashNeeded;
+        var verifiedHash = credential.PasswordHash;
 
         if (rehashed)
         {
@@ -133,8 +131,20 @@ internal sealed class PasswordSignInService(
                 // signing in again every few attempts.
                 if (rehashed)
                 {
-                    credential.UpdatedAt = now;
-                    await credentials.UpdateAsync(credential, cancellationToken);
+                    var rehash = credential.PasswordHash;
+
+                    await credentials.UpdateAsync(
+                        credential,
+                        current =>
+                        {
+                            // Only over the hash that was verified. A reset that landed in between
+                            // wrote a new password, and the rehash of the old one must not undo it.
+                            if (current.PasswordHash == verifiedHash)
+                                current.PasswordHash = rehash;
+
+                            current.UpdatedAt = now;
+                        },
+                        cancellationToken);
                 }
 
                 var challenge = await twoFactor.IssueChallengeAsync(
@@ -804,12 +814,8 @@ internal sealed class PasswordSignInService(
 
     /// <summary>The count comes off only when a sign-in or step-up has finished, never after a
     /// first factor that still owes a second.</summary>
-    private async Task RegisterSuccessAsync(ToamaisutaaPasswordCredential credential, DateTimeOffset now, CancellationToken cancellationToken)
-    {
-        LockoutPolicy.RegisterSuccess(credential);
-        credential.UpdatedAt = now;
-        await credentials.UpdateAsync(credential, cancellationToken);
-    }
+    private Task RegisterSuccessAsync(ToamaisutaaPasswordCredential credential, DateTimeOffset now, CancellationToken cancellationToken) =>
+        credentials.RegisterSuccessAsync(credential, now, cancellationToken);
 
     /// <summary>A wrong second factor counts against the account exactly as a wrong password does,
     /// wherever it was typed.</summary>
@@ -819,9 +825,7 @@ internal sealed class PasswordSignInService(
         DateTimeOffset now,
         CancellationToken cancellationToken)
     {
-        LockoutPolicy.RegisterFailure(credential, options.Value, now);
-        credential.UpdatedAt = now;
-        await credentials.UpdateAsync(credential, cancellationToken);
+        (credential, var lockedByThisAttempt) = await credentials.RegisterFailureAsync(credential, options.Value, now, cancellationToken);
 
         logger.LogWarning(
             "{Ceremony} refused for user {UserId}: wrong code. {FailedAttempts} failed attempt(s) in the current window{Locked}.",
@@ -830,7 +834,7 @@ internal sealed class PasswordSignInService(
             credential.FailedAttemptCount,
             credential.LockedOutUntil is { } until ? $"; locked out until {until:O}" : string.Empty);
 
-        if (credential.LockedOutUntil is { } lockedOutUntil && LockoutPolicy.IsLockedOut(credential, now))
+        if (lockedByThisAttempt && credential.LockedOutUntil is { } lockedOutUntil)
         {
             metrics.LockedOut();
 

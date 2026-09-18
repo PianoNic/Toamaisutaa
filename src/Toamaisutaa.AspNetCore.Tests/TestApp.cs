@@ -192,13 +192,27 @@ internal sealed class TestApp : IAsyncDisposable
         // Before AddToamaisutaaBearer, which registers TimeProvider.System with TryAdd.
         builder.Services.AddSingleton<TimeProvider>(time);
 
-        var connection = new SqliteConnection("DataSource=:memory:");
+        // A file rather than one shared in-memory connection, so every request opens its own the way
+        // a real deployment does. One connection handed to every scope is not thread-safe, and a test
+        // firing requests in parallel failed on it before it reached the code it was testing.
+        var databasePath = Path.Combine(Path.GetTempPath(), $"toamaisutaa-tests-{Guid.NewGuid():N}.db");
+        var connectionString = new SqliteConnectionStringBuilder { DataSource = databasePath, Pooling = false }.ToString();
+
+        var connection = new SqliteConnection(connectionString);
         await connection.OpenAsync();
+
+        // Readers alongside a writer, which is what any concurrent SQLite deployment runs. Without it
+        // parallel requests fail with "database is locked" rather than waiting their turn.
+        await using (var wal = connection.CreateCommand())
+        {
+            wal.CommandText = "PRAGMA journal_mode=WAL;";
+            await wal.ExecuteNonQueryAsync();
+        }
 
         builder.Services.AddToamaisutaaBearer(builder.Configuration);
         builder.Services.AddToamaisutaaAuthorization(builder.Configuration);
         builder.Services.AddToamaisutaaProvisioning();
-        builder.Services.AddToamaisutaaDbContext(db => db.UseSqlite(connection));
+        builder.Services.AddToamaisutaaDbContext(db => db.UseSqlite(connectionString));
         builder.Services.AddToamaisutaaCurrentUser();
         builder.Services.AddToamaisutaaPasswordLogin(builder.Configuration);
         builder.Services.AddToamaisutaaTwoFactor(builder.Configuration);
@@ -334,6 +348,15 @@ internal sealed class TestApp : IAsyncDisposable
         await _app.StopAsync();
         await _app.DisposeAsync();
         await _connection.DisposeAsync();
+
+        try
+        {
+            File.Delete(_connection.DataSource);
+        }
+        catch (IOException)
+        {
+            // A handle the runtime has not let go of yet. The temp directory takes it from here.
+        }
     }
 
     /// <summary>Grants <see cref="AdminRole"/> to <see cref="AdminUserName"/> and to nobody

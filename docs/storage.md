@@ -94,6 +94,12 @@ those in place of `AddToamaisutaaEntityFrameworkStores`.
 | `IPasskeyCredentialStore` | Registered passkeys, one row per credential |
 | `IPasskeyChallengeStore` | Outstanding passkey registration and assertion challenges |
 
+An `IPasswordCredentialStore` of your own should write only what changed and throw
+`CredentialConcurrencyException` when the row moved since it was read, the way the EF store does
+with concurrency tokens. The flows catch it, read the row again and reapply their change. A store
+that writes the whole row blindly still works, but parallel wrong passwords then all write the same
+count and the lockout never arrives.
+
 Register whichever the features you use require - the startup checks name the missing one rather
 than failing at the first request:
 

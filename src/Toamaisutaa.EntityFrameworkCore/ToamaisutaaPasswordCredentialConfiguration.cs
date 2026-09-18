@@ -29,6 +29,14 @@ public sealed class ToamaisutaaPasswordCredentialConfiguration : IEntityTypeConf
         builder.Property(credential => credential.FirstFailedAttemptAt).HasConversion(InstantConverters.NullableInstant);
         builder.Property(credential => credential.LockedOutUntil).HasConversion(InstantConverters.NullableInstant);
 
+        // Every column two requests can race on. A write whose read is stale fails instead of landing:
+        // parallel wrong passwords would otherwise all write the same count, and a sign-in that read
+        // the row before a reset would write the old hash back.
+        builder.Property(credential => credential.PasswordHash).IsConcurrencyToken();
+        builder.Property(credential => credential.NormalizedEmail).IsConcurrencyToken();
+        builder.Property(credential => credential.FailedAttemptCount).IsConcurrencyToken();
+        builder.Property(credential => credential.LockedOutUntil).IsConcurrencyToken();
+
         // Unique without a filter, which is the whole reason these live in their own table: only
         // accounts that sign in with a password have a row, so the constraint applies exactly where
         // it should and needs no provider-specific predicate.

@@ -269,15 +269,18 @@ namespace Toamaisutaa.EntityFrameworkCore.Migrations.Sqlite.Migrations
                         .HasColumnType("INTEGER");
 
                     b.Property<int>("FailedAttemptCount")
+                        .IsConcurrencyToken()
                         .HasColumnType("INTEGER");
 
                     b.Property<long?>("FirstFailedAttemptAt")
                         .HasColumnType("INTEGER");
 
                     b.Property<long?>("LockedOutUntil")
+                        .IsConcurrencyToken()
                         .HasColumnType("INTEGER");
 
                     b.Property<string>("NormalizedEmail")
+                        .IsConcurrencyToken()
                         .HasMaxLength(256)
                         .HasColumnType("TEXT");
 
@@ -287,6 +290,7 @@ namespace Toamaisutaa.EntityFrameworkCore.Migrations.Sqlite.Migrations
                         .HasColumnType("TEXT");
 
                     b.Property<string>("PasswordHash")
+                        .IsConcurrencyToken()
                         .IsRequired()
                         .HasMaxLength(512)
                         .HasColumnType("TEXT");

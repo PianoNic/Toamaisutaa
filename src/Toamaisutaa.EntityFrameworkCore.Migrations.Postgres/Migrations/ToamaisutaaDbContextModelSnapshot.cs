@@ -274,15 +274,18 @@ namespace Toamaisutaa.EntityFrameworkCore.Migrations.Postgres.Migrations
                         .HasColumnType("bigint");
 
                     b.Property<int>("FailedAttemptCount")
+                        .IsConcurrencyToken()
                         .HasColumnType("integer");
 
                     b.Property<long?>("FirstFailedAttemptAt")
                         .HasColumnType("bigint");
 
                     b.Property<long?>("LockedOutUntil")
+                        .IsConcurrencyToken()
                         .HasColumnType("bigint");
 
                     b.Property<string>("NormalizedEmail")
+                        .IsConcurrencyToken()
                         .HasMaxLength(256)
                         .HasColumnType("character varying(256)");
 
@@ -292,6 +295,7 @@ namespace Toamaisutaa.EntityFrameworkCore.Migrations.Postgres.Migrations
                         .HasColumnType("character varying(256)");
 
                     b.Property<string>("PasswordHash")
+                        .IsConcurrencyToken()
                         .IsRequired()
                         .HasMaxLength(512)
                         .HasColumnType("character varying(512)");
