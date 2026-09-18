@@ -93,6 +93,13 @@ public sealed class ToamaisutaaLocalLoginOptions
 
     public TimeSpan LockoutDuration { get; set; } = TimeSpan.FromMinutes(15);
 
+    /// <summary>
+    /// How recently a caller must have authenticated to give a passwordless account its first
+    /// password. There is no current password to ask for, so a recent sign-in is the proof: a bearer
+    /// token alone would let whoever lifted one add a way in that outlives it.
+    /// </summary>
+    public TimeSpan FirstPasswordProofWindow { get; set; } = TimeSpan.FromMinutes(5);
+
     // ── Passwords ──
 
     /// <summary>A length floor and nothing else, per NIST: no composition rules, no forced

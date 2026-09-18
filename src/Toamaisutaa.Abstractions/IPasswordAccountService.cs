@@ -9,7 +9,19 @@ public interface IPasswordAccountService
     /// identity provider and has never had one. <paramref name="currentPassword"/> is required when
     /// a credential already exists and must be absent when it does not.
     /// </summary>
-    Task<AccountResult> SetPasswordAsync(Guid userId, string? currentPassword, string newPassword, CancellationToken cancellationToken = default);
+    /// <remarks>
+    /// <c>authenticatedAt</c> is when the caller last actually authenticated - a live second factor
+    /// or an identity-provider sign-in, not a token refresh. It is only read for a first password,
+    /// which is refused unless it falls inside <c>LocalLogin:FirstPasswordProofWindow</c>: with no
+    /// current password to ask for, it is the one thing standing between a stolen access token and a
+    /// permanent way in.
+    /// </remarks>
+    Task<AccountResult> SetPasswordAsync(
+        Guid userId,
+        string? currentPassword,
+        string newPassword,
+        DateTimeOffset? authenticatedAt = null,
+        CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Issues a reset token and hands it to the notifier. A silent no-op for an unknown address and

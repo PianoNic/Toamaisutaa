@@ -79,12 +79,32 @@ public class PasswordAccountServiceTests
         var harness = PasswordHarness.Create();
         var user = harness.ProvisionExternalUser();
 
-        var result = await harness.Accounts.SetPasswordAsync(user.Id, currentPassword: null, Password);
+        var result = await harness.Accounts.SetPasswordAsync(user.Id, currentPassword: null, Password, harness.Clock.GetUtcNow());
 
         await Assert.That(result.Succeeded).IsTrue();
 
         var signIn = await harness.SignInAsync("ssouser", Password);
         await Assert.That(signIn.Outcome).IsEqualTo(SignInOutcome.Succeeded);
+    }
+
+    /// <summary>
+    /// No current password exists to ask for, so a recent sign-in is the proof. Without one, a bearer
+    /// token lifted from anywhere buys a permanent password on the account.
+    /// </summary>
+    [Test]
+    public async Task AFirstPasswordNeedsARecentSignIn()
+    {
+        var harness = PasswordHarness.Create();
+        var user = harness.ProvisionExternalUser();
+
+        var none = await harness.Accounts.SetPasswordAsync(user.Id, null, Password);
+        var stale = await harness.Accounts.SetPasswordAsync(user.Id, null, Password, harness.Clock.GetUtcNow().AddMinutes(-6));
+        var future = await harness.Accounts.SetPasswordAsync(user.Id, null, Password, harness.Clock.GetUtcNow().AddMinutes(1));
+
+        await Assert.That(none.Succeeded).IsFalse();
+        await Assert.That(stale.Succeeded).IsFalse();
+        await Assert.That(future.Succeeded).IsFalse();
+        await Assert.That(harness.Passwords.Credentials).IsEmpty();
     }
 
     [Test]
@@ -299,7 +319,7 @@ public class PasswordAccountServiceTests
             CreatedAt = harness.Clock.GetUtcNow(),
         });
 
-        await harness.Accounts.SetPasswordAsync(user.Id, null, Password);
+        await harness.Accounts.SetPasswordAsync(user.Id, null, Password, harness.Clock.GetUtcNow());
         await harness.Accounts.RequestPasswordResetAsync("both@example.com");
         await harness.Accounts.ResetPasswordAsync(harness.Notifier.Sent.Single().Token, "a whole new password");
 
