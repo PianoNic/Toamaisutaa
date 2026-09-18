@@ -188,6 +188,16 @@ JWT and carries no claims, so it cannot be presented as a bearer token to your A
 endpoint returns 401 no matter how your validation is configured. Treat it as a credential in
 transit: it is worth exactly one sign-in to whoever holds it.
 
+### Wrong codes count toward lockout
+
+A wrong code at `/auth/2fa/verify` counts against the account exactly as a wrong password does, and
+a locked account is refused there even with the right code. The right password does not clear the
+count on its own: only a finished sign-in does. Otherwise somebody holding the password could sign
+in again every four guesses and never reach the limit.
+
+A mistyped code does not spend the challenge, so the person typing it can try again without going
+back to the password.
+
 ## Recovery codes
 
 Ten of them, shown exactly once, stored as unsalted SHA-256 - the same reasoning as refresh tokens:
