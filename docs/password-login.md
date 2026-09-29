@@ -118,7 +118,11 @@ be enough to add a password that outlives it. Send the user back through the ide
 ```
 
 **`POST /auth/password/forgot`** answers 204 always - for an unknown address and for an account an
-identity provider owns alike.
+identity provider owns alike. The lookup and the mail happen after the response, on a background
+queue, so a real account takes no longer to answer than an unknown address: waiting on the mail
+server inside the request told the clock what the body would not. A second request for the same
+address inside `LocalLogin:MailRequestCooldown` (a minute by default) is dropped, whether or not the
+address has an account.
 
 ```json
 { "email": "ada@example.com" }
@@ -343,6 +347,7 @@ hands you - rather than expecting to construct one.
 | `LocalLogin:MinimumPasswordLength` | `8` | NIST: a length floor, no composition rules |
 | `LocalLogin:MaximumPasswordLength` | `128` | Not a strength rule - a bound on an anonymous endpoint |
 | `LocalLogin:PasswordResetTokenLifetime` | `01:00:00` | Single use |
+| `LocalLogin:MailRequestCooldown` | `00:01:00` | One reset or magic-link request per address; zero turns it off |
 | `LocalLogin:InvitationTokenLifetime` | `7.00:00:00` | Single use |
 | `LocalLogin:EmailVerificationTokenLifetime` | `1.00:00:00` | Single use |
 | `LocalLogin:MagicLinkTokenLifetime` | `00:15:00` | Single use. See [magic-link sign-in](/magic-link) |
