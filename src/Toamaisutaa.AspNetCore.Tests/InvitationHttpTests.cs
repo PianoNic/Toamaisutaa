@@ -31,6 +31,79 @@ public class InvitationHttpTests
         await Assert.That(app.IssuedInvitations[0].Token).IsNotEmpty();
     }
 
+    /// <summary>
+    /// Each invitation used to reserve a new row with a new week-long token, so a first link that
+    /// leaked stayed good however many times the address was invited again.
+    /// </summary>
+    [Test]
+    public async Task Inviting_an_address_again_retires_the_earlier_link()
+    {
+        await using var app = await TestApp.StartAsync();
+        var admin = await Account.RegisterAsync(app, TestApp.AdminUserName);
+
+        await app.Client.PostJson("/auth/invitations", new { email = "invited@example.com" }, admin.AccessToken);
+        await app.Client.PostJson("/auth/invitations", new { email = "invited@example.com" }, admin.AccessToken);
+
+        var first = await app.Client.PostJson(
+            "/auth/invitations/complete",
+            new { token = app.IssuedInvitations[0].Token, userName = "early", password = Account.DefaultPassword });
+
+        var latest = await app.Client.PostJson(
+            "/auth/invitations/complete",
+            new { token = app.IssuedInvitations[1].Token, userName = "invited", password = Account.DefaultPassword });
+
+        await Assert.That(first.StatusCode).IsEqualTo(HttpStatusCode.BadRequest);
+        await Assert.That(latest.StatusCode).IsEqualTo(HttpStatusCode.Created);
+        await Assert.That(app.IssuedInvitations[1].UserId).IsEqualTo(app.IssuedInvitations[0].UserId);
+    }
+
+    /// <summary>There was no way to withdraw one short of deleting the row by hand.</summary>
+    [Test]
+    public async Task A_revoked_invitation_cannot_be_completed()
+    {
+        await using var app = await TestApp.StartAsync();
+        var admin = await Account.RegisterAsync(app, TestApp.AdminUserName);
+
+        await app.Client.PostJson("/auth/invitations", new { email = "invited@example.com" }, admin.AccessToken);
+
+        var revoked = await app.Client.PostJson("/auth/invitations/revoke", new { email = "invited@example.com" }, admin.AccessToken);
+        var again = await app.Client.PostJson("/auth/invitations/revoke", new { email = "invited@example.com" }, admin.AccessToken);
+
+        var complete = await app.Client.PostJson(
+            "/auth/invitations/complete",
+            new { token = app.IssuedInvitations.Single().Token, userName = "invited", password = Account.DefaultPassword });
+
+        await Assert.That(revoked.StatusCode).IsEqualTo(HttpStatusCode.NoContent);
+        await Assert.That(again.StatusCode).IsEqualTo(HttpStatusCode.NotFound);
+        await Assert.That(complete.StatusCode).IsEqualTo(HttpStatusCode.BadRequest);
+    }
+
+    /// <summary>Revoking reads the address, and an address can belong to a finished account. That
+    /// one is not an invitation, and is left exactly as it was.</summary>
+    [Test]
+    public async Task Revoking_never_touches_an_account_that_was_completed()
+    {
+        await using var app = await TestApp.StartAsync();
+        var admin = await Account.RegisterAsync(app, TestApp.AdminUserName);
+        var ada = await Account.RegisterAsync(app);
+
+        var revoked = await app.Client.PostJson("/auth/invitations/revoke", new { email = ada.Email }, admin.AccessToken);
+
+        await Assert.That(revoked.StatusCode).IsEqualTo(HttpStatusCode.NotFound);
+        await Assert.That((await ada.LoginAsync()).StatusCode).IsEqualTo(HttpStatusCode.OK);
+    }
+
+    [Test]
+    public async Task Revoking_an_invitation_is_for_administrators_only()
+    {
+        await using var app = await TestApp.StartAsync();
+        var ordinary = await Account.RegisterAsync(app);
+
+        var response = await app.Client.PostJson("/auth/invitations/revoke", new { email = "invited@example.com" }, ordinary.AccessToken);
+
+        await Assert.That(response.StatusCode).IsEqualTo(HttpStatusCode.Forbidden);
+    }
+
     [Test]
     public async Task Creating_an_invitation_requires_authentication()
     {

@@ -188,6 +188,14 @@ internal sealed class FakePasswordStore
     Task<int> IInvitationTokenStore.DeleteExpiredAsync(DateTimeOffset expiredBefore, CancellationToken cancellationToken) =>
         Task.FromResult(InvitationTokens.RemoveAll(token => token.ExpiresAt <= expiredBefore));
 
+    Task IInvitationTokenStore.InvalidateAllForUserAsync(Guid userId, DateTimeOffset consumedAt, CancellationToken cancellationToken)
+    {
+        foreach (var token in InvitationTokens.Where(entry => entry.UserId == userId && entry.ConsumedAt is null))
+            token.ConsumedAt = consumedAt;
+
+        return Task.CompletedTask;
+    }
+
     // ── Email verification tokens ──
 
     public Task CreateAsync(ToamaisutaaEmailVerificationToken token, CancellationToken cancellationToken = default)

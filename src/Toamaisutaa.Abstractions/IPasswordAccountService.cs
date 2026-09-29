@@ -95,12 +95,19 @@ public interface IPasswordAccountService
     /// invitation token to <see cref="IInvitationNotifier"/>. Never returned from this call.
     /// </summary>
     /// <remarks>
-    /// A notifier that throws takes the reservation with it: the row and its token are deleted and
-    /// <see cref="AccountResult.NotificationFailed"/> is set. Nothing here looks for an existing
-    /// reservation before making one, so leaving the row behind would mean a retry reserved the
-    /// same address twice.
+    /// An address with an invitation still open is not reserved twice: the existing reservation is
+    /// reused and its earlier links retired, so only the newest one works. A notifier that throws
+    /// takes a new reservation with it - the row and its token are deleted - and sets
+    /// <see cref="AccountResult.NotificationFailed"/>; a reused one stays, with its links retired.
     /// </remarks>
     Task<AccountResult> CreateInvitationAsync(string email, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Withdraws the open invitation for <paramref name="email"/>: retires its links and removes the
+    /// reserved account. False when there is none - an address with no invitation, or one already
+    /// completed into an account, which this never touches.
+    /// </summary>
+    Task<bool> RevokeInvitationAsync(string email, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Completes the one reserved account an invitation token names: sets the user name and password

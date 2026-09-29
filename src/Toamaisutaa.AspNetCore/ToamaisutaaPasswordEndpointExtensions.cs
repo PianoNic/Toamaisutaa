@@ -302,6 +302,17 @@ public static class ToamaisutaaPasswordEndpointExtensions
                     .Produces<ValidationErrorResponse>(StatusCodes.Status400BadRequest)
                     .Produces(StatusCodes.Status403Forbidden)
                     .Produces<ErrorResponse>(StatusCodes.Status502BadGateway);
+
+                group.MapPost("/invitations/revoke", RevokeInvitationAsync)
+                    .RequireAuthorization(adminPolicy)
+                    .WithName($"{endpointNamePrefix}ToamaisutaaRevokeInvitation")
+                    .WithSummary("Withdraws an open invitation and removes the account it reserved.")
+                    .WithDescription(
+                        "404 when the address has no open invitation - including one already completed into "
+                        + "an account, which this never touches. Requires the admin role `Oidc:AdminRole` names.")
+                    .Produces(StatusCodes.Status204NoContent)
+                    .Produces(StatusCodes.Status403Forbidden)
+                    .Produces(StatusCodes.Status404NotFound);
             }
 
             // Mapped whether or not an admin role is configured, unlike the endpoint that issues the
@@ -694,6 +705,19 @@ public static class ToamaisutaaPasswordEndpointExtensions
         return result.Succeeded
             ? Results.NoContent()
             : Results.BadRequest(new ValidationErrorResponse { Errors = result.Errors });
+    }
+
+    private static async Task<IResult> RevokeInvitationAsync(
+        RevokeInvitationRequest request,
+        IPasswordAccountService accounts,
+        CancellationToken cancellationToken)
+    {
+        if (request is null || string.IsNullOrEmpty(request.Email))
+            return Results.BadRequest();
+
+        return await accounts.RevokeInvitationAsync(request.Email, cancellationToken)
+            ? Results.NoContent()
+            : Results.NotFound();
     }
 
     private static async Task<IResult> CreateInvitationAsync(

@@ -11,4 +11,8 @@ public interface IInvitationTokenStore
     Task<bool> MarkConsumedAsync(Guid tokenId, DateTimeOffset consumedAt, CancellationToken cancellationToken = default);
 
     Task<int> DeleteExpiredAsync(DateTimeOffset expiredBefore, CancellationToken cancellationToken = default);
+
+    /// <summary>Spends every unused invitation for the user. Called when the same address is invited
+    /// again, so only the newest link works, and when an invitation is revoked.</summary>
+    Task InvalidateAllForUserAsync(Guid userId, DateTimeOffset consumedAt, CancellationToken cancellationToken = default);
 }

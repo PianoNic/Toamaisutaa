@@ -44,4 +44,7 @@ public sealed record VerifyMagicLinkRequest(string Token);
 
 public sealed record CreateInvitationRequest(string Email);
 
+/// <summary>The address whose open invitation to withdraw.</summary>
+public sealed record RevokeInvitationRequest(string Email);
+
 public sealed record CompleteInvitationRequest(string Token, string UserName, string Password);

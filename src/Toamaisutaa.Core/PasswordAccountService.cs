@@ -545,15 +545,24 @@ internal sealed class PasswordAccountService(
         var invitationNotifier = ResolveInvitationNotifier();
         var now = timeProvider.GetUtcNow();
 
+        // Inviting an address that already has an open invitation reuses it and retires its earlier
+        // links, so only the newest one works. Each invitation used to reserve a fresh row with a
+        // fresh week-long token, and a link that leaked the first time stayed redeemable however
+        // many times the address was invited since.
+        var existing = await FindReservationAsync(email, cancellationToken);
+
         // No user name and no credential - the row exists to be completed, not signed into. It is
         // deliberately not a match for RegisterAsync's shape: nothing here is a finished account yet.
-        var user = await users.CreateAsync(
+        var user = existing ?? await users.CreateAsync(
             new ToamaisutaaUser
             {
                 Email = email.Trim(),
                 SecurityStamp = SecureTokens.Create(),
             },
             cancellationToken);
+
+        if (existing is not null)
+            await invitationTokens.InvalidateAllForUserAsync(existing.Id, now, cancellationToken);
 
         var raw = SecureTokens.Create();
         var tokenId = Guid.CreateVersion7(now);
@@ -580,7 +589,11 @@ internal sealed class PasswordAccountService(
             // would reserve the same address again, and again. The token is burnt before the row
             // goes, so a store that does not cascade the delete still leaves nothing redeemable.
             await invitationTokens.MarkConsumedAsync(tokenId, now, cancellationToken);
-            await users.DeleteAsync(user.Id, cancellationToken);
+
+            // Only a row this call created. A reservation that was already there stays, with its
+            // earlier links retired: the retry that follows finds it again rather than adding a row.
+            if (existing is null)
+                await users.DeleteAsync(user.Id, cancellationToken);
 
             logger.LogError(
                 ex,
@@ -599,6 +612,34 @@ internal sealed class PasswordAccountService(
         logger.LogInformation("Invitation created for user {UserId} and handed to the notifier.", user.Id);
 
         return new AccountResult { Succeeded = true, UserId = user.Id };
+    }
+
+    public async Task<bool> RevokeInvitationAsync(string email, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(email);
+
+        var reservation = await FindReservationAsync(email, cancellationToken);
+        if (reservation is null)
+            return false;
+
+        // Tokens first, so a store that does not cascade the delete still leaves nothing redeemable.
+        await invitationTokens.InvalidateAllForUserAsync(reservation.Id, timeProvider.GetUtcNow(), cancellationToken);
+        await users.DeleteAsync(reservation.Id, cancellationToken);
+
+        logger.LogInformation("Invitation for user {UserId} revoked, and the reserved account removed.", reservation.Id);
+        return true;
+    }
+
+    /// <summary>An invitation not yet completed: a user row carrying the address, with no user name
+    /// and no credential. Anything more than that is somebody's account, and is never reused.</summary>
+    private async Task<ToamaisutaaUser?> FindReservationAsync(string email, CancellationToken cancellationToken)
+    {
+        var user = await users.FindByEmailAsync(email.Trim(), cancellationToken);
+
+        if (user is null || user.UserName is not null)
+            return null;
+
+        return await credentials.FindByUserIdAsync(user.Id, cancellationToken) is null ? user : null;
     }
 
     public async Task<AccountResult> CompleteInvitationAsync(
