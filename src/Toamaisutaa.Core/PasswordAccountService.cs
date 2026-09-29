@@ -485,7 +485,7 @@ internal sealed class PasswordAccountService(
 
         try
         {
-            await magicLinkNotifier.SendAsync(user, raw, cancellationToken);
+            await magicLinkNotifier.SendAsync(AddressedTo(user, credential.Email), raw, cancellationToken);
         }
         catch (Exception ex) when (ex is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
         {
@@ -693,7 +693,7 @@ internal sealed class PasswordAccountService(
 
         try
         {
-            await notifier.SendAsync(user, raw, cancellationToken);
+            await notifier.SendAsync(AddressedTo(user, credential.Email), raw, cancellationToken);
         }
         catch (Exception ex) when (ex is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
         {
@@ -808,6 +808,29 @@ internal sealed class PasswordAccountService(
             CreatedAt = now,
             UpdatedAt = now,
         };
+
+    /// <summary>
+    /// The user as a notifier should see them: addressed to the email on the credential, which is
+    /// the address the request was looked up by and, for a magic link, the one that was verified.
+    /// </summary>
+    /// <remarks>
+    /// <see cref="ToamaisutaaUser.Email"/> is the profile field, and an identity provider's profile
+    /// sync writes it. Mailing that one meant the check applied to one address and the link went to
+    /// another - whoever could edit the provider profile received the victim's links, and a verified
+    /// move off a compromised mailbox was quietly undone by the next sync. A copy, so nothing here
+    /// writes the profile.
+    /// </remarks>
+    private static ToamaisutaaUser AddressedTo(ToamaisutaaUser user, string? email) => new()
+    {
+        Id = user.Id,
+        UserName = user.UserName,
+        Email = email,
+        DisplayName = user.DisplayName,
+        PictureUrl = user.PictureUrl,
+        SecurityStamp = user.SecurityStamp,
+        CreatedAt = user.CreatedAt,
+        UpdatedAt = user.UpdatedAt,
+    };
 
     private Task<string?> CheckCurrentPasswordAsync(
         ToamaisutaaPasswordCredential credential,
