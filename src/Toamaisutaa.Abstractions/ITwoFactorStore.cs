@@ -19,6 +19,20 @@ public interface ITwoFactorStore
     /// move the step backwards and open a used code again.
     /// </remarks>
     Task<bool> RecordUsedStepAsync(Guid userId, long step, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Writes the wrong-code count for an account with no password credential, in one write
+    /// conditional on the stored count still being <paramref name="expectedFailedAttemptCount"/>.
+    /// </summary>
+    /// <returns>False when another request changed the count first; the caller reads it again and
+    /// reapplies, so parallel guesses each count rather than all writing the same number.</returns>
+    Task<bool> UpdateFailedAttemptsAsync(
+        Guid userId,
+        int expectedFailedAttemptCount,
+        int failedAttemptCount,
+        DateTimeOffset? firstFailedAttemptAt,
+        DateTimeOffset? lockedOutUntil,
+        CancellationToken cancellationToken = default);
 }
 
 public interface IRecoveryCodeStore

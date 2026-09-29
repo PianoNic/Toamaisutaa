@@ -1,0 +1,63 @@
+using Toamaisutaa.Abstractions;
+
+namespace Toamaisutaa.Core.Tests;
+
+/// <summary>
+/// A sign-in challenge for an account with no password credential - the one a passkey assertion
+/// without user verification leaves. Its wrong-code count lives on the enrolment, because there is no
+/// credential to keep it on.
+/// </summary>
+/// <remarks>
+/// Here rather than over HTTP: the endpoints offer no way to build a passkey-only account, since
+/// registering a passkey takes a password or a local second factor. The gate issues the challenge
+/// exactly as the passkey service does.
+/// </remarks>
+public class PasswordlessTwoFactorLockoutTests
+{
+    [Test]
+    public async Task Wrong_codes_lock_an_account_with_no_password_so_the_right_code_is_refused()
+    {
+        var harness = PasswordHarness.Create(withTwoFactor: true);
+        var user = harness.ProvisionExternalUser();
+        var (secret, _) = await harness.EnrolAsync(user.Id);
+
+        var challenge = await harness.Gate.IssueChallengeAsync(user.Id, harness.Clock.GetUtcNow(), CancellationToken.None);
+
+        for (var i = 0; i < harness.Options.MaxFailedAttempts; i++)
+        {
+            harness.Clock.Now += TimeSpan.FromSeconds(30);
+            await harness.SignIn.VerifyTwoFactorAsync(new TwoFactorSignInRequest { ChallengeToken = challenge.Token, Code = "000000" });
+        }
+
+        harness.Clock.Now += TimeSpan.FromSeconds(30);
+        var right = await harness.SignIn.VerifyTwoFactorAsync(
+            new TwoFactorSignInRequest { ChallengeToken = challenge.Token, Code = harness.CurrentCode(secret) });
+
+        await Assert.That(right.Outcome).IsEqualTo(SignInOutcome.LockedOut);
+    }
+
+    [Test]
+    public async Task A_right_code_clears_the_count_on_an_account_with_no_password()
+    {
+        var harness = PasswordHarness.Create(withTwoFactor: true);
+        var user = harness.ProvisionExternalUser();
+        var (secret, _) = await harness.EnrolAsync(user.Id);
+
+        for (var round = 0; round < 2; round++)
+        {
+            var challenge = await harness.Gate.IssueChallengeAsync(user.Id, harness.Clock.GetUtcNow(), CancellationToken.None);
+
+            for (var i = 0; i < harness.Options.MaxFailedAttempts - 1; i++)
+            {
+                harness.Clock.Now += TimeSpan.FromSeconds(30);
+                await harness.SignIn.VerifyTwoFactorAsync(new TwoFactorSignInRequest { ChallengeToken = challenge.Token, Code = "000000" });
+            }
+
+            harness.Clock.Now += TimeSpan.FromSeconds(30);
+            var right = await harness.SignIn.VerifyTwoFactorAsync(
+                new TwoFactorSignInRequest { ChallengeToken = challenge.Token, Code = harness.CurrentCode(secret) });
+
+            await Assert.That(right.Outcome).IsEqualTo(SignInOutcome.Succeeded);
+        }
+    }
+}

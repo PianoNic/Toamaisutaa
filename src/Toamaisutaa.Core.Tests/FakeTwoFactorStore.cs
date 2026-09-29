@@ -41,6 +41,25 @@ internal sealed class FakeTwoFactorStore : ITwoFactorStore, IRecoveryCodeStore, 
         return Task.FromResult(true);
     }
 
+    public Task<bool> UpdateFailedAttemptsAsync(
+        Guid userId,
+        int expectedFailedAttemptCount,
+        int failedAttemptCount,
+        DateTimeOffset? firstFailedAttemptAt,
+        DateTimeOffset? lockedOutUntil,
+        CancellationToken cancellationToken = default)
+    {
+        var enrolment = Enrolments.FirstOrDefault(entry => entry.UserId == userId);
+
+        if (enrolment is null || enrolment.FailedAttemptCount != expectedFailedAttemptCount)
+            return Task.FromResult(false);
+
+        enrolment.FailedAttemptCount = failedAttemptCount;
+        enrolment.FirstFailedAttemptAt = firstFailedAttemptAt;
+        enrolment.LockedOutUntil = lockedOutUntil;
+        return Task.FromResult(true);
+    }
+
     // ── Recovery codes ──
 
     public Task ReplaceAllAsync(Guid userId, IReadOnlyList<ToamaisutaaRecoveryCode> codes, CancellationToken cancellationToken = default)

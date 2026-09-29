@@ -103,6 +103,7 @@ internal sealed class PasswordHarness
         }
 
         var gate = new TwoFactorGate(provider, wrappedTwoFactor, NullLogger<TwoFactorGate>.Instance);
+        Gate = gate;
 
         Devices = new FakeTrustedDeviceStore();
 
@@ -234,6 +235,10 @@ internal sealed class PasswordHarness
     internal ToamaisutaaMetrics Metrics { get; }
 
     internal PasswordSignInService SignIn { get; }
+
+    /// <summary>For issuing a challenge the way a passkey assertion does, to an account that may
+    /// have no password at all.</summary>
+    internal TwoFactorGate Gate { get; }
 
     internal PasswordAccountService Accounts { get; }
 

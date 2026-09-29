@@ -401,6 +401,78 @@ public class IdentityProviderTokenHttpTests
         await Assert.That(response.StatusCode).IsEqualTo(HttpStatusCode.Unauthorized);
     }
 
+    /// <summary>
+    /// An account the identity provider owns has no password credential, which is where the wrong-code
+    /// count lived. A stolen provider token could guess the code at these endpoints as fast as the
+    /// per-address limiter allowed, and a right guess paid out the second factor itself.
+    /// </summary>
+    [Test]
+    [Arguments("/auth/2fa/disable")]
+    [Arguments("/auth/2fa/recovery-codes")]
+    public async Task Wrong_proofs_on_an_account_without_a_password_lock_it(string path)
+    {
+        using var identityProviderKey = RSA.Create(2048);
+        using var localKey = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+
+        await using var app = await StartAsync(identityProviderKey, localKey);
+        var key = new RsaSecurityKey(identityProviderKey) { KeyId = IdentityProviderKeyId };
+        var token = Mint(app, key, SecurityAlgorithms.RsaSha256, IdentityProvider, "grace-subject", AuthTime(app.Time.Now.AddMinutes(-1)));
+
+        var begin = await app.Client.PostEmpty("/auth/2fa/begin", token);
+        var secret = (await begin.Json()).String("secret")!;
+
+        app.Time.AdvanceToNextTotpStep();
+        await app.Client.PostJson("/auth/2fa/confirm", new { code = Totp.Code(secret, app.Time.Now) }, token);
+
+        for (var i = 0; i < 5; i++)
+        {
+            app.Time.AdvanceToNextTotpStep();
+            var code = Totp.Code(secret, app.Time.Now);
+            var wrong = (char)('0' + ((code[0] - '0' + 1) % 10)) + code[1..];
+
+            await app.Client.PostJson(path, new { proof = wrong }, token);
+        }
+
+        app.Time.AdvanceToNextTotpStep();
+        var right = await app.Client.PostJson(path, new { proof = Totp.Code(secret, app.Time.Now) }, token);
+
+        await Assert.That(right.StatusCode).IsEqualTo(HttpStatusCode.BadRequest);
+        await Assert.That((await app.Client.Get("/auth/2fa", token)).Json().Result.Bool("enabled")).IsTrue();
+    }
+
+    /// <summary>
+    /// The same, raced. Written back unconditionally, parallel wrong proofs all read the same count
+    /// and wrote the same count plus one, and the lock never arrived.
+    /// </summary>
+    [Test]
+    public async Task Parallel_wrong_proofs_on_an_account_without_a_password_still_lock_it()
+    {
+        using var identityProviderKey = RSA.Create(2048);
+        using var localKey = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+
+        await using var app = await StartAsync(identityProviderKey, localKey);
+        var key = new RsaSecurityKey(identityProviderKey) { KeyId = IdentityProviderKeyId };
+        var token = Mint(app, key, SecurityAlgorithms.RsaSha256, IdentityProvider, "grace-subject", AuthTime(app.Time.Now.AddMinutes(-1)));
+
+        var begin = await app.Client.PostEmpty("/auth/2fa/begin", token);
+        var secret = (await begin.Json()).String("secret")!;
+
+        app.Time.AdvanceToNextTotpStep();
+        await app.Client.PostJson("/auth/2fa/confirm", new { code = Totp.Code(secret, app.Time.Now) }, token);
+
+        app.Time.AdvanceToNextTotpStep();
+        var code = Totp.Code(secret, app.Time.Now);
+        var wrong = (char)('0' + ((code[0] - '0' + 1) % 10)) + code[1..];
+
+        await Task.WhenAll(Enumerable.Range(0, 10).Select(_ =>
+            app.Client.PostJson("/auth/2fa/recovery-codes", new { proof = wrong }, token)));
+
+        app.Time.AdvanceToNextTotpStep();
+        var right = await app.Client.PostJson("/auth/2fa/recovery-codes", new { proof = Totp.Code(secret, app.Time.Now) }, token);
+
+        await Assert.That(right.StatusCode).IsEqualTo(HttpStatusCode.BadRequest);
+    }
+
     private sealed class UserInfoRecorder : HttpMessageHandler
     {
         public System.Collections.Concurrent.ConcurrentQueue<string> BearerTokens { get; } = new();

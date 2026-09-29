@@ -59,6 +59,35 @@ internal sealed class EntityFrameworkTwoFactorStore<TContext>(TContext context)
                 setters => setters.SetProperty(enrolment => enrolment.LastUsedStep, step),
                 cancellationToken) == 1;
 
+    public async Task<bool> UpdateFailedAttemptsAsync(
+        Guid userId,
+        int expectedFailedAttemptCount,
+        int failedAttemptCount,
+        DateTimeOffset? firstFailedAttemptAt,
+        DateTimeOffset? lockedOutUntil,
+        CancellationToken cancellationToken = default)
+    {
+        var written = await context.Set<ToamaisutaaUserTwoFactor>()
+            .Where(enrolment => enrolment.UserId == userId && enrolment.FailedAttemptCount == expectedFailedAttemptCount)
+            .ExecuteUpdateAsync(
+                setters => setters
+                    .SetProperty(enrolment => enrolment.FailedAttemptCount, failedAttemptCount)
+                    .SetProperty(enrolment => enrolment.FirstFailedAttemptAt, firstFailedAttemptAt)
+                    .SetProperty(enrolment => enrolment.LockedOutUntil, lockedOutUntil),
+                cancellationToken) == 1;
+
+        // The write went past the change tracker, so a copy this context already holds is stale
+        // either way. Reloaded, so the caller's next read sees the row as it is, and so a later
+        // whole-row write of that copy cannot put an old count back.
+        var tracked = context.ChangeTracker.Entries<ToamaisutaaUserTwoFactor>()
+            .FirstOrDefault(entry => entry.Entity.UserId == userId);
+
+        if (tracked is not null)
+            await tracked.ReloadAsync(cancellationToken);
+
+        return written;
+    }
+
     // ── Recovery codes ──
 
     public async Task ReplaceAllAsync(Guid userId, IReadOnlyList<ToamaisutaaRecoveryCode> codes, CancellationToken cancellationToken = default)

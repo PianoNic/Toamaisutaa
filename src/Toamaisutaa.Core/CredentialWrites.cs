@@ -164,6 +164,58 @@ internal static class CredentialWrites
             throw new PasswordIdentifierConflictException();
     }
 
+    /// <summary>
+    /// Counts one wrong code against the enrolment of an account that has no password credential
+    /// to count it on - passkey-only, or owned by an identity provider. Without it, the only limit
+    /// on guessing that account's code was the per-address rate limiter.
+    /// </summary>
+    /// <returns>Whether this attempt is the one that locked it, for the event that says so.</returns>
+    internal static async Task<bool> RegisterFailureAsync(
+        this ITwoFactorStore store,
+        Guid userId,
+        ToamaisutaaLocalLoginOptions options,
+        DateTimeOffset now,
+        CancellationToken cancellationToken)
+    {
+        for (var attempt = 1; ; attempt++)
+        {
+            if (await store.FindAsync(userId, cancellationToken) is not { } enrolment)
+                return false;
+
+            var current = LockoutState.Of(enrolment);
+
+            // Already locked by a racing attempt: refused all the same, counted for nothing more.
+            if (LockoutPolicy.IsLockedOut(current, now))
+                return false;
+
+            var next = LockoutPolicy.RegisterFailure(current, options, now);
+
+            if (await store.UpdateFailedAttemptsAsync(
+                    userId,
+                    current.FailedAttemptCount,
+                    next.FailedAttemptCount,
+                    next.FirstFailedAttemptAt,
+                    next.LockedOutUntil,
+                    cancellationToken))
+            {
+                return LockoutPolicy.IsLockedOut(next, now);
+            }
+
+            if (attempt >= MaxAttempts)
+                throw new InvalidOperationException($"The two-factor failure count for user {userId} kept changing underneath this write.");
+        }
+    }
+
+    /// <summary>Clears the enrolment's count once a code has been accepted.</summary>
+    internal static async Task RegisterSuccessAsync(this ITwoFactorStore store, Guid userId, CancellationToken cancellationToken)
+    {
+        if (await store.FindAsync(userId, cancellationToken) is not { } enrolment || LockoutState.Of(enrolment) == LockoutState.Clear)
+            return;
+
+        // A count that moved in between is only more failures; the right code clears it regardless.
+        await store.UpdateFailedAttemptsAsync(userId, enrolment.FailedAttemptCount, 0, null, null, cancellationToken);
+    }
+
     /// <summary>Clears the count once a sign-in or step-up has finished.</summary>
     internal static Task<ToamaisutaaPasswordCredential> RegisterSuccessAsync(
         this IPasswordCredentialStore store,

@@ -114,6 +114,10 @@ true, which is what makes single use hold when the same link or code arrives twi
 where the stored one is null or lower, and return whether a row changed. That makes one code good
 for one request, and stops a late write moving the step backwards.
 
+`ITwoFactorStore.UpdateFailedAttemptsAsync` holds the wrong-code count for an account with no
+password credential. Write it only where the stored count still equals the expected one, and return
+whether a row changed; the flows re-read and retry, so parallel wrong codes each count.
+
 Register whichever the features you use require - the startup checks name the missing one rather
 than failing at the first request:
 

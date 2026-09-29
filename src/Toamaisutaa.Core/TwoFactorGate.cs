@@ -204,6 +204,22 @@ internal sealed class TwoFactorGate(
         };
     }
 
+    /// <summary>For an account with no password credential, whose wrong-code count lives on the
+    /// enrolment rather than on a credential it does not have.</summary>
+    internal async Task<bool> IsEnrolmentLockedOutAsync(Guid userId, DateTimeOffset now, CancellationToken cancellationToken) =>
+        await Required<ITwoFactorStore>().FindAsync(userId, cancellationToken) is { } enrolment
+        && LockoutPolicy.IsLockedOut(LockoutState.Of(enrolment), now);
+
+    internal Task<bool> RegisterEnrolmentFailureAsync(
+        Guid userId,
+        ToamaisutaaLocalLoginOptions localLogin,
+        DateTimeOffset now,
+        CancellationToken cancellationToken) =>
+        Required<ITwoFactorStore>().RegisterFailureAsync(userId, localLogin, now, cancellationToken);
+
+    internal Task RegisterEnrolmentSuccessAsync(Guid userId, CancellationToken cancellationToken) =>
+        Required<ITwoFactorStore>().RegisterSuccessAsync(userId, cancellationToken);
+
     private T Required<T>() where T : notnull =>
         provider.GetService<T>()
             ?? throw new InvalidOperationException(
