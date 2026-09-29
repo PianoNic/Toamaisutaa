@@ -16,7 +16,9 @@ public sealed class ToamaisutaaAuthorizationOptions
 
     public string AdminPolicyName { get; set; } = "Toamaisutaa.Admin";
 
-    /// <summary>Put <see cref="AdminRole"/> into the fallback policy, so the whole application is
-    /// admin-only rather than just the endpoints that ask for it.</summary>
+    /// <summary>Put <see cref="AdminRole"/> into the fallback policy and the default policy, so the
+    /// whole application is admin-only rather than just the endpoints that ask for it - including
+    /// every endpoint marked with a bare <c>[Authorize]</c> or <c>RequireAuthorization()</c>, this
+    /// package's own among them. Anonymous endpoints such as <c>/auth/login</c> stay reachable.</summary>
     public bool RequireAdminRoleGlobally { get; set; }
 }

@@ -34,7 +34,7 @@ Everything binds from the `Oidc` section.
 | `Oidc:PostLogoutRedirectUri` | `RedirectUri` | |
 | `Oidc:PublicUrl` | | Used to derive the two above |
 | `Oidc:AdminRole` | | Registers the `Toamaisutaa.Admin` policy when set, which is also what maps the [admin provisioning endpoints](/provisioning-accounts#the-three-admin-endpoints-need-an-admin-role) |
-| `Oidc:RequireAdminRoleGlobally` | `false` | Puts the admin role in the fallback policy |
+| `Oidc:RequireAdminRoleGlobally` | `false` | Puts the admin role in the fallback policy and the default policy, so every endpoint that is not anonymous - a bare `[Authorize]` and this package's own included - is admin-only |
 | `Oidc:QueryToken:IncludePaths:0` | | Path prefixes where `?access_token=` is honoured, for SignalR |
 | `Oidc:QueryToken:ExcludePaths:0` | | Carved back out of the above |
 | `Oidc:HealthCheck:RefreshInterval` | `00:05:00` | How long the health check trusts a successful fetch |
