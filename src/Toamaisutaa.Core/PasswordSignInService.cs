@@ -48,6 +48,12 @@ internal sealed class PasswordSignInService(
             return Refused(SignInOutcome.UnknownUser);
         }
 
+        // Read before the credential is reserved and checked, so the session and any challenge are
+        // bound to a stamp no newer than the password that was verified. Read after, a reset that
+        // landed while the hash ran handed its own fresh stamp to a sign-in with the old password.
+        var user = await users.FindByIdAsync(credential.UserId, cancellationToken)
+            ?? throw new InvalidOperationException($"Credential for user {credential.UserId} has no user row.");
+
         // Counted before the hash is checked, so parallel guesses cannot each find the account open.
         var reservation = await credentials.ReserveAttemptAsync(credential, options.Value, now, cancellationToken);
         credential = reservation.Credential;
@@ -107,9 +113,6 @@ internal sealed class PasswordSignInService(
             logger.LogInformation("Rehashed the stored password for user {UserId} with current parameters.", credential.UserId);
         }
 
-        var user = await users.FindByIdAsync(credential.UserId, cancellationToken)
-            ?? throw new InvalidOperationException($"Credential for user {credential.UserId} has no user row.");
-
         // The password was right, which is the first factor and, for an enrolled account, not the
         // last. Nothing is issued until the second one arrives.
         //
@@ -154,7 +157,8 @@ internal sealed class PasswordSignInService(
                     user.Id,
                     now,
                     cancellationToken,
-                    authenticationMethods: "pwd");
+                    authenticationMethods: "pwd",
+                    securityStamp: user.SecurityStamp);
 
                 logger.LogInformation("Password accepted for user {UserId}; a second factor is required.", user.Id);
 

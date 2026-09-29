@@ -51,18 +51,21 @@ internal sealed class TwoFactorGate(
 
     // authenticationMethods is what the caller has already proved, replayed into the finished
     // sign-in's amr. Step-up leaves it empty: it takes its methods from the session it is elevating.
+    // securityStamp is the stamp the first factor was checked under, when the caller read it first:
+    // read here instead, it can be the stamp of a reset that landed while the password was hashing.
     internal async Task<TwoFactorChallenge> IssueChallengeAsync(
         Guid userId,
         DateTimeOffset now,
         CancellationToken cancellationToken,
         TwoFactorChallengePurpose purpose = TwoFactorChallengePurpose.SignIn,
         Guid? familyId = null,
-        string authenticationMethods = "")
+        string authenticationMethods = "",
+        string? securityStamp = null)
     {
         var challenges = Required<ITwoFactorChallengeStore>();
         var lifetime = options.Value.ChallengeLifetime;
         var raw = SecureTokens.Create();
-        var user = await Required<IUserStore>().FindByIdAsync(userId, cancellationToken);
+        securityStamp ??= (await Required<IUserStore>().FindByIdAsync(userId, cancellationToken))?.SecurityStamp;
 
         await challenges.CreateAsync(
             new ToamaisutaaTwoFactorChallenge
@@ -75,7 +78,7 @@ internal sealed class TwoFactorGate(
                 Purpose = purpose,
                 FamilyId = familyId,
                 AuthenticationMethods = authenticationMethods,
-                SecurityStamp = user?.SecurityStamp,
+                SecurityStamp = securityStamp,
             },
             cancellationToken);
 
