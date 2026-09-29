@@ -151,6 +151,30 @@ public class TwoFactorLockoutHttpTests
         await Assert.That(statuses).Contains(HttpStatusCode.TooManyRequests);
     }
 
+    /// <summary>
+    /// Somebody holding the password and a way to the codes starts a sign-in; the owner notices and
+    /// changes the password. The challenge that sign-in left open used to still finish afterwards,
+    /// handing a fresh session to the very person the change was meant to shut out.
+    /// </summary>
+    [Test]
+    public async Task A_challenge_issued_before_a_password_change_cannot_be_finished_after_it()
+    {
+        await using var app = await TestApp.StartAsync();
+        var account = await Account.RegisterAsync(app);
+        await account.EnrolAsync();
+
+        var challenge = await ChallengeAsync(account);
+
+        await app.Client.PostJson(
+            "/auth/password",
+            new { currentPassword = account.Password, newPassword = "an entirely different password" },
+            account.AccessToken);
+
+        var finished = await VerifyAsync(app, account, challenge, right: true);
+
+        await Assert.That(finished.StatusCode).IsEqualTo(HttpStatusCode.Unauthorized);
+    }
+
     private static async Task<string> ChallengeAsync(Account account)
     {
         var body = await (await account.LoginAsync()).Json();

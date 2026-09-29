@@ -95,6 +95,9 @@ public sealed class ToamaisutaaTwoFactorChallengeConfiguration : IEntityTypeConf
         // say here.
         builder.Property(challenge => challenge.AuthenticationMethods).HasMaxLength(128).IsRequired();
 
+        // Nullable so rows written before the column existed stay readable; they expire in minutes.
+        builder.Property(challenge => challenge.SecurityStamp).HasMaxLength(128);
+
         builder.HasIndex(challenge => challenge.TokenHash).IsUnique();
         builder.HasIndex(challenge => challenge.UserId);
 

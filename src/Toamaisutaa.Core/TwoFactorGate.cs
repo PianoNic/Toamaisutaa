@@ -62,6 +62,7 @@ internal sealed class TwoFactorGate(
         var challenges = Required<ITwoFactorChallengeStore>();
         var lifetime = options.Value.ChallengeLifetime;
         var raw = SecureTokens.Create();
+        var user = await Required<IUserStore>().FindByIdAsync(userId, cancellationToken);
 
         await challenges.CreateAsync(
             new ToamaisutaaTwoFactorChallenge
@@ -74,6 +75,7 @@ internal sealed class TwoFactorGate(
                 Purpose = purpose,
                 FamilyId = familyId,
                 AuthenticationMethods = authenticationMethods,
+                SecurityStamp = user?.SecurityStamp,
             },
             cancellationToken);
 
@@ -142,6 +144,21 @@ internal sealed class TwoFactorGate(
 
         if (stored.ExpiresAt <= now)
             return ChallengeRedemption.Failed(SignInOutcome.ChallengeExpired, stored.UserId);
+
+        // Issued before the account's credentials last changed. A reset is the owner locking somebody
+        // out, and a sign-in that person had half finished must not be finishable afterwards with a
+        // code they also hold.
+        if (stored.SecurityStamp is not null
+            && await Required<IUserStore>().FindByIdAsync(stored.UserId, cancellationToken) is { } user
+            && !string.Equals(user.SecurityStamp, stored.SecurityStamp, StringComparison.Ordinal))
+        {
+            logger.LogWarning(
+                "Two-factor challenge for user {UserId} refused: it was issued before the account's credentials changed.",
+                stored.UserId);
+
+            await challenges.MarkConsumedAsync(stored.Id, now, cancellationToken);
+            return ChallengeRedemption.Failed(SignInOutcome.InvalidChallenge, stored.UserId);
+        }
 
         // The challenge can outlive what it was challenging: disabling requires proof, so an
         // attacker cannot do this, but the account holder can - from a second device, while this
