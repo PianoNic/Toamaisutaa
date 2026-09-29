@@ -699,9 +699,16 @@ internal sealed class PasswordSignInService(
         // in between. The conditional write is what decides: whoever loses it presented a token that
         // another request is exchanging right now, which is reuse, and is answered as reuse.
         if (!await refreshTokens.MarkRotatedAsync(stored.Id, now, cancellationToken))
-            return await RefuseReusedAsync(stored, now, cancellationToken);
+        {
+            // Lost to a sign-out or a revocation rather than to another exchange, which is not reuse:
+            // answering it as reuse took every trusted device away from somebody who closed a tab.
+            if (await refreshTokens.FindByHashAsync(stored.TokenHash, cancellationToken) is { RotatedAt: null, RevokedAt: not null })
+                return Failed(SignInOutcome.RefreshTokenRevoked);
 
-        return await IssueAsync(
+            return await RefuseReusedAsync(stored, now, cancellationToken);
+        }
+
+        var issued = await IssueAsync(
             user,
             stored.FamilyId,
             stored.FamilyStartedAt,
@@ -722,6 +729,23 @@ internal sealed class PasswordSignInService(
             client: new ClientMetadata.SessionClient(stored.UserAgent, stored.IpAddress),
             now,
             cancellationToken);
+
+        // A revocation that landed between the rotation and the new token's insert covered the
+        // family as it was then, not the token this request just added to it, which stayed live.
+        // Read after the insert, so either this sees the revocation or the revocation saw the token.
+        if (issued.Succeeded
+            && await refreshTokens.FindByHashAsync(stored.TokenHash, cancellationToken) is { RevokedAt: not null } revoked)
+        {
+            logger.LogWarning(
+                "Refresh refused for user {UserId}: family {FamilyId} was revoked while it was being rotated.",
+                stored.UserId,
+                stored.FamilyId);
+
+            await RevokeFamilyAsync(stored, revoked.RevokedReason ?? "revoked-during-refresh", now, cancellationToken);
+            return Failed(SignInOutcome.RefreshTokenRevoked);
+        }
+
+        return issued;
     }
 
     /// <summary>

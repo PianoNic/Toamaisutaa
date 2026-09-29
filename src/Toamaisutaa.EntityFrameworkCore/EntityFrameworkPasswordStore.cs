@@ -123,8 +123,12 @@ internal sealed class EntityFrameworkPasswordStore<TContext>(TContext context)
 
     // ── Refresh tokens ──
 
+    // Untracked, because every write to a refresh token is an ExecuteUpdate that never touches a
+    // tracked instance: tracked, a second read in the same request handed back the first one's
+    // values, and rotation re-reads to tell a revocation from a reuse.
     public async Task<ToamaisutaaRefreshToken?> FindByHashAsync(string tokenHash, CancellationToken cancellationToken = default) =>
         await context.Set<ToamaisutaaRefreshToken>()
+            .AsNoTracking()
             .FirstOrDefaultAsync(token => token.TokenHash == tokenHash, cancellationToken);
 
     public async Task CreateAsync(ToamaisutaaRefreshToken token, CancellationToken cancellationToken = default)
