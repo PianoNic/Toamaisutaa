@@ -154,11 +154,19 @@ internal sealed class EntityFrameworkStore<TContext>(TContext context, TimeProvi
     public async Task<ToamaisutaaExternalLogin?> FindAsync(
         string providerKey,
         string subject,
-        CancellationToken cancellationToken = default) =>
-        await context.Set<ToamaisutaaExternalLogin>()
-            .FirstOrDefaultAsync(
-                login => login.ProviderKey == providerKey && login.Subject == subject,
-                cancellationToken);
+        CancellationToken cancellationToken = default)
+    {
+        var candidates = await context.Set<ToamaisutaaExternalLogin>()
+            .Where(login => login.ProviderKey == providerKey && login.Subject == subject)
+            .ToListAsync(cancellationToken);
+
+        // Compared again here, exactly. The database compares under the column's collation, and the
+        // default ones on SQL Server and MySQL ignore case - MySQL's ignores accents too - while an
+        // OpenID Connect subject is case-sensitive. Left to the database, "Alice" signed in as "alice".
+        return candidates.FirstOrDefault(login =>
+            string.Equals(login.ProviderKey, providerKey, StringComparison.Ordinal)
+            && string.Equals(login.Subject, subject, StringComparison.Ordinal));
+    }
 
     public async Task<ToamaisutaaExternalLogin> LinkAsync(
         Guid userId,
