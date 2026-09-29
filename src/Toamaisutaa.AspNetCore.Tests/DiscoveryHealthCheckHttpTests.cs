@@ -39,18 +39,27 @@ public class DiscoveryHealthCheckHttpTests
     /// </summary>
     private sealed class FakeIssuer : HttpMessageHandler
     {
-        public int Requests { get; private set; }
+        private int _requests;
+
+        public int Requests => Volatile.Read(ref _requests);
 
         public string? LastAddress { get; private set; }
 
         public Func<HttpResponseMessage> Respond { get; set; } = () => Document(Issuer);
 
-        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        /// <summary>How long the issuer takes to answer, yielding meanwhile - so requests that
+        /// arrive together really are in flight together.</summary>
+        public TimeSpan Latency { get; set; }
+
+        protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
-            Requests++;
+            Interlocked.Increment(ref _requests);
             LastAddress = request.RequestUri?.ToString();
 
-            return Task.FromResult(Respond());
+            if (Latency > TimeSpan.Zero)
+                await Task.Delay(Latency, cancellationToken);
+
+            return Respond();
         }
 
         public static HttpResponseMessage Document(string issuer) => Body(
@@ -190,6 +199,40 @@ public class DiscoveryHealthCheckHttpTests
 
         await Assert.That(response.StatusCode).IsEqualTo(HttpStatusCode.OK);
         await Assert.That(await response.Content.ReadAsStringAsync()).IsEqualTo("Healthy");
+        await Assert.That(issuer.Requests).IsEqualTo(1);
+    }
+
+    /// <summary>
+    /// A failure is remembered as long as a success is. The endpoint is anonymous, and every probe
+    /// while the issuer was down used to go out to it again - the moment it could least take it.
+    /// </summary>
+    [Test]
+    public async Task A_failing_issuer_is_asked_once_per_refresh_interval_not_once_per_probe()
+    {
+        var issuer = new FakeIssuer { Respond = () => throw new HttpRequestException("Connection refused") };
+        await using var app = await StartAsync(issuer);
+
+        for (var i = 0; i < 5; i++)
+            await Assert.That((await app.Client.Get("/health")).StatusCode).IsEqualTo(HttpStatusCode.ServiceUnavailable);
+
+        await Assert.That(issuer.Requests).IsEqualTo(1);
+
+        app.Time.Advance(TimeSpan.FromSeconds(61));
+        await app.Client.Get("/health");
+
+        await Assert.That(issuer.Requests).IsEqualTo(2);
+    }
+
+    /// <summary>Probes that arrive together share one request instead of each sending their own.</summary>
+    [Test]
+    public async Task Probes_arriving_together_send_one_request()
+    {
+        var issuer = new FakeIssuer { Latency = TimeSpan.FromMilliseconds(500) };
+
+        await using var app = await StartAsync(issuer);
+
+        await Task.WhenAll(Enumerable.Range(0, 10).Select(_ => app.Client.Get("/health")));
+
         await Assert.That(issuer.Requests).IsEqualTo(1);
     }
 
