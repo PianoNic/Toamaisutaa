@@ -199,10 +199,10 @@ internal sealed class EntityFrameworkPasswordStore<TContext>(TContext context)
         await context.Set<ToamaisutaaPasswordResetToken>()
             .FirstOrDefaultAsync(token => token.TokenHash == tokenHash, cancellationToken);
 
-    public async Task MarkConsumedAsync(Guid tokenId, DateTimeOffset consumedAt, CancellationToken cancellationToken = default) =>
+    public async Task<bool> MarkConsumedAsync(Guid tokenId, DateTimeOffset consumedAt, CancellationToken cancellationToken = default) =>
         await context.Set<ToamaisutaaPasswordResetToken>()
             .Where(token => token.Id == tokenId && token.ConsumedAt == null)
-            .ExecuteUpdateAsync(setters => setters.SetProperty(token => token.ConsumedAt, consumedAt), cancellationToken);
+            .ExecuteUpdateAsync(setters => setters.SetProperty(token => token.ConsumedAt, consumedAt), cancellationToken) == 1;
 
     public async Task InvalidateAllForUserAsync(Guid userId, DateTimeOffset consumedAt, CancellationToken cancellationToken = default) =>
         await context.Set<ToamaisutaaPasswordResetToken>()
@@ -226,10 +226,10 @@ internal sealed class EntityFrameworkPasswordStore<TContext>(TContext context)
         await context.Set<ToamaisutaaInvitationToken>()
             .FirstOrDefaultAsync(token => token.TokenHash == tokenHash, cancellationToken);
 
-    async Task IInvitationTokenStore.MarkConsumedAsync(Guid tokenId, DateTimeOffset consumedAt, CancellationToken cancellationToken) =>
+    async Task<bool> IInvitationTokenStore.MarkConsumedAsync(Guid tokenId, DateTimeOffset consumedAt, CancellationToken cancellationToken) =>
         await context.Set<ToamaisutaaInvitationToken>()
             .Where(token => token.Id == tokenId && token.ConsumedAt == null)
-            .ExecuteUpdateAsync(setters => setters.SetProperty(token => token.ConsumedAt, consumedAt), cancellationToken);
+            .ExecuteUpdateAsync(setters => setters.SetProperty(token => token.ConsumedAt, consumedAt), cancellationToken) == 1;
 
     async Task<int> IInvitationTokenStore.DeleteExpiredAsync(DateTimeOffset expiredBefore, CancellationToken cancellationToken) =>
         await context.Set<ToamaisutaaInvitationToken>()
@@ -248,10 +248,10 @@ internal sealed class EntityFrameworkPasswordStore<TContext>(TContext context)
         await context.Set<ToamaisutaaEmailVerificationToken>()
             .FirstOrDefaultAsync(token => token.TokenHash == tokenHash, cancellationToken);
 
-    async Task IEmailVerificationTokenStore.MarkConsumedAsync(Guid tokenId, DateTimeOffset consumedAt, CancellationToken cancellationToken) =>
+    async Task<bool> IEmailVerificationTokenStore.MarkConsumedAsync(Guid tokenId, DateTimeOffset consumedAt, CancellationToken cancellationToken) =>
         await context.Set<ToamaisutaaEmailVerificationToken>()
             .Where(token => token.Id == tokenId && token.ConsumedAt == null)
-            .ExecuteUpdateAsync(setters => setters.SetProperty(token => token.ConsumedAt, consumedAt), cancellationToken);
+            .ExecuteUpdateAsync(setters => setters.SetProperty(token => token.ConsumedAt, consumedAt), cancellationToken) == 1;
 
     async Task IEmailVerificationTokenStore.InvalidateAllForUserAsync(Guid userId, DateTimeOffset consumedAt, CancellationToken cancellationToken) =>
         await context.Set<ToamaisutaaEmailVerificationToken>()
@@ -275,10 +275,10 @@ internal sealed class EntityFrameworkPasswordStore<TContext>(TContext context)
         await context.Set<ToamaisutaaMagicLinkToken>()
             .FirstOrDefaultAsync(token => token.TokenHash == tokenHash, cancellationToken);
 
-    async Task IMagicLinkTokenStore.MarkConsumedAsync(Guid tokenId, DateTimeOffset consumedAt, CancellationToken cancellationToken) =>
+    async Task<bool> IMagicLinkTokenStore.MarkConsumedAsync(Guid tokenId, DateTimeOffset consumedAt, CancellationToken cancellationToken) =>
         await context.Set<ToamaisutaaMagicLinkToken>()
             .Where(token => token.Id == tokenId && token.ConsumedAt == null)
-            .ExecuteUpdateAsync(setters => setters.SetProperty(token => token.ConsumedAt, consumedAt), cancellationToken);
+            .ExecuteUpdateAsync(setters => setters.SetProperty(token => token.ConsumedAt, consumedAt), cancellationToken) == 1;
 
     async Task IMagicLinkTokenStore.InvalidateAllForUserAsync(Guid userId, DateTimeOffset consumedAt, CancellationToken cancellationToken) =>
         await context.Set<ToamaisutaaMagicLinkToken>()

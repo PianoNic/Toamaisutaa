@@ -54,7 +54,9 @@ public interface IPasskeyChallengeStore
 
     Task<ToamaisutaaPasskeyChallenge?> FindByHashAsync(string tokenHash, CancellationToken cancellationToken = default);
 
-    Task MarkConsumedAsync(Guid challengeId, DateTimeOffset consumedAt, CancellationToken cancellationToken = default);
+    /// <summary>Spends the challenge in one conditional write. True only when this call spent it;
+    /// false when another request already had.</summary>
+    Task<bool> MarkConsumedAsync(Guid challengeId, DateTimeOffset consumedAt, CancellationToken cancellationToken = default);
 
     Task<int> DeleteExpiredAsync(DateTimeOffset expiredBefore, CancellationToken cancellationToken = default);
 }

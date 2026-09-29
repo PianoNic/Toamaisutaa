@@ -320,7 +320,20 @@ internal sealed class PasswordSignInService(
         // Spent before anything is issued, and before the challenge below. A link that got somebody
         // as far as a second factor has been used, whether or not they finish - the alternative
         // leaves a live credential in a mailbox after it has already been read once.
-        await magicLinkTokens.MarkConsumedAsync(stored.Id, now, cancellationToken);
+        //
+        // And spent only by whoever wins the write: the check above and this are two steps, and
+        // every request that landed between them used to be signed in.
+        if (!await magicLinkTokens.MarkConsumedAsync(stored.Id, now, cancellationToken))
+        {
+            logger.LogWarning("Magic-link sign-in refused for user {UserId}: the link was spent by another request.", stored.UserId);
+
+            await events.PublishAsync(
+                new SignInFailed { OccurredAt = now, UserId = stored.UserId, Reason = SignInOutcome.InvalidMagicLink },
+                cancellationToken);
+
+            return Refused(SignInOutcome.InvalidMagicLink);
+        }
+
         await magicLinkTokens.InvalidateAllForUserAsync(stored.UserId, now, cancellationToken);
 
         // No device token is consulted, unlike the password path. There the cached factor sits

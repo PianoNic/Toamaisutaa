@@ -53,14 +53,12 @@ internal sealed class FakeTwoFactorStore : ITwoFactorStore, IRecoveryCodeStore, 
         Task.FromResult(Codes.FirstOrDefault(code =>
             code.UserId == userId && code.CodeHash == codeHash && code.ConsumedAt is null));
 
-    public Task MarkConsumedAsync(Guid codeId, DateTimeOffset consumedAt, CancellationToken cancellationToken = default)
+    public Task<bool> MarkConsumedAsync(Guid codeId, DateTimeOffset consumedAt, CancellationToken cancellationToken = default)
     {
         var code = Codes.FirstOrDefault(entry => entry.Id == codeId);
 
-        if (code is not null)
-            code.ConsumedAt ??= consumedAt;
-
-        return Task.CompletedTask;
+        return Task.FromResult(code is not null
+            && FakePasswordStore.Spend(() => code.ConsumedAt, value => code.ConsumedAt = value, consumedAt));
     }
 
     public Task<int> CountUnusedAsync(Guid userId, CancellationToken cancellationToken = default) =>
@@ -77,14 +75,12 @@ internal sealed class FakeTwoFactorStore : ITwoFactorStore, IRecoveryCodeStore, 
     public Task<ToamaisutaaTwoFactorChallenge?> FindByHashAsync(string tokenHash, CancellationToken cancellationToken = default) =>
         Task.FromResult(Challenges.FirstOrDefault(challenge => challenge.TokenHash == tokenHash));
 
-    Task ITwoFactorChallengeStore.MarkConsumedAsync(Guid challengeId, DateTimeOffset consumedAt, CancellationToken cancellationToken)
+    Task<bool> ITwoFactorChallengeStore.MarkConsumedAsync(Guid challengeId, DateTimeOffset consumedAt, CancellationToken cancellationToken)
     {
         var challenge = Challenges.FirstOrDefault(entry => entry.Id == challengeId);
 
-        if (challenge is not null)
-            challenge.ConsumedAt ??= consumedAt;
-
-        return Task.CompletedTask;
+        return Task.FromResult(challenge is not null
+            && FakePasswordStore.Spend(() => challenge.ConsumedAt, value => challenge.ConsumedAt = value, consumedAt));
     }
 
     public Task<int> DeleteExpiredAsync(DateTimeOffset expiredBefore, CancellationToken cancellationToken = default) =>

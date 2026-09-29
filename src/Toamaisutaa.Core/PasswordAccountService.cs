@@ -387,6 +387,13 @@ internal sealed class PasswordAccountService(
             return AccountResult.Taken("That email address is already in use.");
         }
 
+        // Spent before anything moves, and only by whoever wins the write.
+        if (!await emailVerificationTokens.MarkConsumedAsync(stored.Id, now, cancellationToken))
+        {
+            logger.LogWarning("Email verification refused for user {UserId}: the link was spent by another request.", stored.UserId);
+            return AccountResult.Failure("That verification link is no longer valid. Request a new one.");
+        }
+
         await ReleaseUnverifiedHoldAsync(normalized, stored.UserId, now, cancellationToken);
 
         var previousEmail = credential.Email;
@@ -401,7 +408,6 @@ internal sealed class PasswordAccountService(
                 current.UpdatedAt = now;
             },
             cancellationToken);
-        await emailVerificationTokens.MarkConsumedAsync(stored.Id, now, cancellationToken);
         await emailVerificationTokens.InvalidateAllForUserAsync(stored.UserId, now, cancellationToken);
 
         // The profile field follows the login identifier, so the reset and invitation notifiers stop
@@ -756,9 +762,16 @@ internal sealed class PasswordAccountService(
         if (credential is null)
             return AccountResult.Failure("That reset link is no longer valid. Request a new one.");
 
+        // Spent before the password moves, and only by whoever wins the write. The check above
+        // and this are two steps, and every request that landed between them used to set a password.
+        if (!await resetTokens.MarkConsumedAsync(stored.Id, now, cancellationToken))
+        {
+            logger.LogWarning("Password reset refused for user {UserId}: the link was spent by another request.", stored.UserId);
+            return AccountResult.Failure("That reset link is no longer valid. Request a new one.");
+        }
+
         await ApplyNewPasswordAsync(credential, newPassword, now, cancellationToken);
 
-        await resetTokens.MarkConsumedAsync(stored.Id, now, cancellationToken);
         await resetTokens.InvalidateAllForUserAsync(stored.UserId, now, cancellationToken);
         await emailVerificationTokens.InvalidateAllForUserAsync(stored.UserId, now, cancellationToken);
 

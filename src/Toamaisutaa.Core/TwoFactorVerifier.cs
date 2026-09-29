@@ -97,9 +97,15 @@ internal sealed class TwoFactorVerifier(
             return TwoFactorVerification.Failed;
         }
 
-        metrics.TwoFactorVerified(TwoFactorSource.Recovery, succeeded: true);
+        // Single use means one request, not one per request that read it before either spent it.
+        if (!await recoveryCodes.MarkConsumedAsync(stored.Id, timeProvider.GetUtcNow(), cancellationToken))
+        {
+            logger.LogWarning("Second factor refused for user {UserId}: that recovery code was spent by another request first.", userId);
+            metrics.TwoFactorVerified(TwoFactorSource.Recovery, succeeded: false);
+            return TwoFactorVerification.Failed;
+        }
 
-        await recoveryCodes.MarkConsumedAsync(stored.Id, timeProvider.GetUtcNow(), cancellationToken);
+        metrics.TwoFactorVerified(TwoFactorSource.Recovery, succeeded: true);
 
         var remaining = await recoveryCodes.CountUnusedAsync(userId, cancellationToken);
         var low = remaining <= options.Value.RecoveryCodeLowWaterMark;
