@@ -60,9 +60,35 @@ internal sealed class ConfigureToamaisutaaJwtBearerOptions(
         options.Events = new JwtBearerEvents
         {
             OnMessageReceived = ReadQueryToken(settings.QueryToken),
-            OnTokenValidated = enricher.EnrichAsync,
+            OnTokenValidated = context => RefuseIdTokens(context) ? Task.CompletedTask : enricher.EnrichAsync(context),
             OnForbidden = ExplainForbidden(settings, authorizationOptions.Value),
         };
+    }
+
+    /// <summary>
+    /// Fails an ID token presented as a bearer token, and says true when it did.
+    /// </summary>
+    /// <remarks>
+    /// With no explicit audience configured, the accepted audience falls back to the client id - and
+    /// the client id is the audience of every ID token the provider issues to that client. ID tokens
+    /// travel further than access tokens (logout URLs carry them as <c>id_token_hint</c>, and SPAs
+    /// hand them to other components), so one that leaked authenticated as its subject. These are the
+    /// markers an ID token carries and an access token does not: <c>nonce</c> and <c>at_hash</c>
+    /// from the OpenID Connect core spec, and the <c>typ</c> claim Keycloak writes into every token.
+    /// </remarks>
+    internal static bool RefuseIdTokens(TokenValidatedContext context)
+    {
+        var principal = context.Principal;
+
+        var looksLikeIdToken = principal is not null
+            && (principal.HasClaim(claim => claim.Type is "nonce" or "at_hash")
+                || principal.HasClaim(claim => claim.Type == "typ" && string.Equals(claim.Value, "ID", StringComparison.OrdinalIgnoreCase)));
+
+        if (!looksLikeIdToken)
+            return false;
+
+        context.Fail("An ID token was presented as a bearer token. Send the access token instead.");
+        return true;
     }
 
     internal static IReadOnlyList<string> ValidAudiences(ToamaisutaaOidcOptions settings, ToamaisutaaLocalLoginOptions local)
