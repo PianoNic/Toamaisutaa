@@ -20,7 +20,7 @@ internal sealed class MailKitSmtpMessageSender(IOptions<ToamaisutaaSmtpEmailOpti
             client.ServerCertificateValidationCallback = (_, _, _, _) => true;
 
         // SmtpEmailStartupCheck refuses to start with no Host set, so this only runs once it is.
-        await client.ConnectAsync(settings.Host!, settings.Port, ToSecureSocketOptions(settings.Security), cancellationToken)
+        await client.ConnectAsync(settings.Host!, settings.Port, ToSecureSocketOptions(settings.Security, settings.Port), cancellationToken)
             .ConfigureAwait(false);
 
         if (!string.IsNullOrWhiteSpace(settings.User))
@@ -30,11 +30,16 @@ internal sealed class MailKitSmtpMessageSender(IOptions<ToamaisutaaSmtpEmailOpti
         await client.DisconnectAsync(true, cancellationToken).ConfigureAwait(false);
     }
 
-    private static SecureSocketOptions ToSecureSocketOptions(SmtpSecurityMode mode) => mode switch
+    /// <remarks>
+    /// Auto is not MailKit's Auto. That one is STARTTLS <i>when the server offers it</i>, so anyone
+    /// on the path who deletes the offer from the greeting gets the login and every reset link in the
+    /// clear. Here it is TLS from the first byte on 465 and STARTTLS or nothing everywhere else.
+    /// </remarks>
+    internal static SecureSocketOptions ToSecureSocketOptions(SmtpSecurityMode mode, int port) => mode switch
     {
         SmtpSecurityMode.None => SecureSocketOptions.None,
         SmtpSecurityMode.StartTls => SecureSocketOptions.StartTls,
         SmtpSecurityMode.SslOnConnect => SecureSocketOptions.SslOnConnect,
-        _ => SecureSocketOptions.Auto,
+        _ => port == 465 ? SecureSocketOptions.SslOnConnect : SecureSocketOptions.StartTls,
     };
 }

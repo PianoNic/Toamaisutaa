@@ -24,7 +24,7 @@ matter, only that both run.
 | `Email:Smtp:Host` | | Required |
 | `Email:Smtp:Port` | `587` | |
 | `Email:Smtp:User` / `Password` | none | Omit `User` for an unauthenticated relay |
-| `Email:Smtp:Security` | `Auto` | `None`, `StartTls`, `SslOnConnect`, or `Auto` (TLS on 465, STARTTLS otherwise) |
+| `Email:Smtp:Security` | `Auto` | `None`, `StartTls`, `SslOnConnect`, or `Auto` (TLS on 465, required STARTTLS otherwise - a server that does not offer it is refused, never spoken to in the clear). `None` logs a warning at startup |
 | `Email:Smtp:SkipCertificateVerification` | `false` | For a self-signed relay on a private network only |
 | `Email:Smtp:From` | | Required, a valid email address |
 | `Email:Smtp:FromDisplayName` | none | |
