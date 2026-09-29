@@ -31,6 +31,9 @@ internal sealed class PasswordAccountService(
         if (string.IsNullOrWhiteSpace(request.UserName))
             return AccountResult.Failure("Choose a user name.");
 
+        if (IsAddressShaped(request.UserName))
+            return AccountResult.Failure(AddressShapedUserName);
+
         var errors = await validator.ValidateAsync(request.Password, cancellationToken);
         if (errors.Count > 0)
             return new AccountResult { Succeeded = false, Errors = errors };
@@ -107,9 +110,9 @@ internal sealed class PasswordAccountService(
                     "Adding a first password needs a recent sign-in. Sign in again, then add it while that sign-in is fresh.");
             }
 
-            var userName = user.UserName ?? user.Email;
-            if (string.IsNullOrWhiteSpace(userName))
-                return AccountResult.Failure("This account has no user name or email address to sign in with. Set one first.");
+            var userName = SignInName(user);
+            if (userName is null)
+                return AccountResult.Failure(NoSignInName);
 
             // No email on the credential. The address on the profile is whatever the identity
             // provider asserted, and nothing here knows that anybody proved it: copied in, it became
@@ -169,6 +172,9 @@ internal sealed class PasswordAccountService(
     {
         if (string.IsNullOrWhiteSpace(userName))
             return AccountResult.Failure("Choose a user name.");
+
+        if (IsAddressShaped(userName))
+            return AccountResult.Failure(AddressShapedUserName);
 
         var adminNotifier = ResolveAdminPasswordNotifier();
         var effectivePassword = password ?? AdminPasswordGenerator.Generate();
@@ -247,9 +253,9 @@ internal sealed class PasswordAccountService(
 
         if (credential is null)
         {
-            var identifier = user.UserName ?? user.Email;
-            if (string.IsNullOrWhiteSpace(identifier))
-                return AccountResult.Failure("This account has no user name or email address to sign in with. Set one first.");
+            var identifier = SignInName(user);
+            if (identifier is null)
+                return AccountResult.Failure(NoSignInName);
 
             try
             {
@@ -677,6 +683,9 @@ internal sealed class PasswordAccountService(
         if (string.IsNullOrWhiteSpace(userName))
             return AccountResult.Failure("Choose a user name.");
 
+        if (IsAddressShaped(userName))
+            return AccountResult.Failure(AddressShapedUserName);
+
         var now = timeProvider.GetUtcNow();
         var stored = await invitationTokens.FindByHashAsync(SecureTokens.HashToken(invitationToken), cancellationToken);
 
@@ -930,6 +939,22 @@ internal sealed class PasswordAccountService(
             new SessionRevoked { OccurredAt = now, UserId = userId, Reason = reason },
             cancellationToken);
     }
+
+    // The sign-in box takes a user name or an email, and a user name shaped like an address sat in
+    // the one column no proof of the mailbox could ever release: whoever registered it first owned
+    // that address for sign-in, invitations and /auth/email, however the real owner proved it.
+    private const string AddressShapedUserName = "A user name cannot contain @. An email address goes in the email field.";
+
+    private const string NoSignInName =
+        "This account has no user name to sign in with. An email address from an identity provider cannot stand in for one, "
+        + "because nothing here has proved it.";
+
+    private static bool IsAddressShaped(string userName) => userName.Contains('@');
+
+    // Never the email: that is only what an identity provider asserted, and in the user-name column
+    // it becomes a hold on the address that proving the mailbox cannot release.
+    private static string? SignInName(ToamaisutaaUser user) =>
+        string.IsNullOrWhiteSpace(user.UserName) || IsAddressShaped(user.UserName) ? null : user.UserName.Trim();
 
     private ToamaisutaaPasswordCredential BuildCredential(Guid userId, string userName, string? email, string password, DateTimeOffset now) =>
         new()

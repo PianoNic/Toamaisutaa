@@ -117,6 +117,15 @@ The new credential signs in with the user name and carries no email address. The
 only what the provider asserted, and copying it in made it a reset address for a mailbox nobody had
 shown the account owns. Add the address through `/auth/email`, which proves it.
 
+The user name is the provider's handle, and never its email. An account whose handle is missing or
+shaped like an address (a UPN is one) gets 400 here: in the user-name column an address becomes a
+hold on it that proving the mailbox cannot release. Such an account can use passkeys or magic links
+instead.
+
+**A user name cannot contain `@`**, wherever it is chosen - registration, admin creation, invitation
+completion - and answers 400. The sign-in box takes a user name or an email, so an address-shaped
+user name claimed that address for sign-in before its owner ever arrived.
+
 ```json
 { "currentPassword": "the old one", "newPassword": "the new one" }
 ```
