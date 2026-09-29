@@ -220,6 +220,24 @@ internal sealed class PasswordAccountService(
         var now = timeProvider.GetUtcNow();
         var credential = await credentials.FindByUserIdAsync(userId, cancellationToken);
 
+        // The password travels in the clear to whatever address it is mailed to, so the rule a
+        // self-service reset follows applies here too, checked before anything is changed.
+        if (credential is not null && options.Value.RequireVerifiedEmailForPasswordReset && credential.EmailConfirmedAt is null)
+        {
+            logger.LogInformation(
+                "Admin password refused for user {UserId}: the address has never been verified and "
+                + "LocalLogin:RequireVerifiedEmailForPasswordReset is on.",
+                userId);
+
+            return AccountResult.Failure(
+                "This account's email address has never been verified, and LocalLogin:RequireVerifiedEmailForPasswordReset "
+                + "is on, so a password cannot be mailed to it. Have the owner verify the address first.");
+        }
+
+        // The address the password goes to: the credential's, which is the one the account signs in
+        // with, not the profile field an identity provider's sync writes.
+        var mailTo = credential?.Email ?? user.Email;
+
         if (credential is null)
         {
             var identifier = user.UserName ?? user.Email;
@@ -228,7 +246,9 @@ internal sealed class PasswordAccountService(
 
             try
             {
-                await credentials.CreateCheckedAsync(BuildCredential(userId, identifier.Trim(), user.Email, effectivePassword, now), cancellationToken);
+                // No email on the credential, for the reason a first password gets none: the
+                // provider's address is only what the provider asserted.
+                await credentials.CreateCheckedAsync(BuildCredential(userId, identifier.Trim(), email: null, effectivePassword, now), cancellationToken);
             }
             catch (PasswordIdentifierConflictException)
             {
@@ -259,7 +279,7 @@ internal sealed class PasswordAccountService(
 
         try
         {
-            await adminNotifier.PasswordIssuedAsync(user, effectivePassword, cancellationToken);
+            await adminNotifier.PasswordIssuedAsync(AddressedTo(user, mailTo), effectivePassword, cancellationToken);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
