@@ -62,13 +62,18 @@ internal sealed class EntityFrameworkTwoFactorStore<TContext>(TContext context)
     public async Task<bool> UpdateFailedAttemptsAsync(
         Guid userId,
         int expectedFailedAttemptCount,
+        DateTimeOffset? expectedFirstFailedAttemptAt,
+        DateTimeOffset? expectedLockedOutUntil,
         int failedAttemptCount,
         DateTimeOffset? firstFailedAttemptAt,
         DateTimeOffset? lockedOutUntil,
         CancellationToken cancellationToken = default)
     {
         var written = await context.Set<ToamaisutaaUserTwoFactor>()
-            .Where(enrolment => enrolment.UserId == userId && enrolment.FailedAttemptCount == expectedFailedAttemptCount)
+            .Where(enrolment => enrolment.UserId == userId
+                && enrolment.FailedAttemptCount == expectedFailedAttemptCount
+                && enrolment.FirstFailedAttemptAt == expectedFirstFailedAttemptAt
+                && enrolment.LockedOutUntil == expectedLockedOutUntil)
             .ExecuteUpdateAsync(
                 setters => setters
                     .SetProperty(enrolment => enrolment.FailedAttemptCount, failedAttemptCount)

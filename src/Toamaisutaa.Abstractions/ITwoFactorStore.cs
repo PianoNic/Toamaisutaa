@@ -22,13 +22,20 @@ public interface ITwoFactorStore
 
     /// <summary>
     /// Writes the wrong-code count for an account with no password credential, in one write
-    /// conditional on the stored count still being <paramref name="expectedFailedAttemptCount"/>.
+    /// conditional on all three stored values still being the expected ones.
     /// </summary>
-    /// <returns>False when another request changed the count first; the caller reads it again and
+    /// <returns>False when another request changed any of them first; the caller reads again and
     /// reapplies, so parallel guesses each count rather than all writing the same number.</returns>
+    /// <remarks>
+    /// All three, not the count alone: a lock resets the count to zero, so a request that read the
+    /// row before any failure sees the count it expects after the lock, and a write conditional on
+    /// the count alone lands - clearing the lock it never saw.
+    /// </remarks>
     Task<bool> UpdateFailedAttemptsAsync(
         Guid userId,
         int expectedFailedAttemptCount,
+        DateTimeOffset? expectedFirstFailedAttemptAt,
+        DateTimeOffset? expectedLockedOutUntil,
         int failedAttemptCount,
         DateTimeOffset? firstFailedAttemptAt,
         DateTimeOffset? lockedOutUntil,
