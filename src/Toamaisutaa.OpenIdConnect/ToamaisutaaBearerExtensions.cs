@@ -79,6 +79,8 @@ public static class ToamaisutaaBearerExtensions
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IHostedService, LocalSigningKeyStartupCheck>(provider =>
             new LocalSigningKeyStartupCheck(services, provider.GetRequiredService<LocalSigningKeyRing>())));
 
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IHostedService, AudienceStartupWarning>());
+
         // Registered here because signing a token needs a JWT library and Core carries none. It
         // does nothing until password login configures a signing key.
         services.TryAddSingleton<IAccessTokenIssuer, LocalAccessTokenIssuer>();

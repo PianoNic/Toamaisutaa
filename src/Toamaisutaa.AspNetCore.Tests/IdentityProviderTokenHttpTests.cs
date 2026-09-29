@@ -473,6 +473,76 @@ public class IdentityProviderTokenHttpTests
         await Assert.That(right.StatusCode).IsEqualTo(HttpStatusCode.BadRequest);
     }
 
+    /// <summary>
+    /// Keycloak before version 25 put <c>nonce</c> into access tokens as well as ID tokens, and labels
+    /// both with a <c>typ</c> claim. Refusing on <c>nonce</c> refused every access token those servers
+    /// issued; the label says which kind a token is, and decides.
+    /// </summary>
+    [Test]
+    public async Task A_keycloak_access_token_carrying_nonce_is_accepted_by_its_bearer_label()
+    {
+        using var identityProviderKey = RSA.Create(2048);
+        using var localKey = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+
+        await using var app = await StartAsync(identityProviderKey, localKey);
+
+        var accessToken = Mint(
+            app,
+            new RsaSecurityKey(identityProviderKey) { KeyId = IdentityProviderKeyId },
+            SecurityAlgorithms.RsaSha256,
+            IdentityProvider,
+            Guid.NewGuid().ToString(),
+            new Claim("typ", "Bearer"),
+            new Claim("nonce", "n-0S6_WzA2Mj"));
+
+        var response = await app.Client.Get("/test/me", accessToken);
+
+        await Assert.That(response.StatusCode).IsEqualTo(HttpStatusCode.OK);
+    }
+
+    [Test]
+    public async Task Relying_on_the_client_id_as_the_audience_is_warned_about_at_startup()
+    {
+        var warnings = new System.Collections.Concurrent.ConcurrentQueue<string>();
+
+        using var identityProviderKey = RSA.Create(2048);
+        using var localKey = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+
+        await using var app = await StartAsync(
+            identityProviderKey,
+            localKey,
+            services => services.AddSingleton<Microsoft.Extensions.Logging.ILoggerProvider>(new StartupWarnings(warnings)));
+
+        await Assert.That(warnings.Count(message => message.Contains("Oidc:ValidAudiences"))).IsEqualTo(1);
+    }
+
+    private sealed class StartupWarnings(System.Collections.Concurrent.ConcurrentQueue<string> warnings) : Microsoft.Extensions.Logging.ILoggerProvider
+    {
+        public Microsoft.Extensions.Logging.ILogger CreateLogger(string categoryName) => new Collector(warnings);
+
+        public void Dispose()
+        {
+        }
+
+        private sealed class Collector(System.Collections.Concurrent.ConcurrentQueue<string> warnings) : Microsoft.Extensions.Logging.ILogger
+        {
+            public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+
+            public bool IsEnabled(Microsoft.Extensions.Logging.LogLevel logLevel) => logLevel >= Microsoft.Extensions.Logging.LogLevel.Warning;
+
+            public void Log<TState>(
+                Microsoft.Extensions.Logging.LogLevel logLevel,
+                Microsoft.Extensions.Logging.EventId eventId,
+                TState state,
+                Exception? exception,
+                Func<TState, Exception?, string> formatter)
+            {
+                if (IsEnabled(logLevel))
+                    warnings.Enqueue(formatter(state, exception));
+            }
+        }
+    }
+
     /// <summary>A provider token with an email and no <c>preferred_username</c> - Google's shape - which
     /// provisions a row with no user name and no password: exactly what a reservation used to look like.</summary>
     private static string MintWithoutUserName(TestApp app, SecurityKey key, string subject, string email) =>

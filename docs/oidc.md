@@ -217,6 +217,9 @@ Two behaviours are likely to differ from what you have:
 - **Audience validation is on by default.** If your tokens' `aud` does not name your API, set
   `Oidc:ValidAudiences` or turn `Oidc:ValidateAudience` off deliberately.
 - **ID tokens are refused.** The default audience is the client id, which is also the audience of
-  every ID token issued to that client, so a token carrying `nonce`, `at_hash` or a `typ` of `ID` is
-  rejected with 401. Send the access token. Setting `Oidc:ValidAudiences` to your API's own audience
-  is the stronger fix, where your provider lets you.
+  every ID token issued to that client. A token that labels itself with a `typ` claim, as Keycloak
+  does, is judged by that label alone - `ID` is refused and `Bearer` accepted, so older Keycloak
+  access tokens carrying `nonce` still work. A token with no label is refused when it carries `nonce`
+  or `at_hash`. An ID token with none of these cannot be told apart, which is why startup logs a
+  warning while `Oidc:ValidAudiences` is empty: set it to your API's own audience where your provider
+  lets you.
