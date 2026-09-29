@@ -64,11 +64,15 @@ internal sealed class FakePasswordStore
         return Task.CompletedTask;
     }
 
-    public Task MarkRotatedAsync(Guid tokenId, DateTimeOffset rotatedAt, CancellationToken cancellationToken = default)
+    public Task<bool> MarkRotatedAsync(Guid tokenId, DateTimeOffset rotatedAt, CancellationToken cancellationToken = default)
     {
         var token = RefreshTokens.First(entry => entry.Id == tokenId);
+
+        if (token.RotatedAt is not null || token.RevokedAt is not null)
+            return Task.FromResult(false);
+
         token.RotatedAt = rotatedAt;
-        return Task.CompletedTask;
+        return Task.FromResult(true);
     }
 
     public Task<ToamaisutaaRefreshToken?> FindLiveByFamilyAsync(Guid familyId, CancellationToken cancellationToken = default) =>

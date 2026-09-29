@@ -120,10 +120,10 @@ internal sealed class EntityFrameworkPasswordStore<TContext>(TContext context)
         await context.SaveChangesAsync(cancellationToken);
     }
 
-    public async Task MarkRotatedAsync(Guid tokenId, DateTimeOffset rotatedAt, CancellationToken cancellationToken = default) =>
+    public async Task<bool> MarkRotatedAsync(Guid tokenId, DateTimeOffset rotatedAt, CancellationToken cancellationToken = default) =>
         await context.Set<ToamaisutaaRefreshToken>()
-            .Where(token => token.Id == tokenId)
-            .ExecuteUpdateAsync(setters => setters.SetProperty(token => token.RotatedAt, rotatedAt), cancellationToken);
+            .Where(token => token.Id == tokenId && token.RotatedAt == null && token.RevokedAt == null)
+            .ExecuteUpdateAsync(setters => setters.SetProperty(token => token.RotatedAt, rotatedAt), cancellationToken) == 1;
 
     public async Task RevokeFamilyAsync(Guid familyId, string reason, DateTimeOffset revokedAt, CancellationToken cancellationToken = default) =>
         await context.Set<ToamaisutaaRefreshToken>()
