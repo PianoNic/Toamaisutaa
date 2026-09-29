@@ -214,3 +214,7 @@ Two behaviours are likely to differ from what you have:
   `preferred_username`, `roles`). Check anything that reads `ClaimTypes.*` directly.
 - **Audience validation is on by default.** If your tokens' `aud` does not name your API, set
   `Oidc:ValidAudiences` or turn `Oidc:ValidateAudience` off deliberately.
+- **ID tokens are refused.** The default audience is the client id, which is also the audience of
+  every ID token issued to that client, so a token carrying `nonce`, `at_hash` or a `typ` of `ID` is
+  rejected with 401. Send the access token. Setting `Oidc:ValidAudiences` to your API's own audience
+  is the stronger fix, where your provider lets you.

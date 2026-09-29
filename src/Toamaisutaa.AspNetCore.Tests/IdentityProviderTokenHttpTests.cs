@@ -372,6 +372,35 @@ public class IdentityProviderTokenHttpTests
         await Assert.That(userInfo.BearerTokens).Contains(provider);
     }
 
+    /// <summary>
+    /// With no API audience configured, the accepted audience is the client id - which is what every
+    /// ID token for that client carries. ID tokens leak further than access tokens do, through
+    /// logout URLs and components that were handed one, and a leaked one signed its subject in.
+    /// </summary>
+    [Test]
+    [Arguments("nonce", "n-0S6_WzA2Mj")]
+    [Arguments("at_hash", "77QmUPtjPfzWtF2AnpK9RQ")]
+    [Arguments("typ", "ID")]
+    public async Task An_id_token_is_refused_as_a_bearer_token(string marker, string value)
+    {
+        using var identityProviderKey = RSA.Create(2048);
+        using var localKey = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+
+        await using var app = await StartAsync(identityProviderKey, localKey);
+
+        var idToken = Mint(
+            app,
+            new RsaSecurityKey(identityProviderKey) { KeyId = IdentityProviderKeyId },
+            SecurityAlgorithms.RsaSha256,
+            IdentityProvider,
+            Guid.NewGuid().ToString(),
+            new Claim(marker, value));
+
+        var response = await app.Client.Get("/test/me", idToken);
+
+        await Assert.That(response.StatusCode).IsEqualTo(HttpStatusCode.Unauthorized);
+    }
+
     private sealed class UserInfoRecorder : HttpMessageHandler
     {
         public System.Collections.Concurrent.ConcurrentQueue<string> BearerTokens { get; } = new();
