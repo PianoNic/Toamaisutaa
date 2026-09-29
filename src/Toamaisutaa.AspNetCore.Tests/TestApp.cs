@@ -181,6 +181,8 @@ internal sealed class TestApp : IAsyncDisposable
             ["LocalLogin:RateLimit:Enabled"] = "false",
             // Tests ask for links to the same address back to back. The cooldown has its own test.
             ["LocalLogin:MailRequestCooldown"] = "00:00:00",
+            // A second per refused sign-in would make the suite crawl. The floor has its own test.
+            ["LocalLogin:SignInRefusalFloor"] = "00:00:00",
             ["TwoFactor:EncryptionKey"] = Convert.ToBase64String(new byte[32]),
             ["TrustedDevices:IpAddressStorage"] = "Truncated",
             ["LocalLogin:IpAddressStorage"] = "Truncated",

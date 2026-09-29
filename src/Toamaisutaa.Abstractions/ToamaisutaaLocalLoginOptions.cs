@@ -94,6 +94,14 @@ public sealed class ToamaisutaaLocalLoginOptions
     public TimeSpan LockoutDuration { get; set; } = TimeSpan.FromMinutes(15);
 
     /// <summary>
+    /// The least time a refused <c>/auth/login</c> takes. An unknown name, a wrong password and a
+    /// locked account answer the same body, and this makes them answer at the same time too, so long
+    /// as the real work stays under it - including verifying a hash still on an older, slower
+    /// algorithm. Raise it if yours is slower than this. Zero turns it off.
+    /// </summary>
+    public TimeSpan SignInRefusalFloor { get; set; } = TimeSpan.FromSeconds(1);
+
+    /// <summary>
     /// How recently a caller must have authenticated to give a passwordless account its first
     /// password. There is no current password to ask for, so a recent sign-in is the proof: a bearer
     /// token alone would let whoever lifted one add a way in that outlives it.
