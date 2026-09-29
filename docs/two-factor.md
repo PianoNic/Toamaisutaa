@@ -216,9 +216,12 @@ provider owns has only the rate limiter.
 
 ## Recovery codes
 
-Ten of them, shown exactly once, stored as unsalted SHA-256 - the same reasoning as refresh tokens:
-these are high-entropy random values, so there is no dictionary to defend against and nothing for a
-salt to do.
+Ten of them, shown exactly once, and stored as an HMAC under a key derived from
+`TwoFactor:EncryptionKey`. A code is ten characters so a person can type it from paper, which is
+about fifty bits: plenty against guessing online, nowhere near enough against a copy of the table.
+Stored as a plain hash, one offline sweep recovered every user's codes; keyed, the table alone is not
+enough to check a guess. Codes hashed under a retired key, or issued before codes were keyed, are
+still accepted until the set is regenerated.
 
 Each is single-use. Regenerating invalidates every previous one, because otherwise a printout that
 leaked stays good forever. When few remain, a redemption sets `recovery_codes_running_low` on the

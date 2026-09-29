@@ -94,8 +94,15 @@ internal sealed class TwoFactorVerifier(
 
     private async Task<TwoFactorVerification> RedeemRecoveryCodeAsync(Guid userId, string code, CancellationToken cancellationToken)
     {
-        var hash = SecureTokens.HashToken(RecoveryCodeProvider.Normalize(code));
-        var stored = await recoveryCodes.FindUnusedAsync(userId, hash, cancellationToken);
+        var normalized = RecoveryCodeProvider.Normalize(code);
+        ToamaisutaaRecoveryCode? stored = null;
+
+        foreach (var hash in RecoveryCodeHashes.Candidates(options.Value, normalized))
+        {
+            stored = await recoveryCodes.FindUnusedAsync(userId, hash, cancellationToken);
+            if (stored is not null)
+                break;
+        }
 
         if (stored is null)
         {
