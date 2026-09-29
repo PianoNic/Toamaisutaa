@@ -97,7 +97,7 @@ public class IdentityProviderTokenHttpTests
             Subject = new ClaimsIdentity(
             [
                 new Claim("sub", subject),
-                new Claim("preferred_username", "grace"),
+                .. extra.Any(claim => claim.Type == "preferred_username") ? [] : new[] { new Claim("preferred_username", "grace") },
                 .. extra,
             ]),
             IssuedAt = app.Time.Now.UtcDateTime,
@@ -252,6 +252,36 @@ public class IdentityProviderTokenHttpTests
 
         await Assert.That(byEmail.StatusCode).IsEqualTo(HttpStatusCode.Unauthorized);
         await Assert.That(byUserName.StatusCode).IsEqualTo(HttpStatusCode.OK);
+    }
+
+    /// <summary>
+    /// A provider's handle is often an address - a UPN is one. Copied into the user-name column by a
+    /// first password, it became a hold on that address that proving the mailbox could never release,
+    /// and it answered sign-ins for that address with this account.
+    /// </summary>
+    [Test]
+    public async Task A_first_password_does_not_take_an_address_shaped_user_name_from_the_provider()
+    {
+        using var identityProviderKey = RSA.Create(2048);
+        using var localKey = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+
+        await using var app = await StartAsync(identityProviderKey, localKey);
+        var key = new RsaSecurityKey(identityProviderKey) { KeyId = IdentityProviderKeyId };
+
+        var fresh = Mint(
+            app,
+            key,
+            SecurityAlgorithms.RsaSha256,
+            IdentityProvider,
+            "grace-subject",
+            AuthTime(app.Time.Now.AddMinutes(-1)),
+            new Claim("preferred_username", "newhire@example.com"));
+
+        var set = await app.Client.PostJson("/auth/password", new { newPassword = Account.DefaultPassword }, fresh);
+        await Assert.That(set.StatusCode).IsEqualTo(HttpStatusCode.BadRequest);
+
+        var byAddress = await app.Client.PostJson("/auth/login", new { identifier = "newhire@example.com", password = Account.DefaultPassword });
+        await Assert.That(byAddress.StatusCode).IsEqualTo(HttpStatusCode.Unauthorized);
     }
 
     /// <summary>

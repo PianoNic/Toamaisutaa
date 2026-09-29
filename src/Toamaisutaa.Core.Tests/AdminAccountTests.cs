@@ -29,6 +29,24 @@ public class AdminAccountTests
         await Assert.That(signIn.Outcome).IsEqualTo(SignInOutcome.Succeeded);
     }
 
+    /// <summary>A user name shaped like an address holds that address in the one column proving the
+    /// mailbox cannot release, whoever chose it. Invitation completion is the other place a name is
+    /// chosen, and the invitee is the least likely to know better.</summary>
+    [Test]
+    public async Task AUserNameShapedLikeAnAddressIsRefusedWhereverOneIsChosen()
+    {
+        var harness = PasswordHarness.Create();
+
+        var created = await harness.Accounts.AdminCreateAccountAsync("newhire@example.com", null, Password);
+
+        await harness.Accounts.CreateInvitationAsync("ada@example.com");
+        var completed = await harness.Accounts.CompleteInvitationAsync(harness.InvitationNotifier.Sent[0].Token, "newhire@example.com", Password);
+
+        await Assert.That(created.Succeeded).IsFalse();
+        await Assert.That(completed.Succeeded).IsFalse();
+        await Assert.That(harness.Passwords.Credentials).IsEmpty();
+    }
+
     [Test]
     public async Task CreatingAnAccountWithNoPasswordGeneratesOneThatActuallySignsIn()
     {

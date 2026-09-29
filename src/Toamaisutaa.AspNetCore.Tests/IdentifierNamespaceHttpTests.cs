@@ -22,7 +22,25 @@ public class IdentifierNamespaceHttpTests
             "/auth/register",
             new { userName = victim.Email, email = "mallory@example.com", password = Account.DefaultPassword });
 
-        await Assert.That(squat.StatusCode).IsEqualTo(HttpStatusCode.Conflict);
+        // Refused for its shape now, before it can clash with anything.
+        await Assert.That(squat.IsSuccessStatusCode).IsFalse();
+    }
+
+    /// <summary>
+    /// Nobody holds the address yet, which is the case the clash check above cannot see. Registered
+    /// as a user name, it sat in the one column no proof of the mailbox could release, and turned the
+    /// real owner away from their own invitation and from /auth/email for good.
+    /// </summary>
+    [Test]
+    public async Task A_user_name_shaped_like_an_address_is_refused()
+    {
+        await using var app = await TestApp.StartAsync();
+
+        var squat = await app.Client.PostJson(
+            "/auth/register",
+            new { userName = "newhire@example.com", password = Account.DefaultPassword });
+
+        await Assert.That(squat.StatusCode).IsEqualTo(HttpStatusCode.BadRequest);
     }
 
     [Test]
