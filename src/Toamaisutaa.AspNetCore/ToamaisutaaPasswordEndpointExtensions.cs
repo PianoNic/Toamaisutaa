@@ -530,8 +530,13 @@ public static class ToamaisutaaPasswordEndpointExtensions
         if (request is not null && !string.IsNullOrEmpty(request.Email) && cooldown.TryEnter("reset", request.Email))
         {
             var email = request.Email;
-            queue.Enqueue((services, cancellationToken) =>
-                services.GetRequiredService<IPasswordAccountService>().RequestPasswordResetAsync(email, cancellationToken));
+
+            // Dropped, so nothing was sent, and the cooldown must not also turn away the retry.
+            if (!queue.Enqueue((services, cancellationToken) =>
+                    services.GetRequiredService<IPasswordAccountService>().RequestPasswordResetAsync(email, cancellationToken)))
+            {
+                cooldown.Release("reset", email);
+            }
         }
 
         // Unknown address, no local credential, and a link on its way are one answer. The log tells
@@ -617,8 +622,12 @@ public static class ToamaisutaaPasswordEndpointExtensions
         if (request is not null && !string.IsNullOrEmpty(request.Email) && cooldown.TryEnter("magic-link", request.Email))
         {
             var email = request.Email;
-            queue.Enqueue((services, cancellationToken) =>
-                services.GetRequiredService<IPasswordAccountService>().RequestMagicLinkAsync(email, cancellationToken));
+
+            if (!queue.Enqueue((services, cancellationToken) =>
+                    services.GetRequiredService<IPasswordAccountService>().RequestMagicLinkAsync(email, cancellationToken)))
+            {
+                cooldown.Release("magic-link", email);
+            }
         }
 
         // Unknown address, no local credential, an unverified address and a link on its way are one

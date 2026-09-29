@@ -26,6 +26,7 @@ quietly leave a dashboard empty.
 | `toamaisutaa.refresh_token.reuse_detections` | counter | `{detection}` | |
 | `toamaisutaa.rate_limit.rejections` | counter | `{rejection}` | |
 | `toamaisutaa.password.verification.duration` | histogram | `s` | `result` |
+| `toamaisutaa.mail_requests.dropped` | counter | `{request}` | |
 
 ### Tag values
 
@@ -71,6 +72,13 @@ accounts. Those two series diverging is the signal that the equalisation has sto
 enrolment that has since been deleted, never named a source and so never reaches
 `toamaisutaa.two_factor.verifications`. Likewise, a sign-in that presents no device token is not a
 failed `device` verification.
+
+## What the dropped-mail counter means
+
+Reset and magic-link requests are answered 204 at once and sent from a bounded queue afterwards.
+When that queue is full a request is dropped, and `toamaisutaa.mail_requests.dropped` counts it:
+somebody was told a link is on its way that never will be. It should stay at zero. Anything else
+means mail is being asked for faster than the mail server takes it, which is worth an alert.
 
 ## What the rate-limit counter covers
 
