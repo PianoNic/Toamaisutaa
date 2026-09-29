@@ -34,8 +34,14 @@ public static class ToamaisutaaEndpointRouteBuilderExtensions
         ArgumentNullException.ThrowIfNull(endpoints);
 
         return endpoints
-            .MapGet(pattern, (HttpContext context, IToamaisutaaClientConfigurationProvider provider)
-                => Results.Ok(provider.GetConfiguration(context)))
+            .MapGet(pattern, (HttpContext context, IToamaisutaaClientConfigurationProvider provider) =>
+            {
+                // The redirect URIs can come from the request's own Host header. Cached by anything
+                // shared that does not key on Host, one caller's forged header would send every SPA
+                // loading it through the sign-in flow to their address.
+                context.Response.Headers.CacheControl = "no-store";
+                return Results.Ok(provider.GetConfiguration(context));
+            })
             .AllowAnonymous()
             .WithName($"{endpointNamePrefix}ToamaisutaaClientConfiguration")
             .WithTags("Application configuration")

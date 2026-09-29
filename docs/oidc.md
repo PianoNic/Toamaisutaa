@@ -32,7 +32,7 @@ Everything binds from the `Oidc` section.
 | `Oidc:Scope` | `openid profile email roles` | Served to the client |
 | `Oidc:RedirectUri` | derived | Falls back to `PublicUrl`, then the request origin |
 | `Oidc:PostLogoutRedirectUri` | `RedirectUri` | |
-| `Oidc:PublicUrl` | | Used to derive the two above |
+| `Oidc:PublicUrl` | | Used to derive the two above. Set it in production: without it the redirect URI comes from the request's Host header, which the caller controls, and a warning is logged. `/api/app` is always sent `Cache-Control: no-store` |
 | `Oidc:AdminRole` | | Registers the `Toamaisutaa.Admin` policy when set, which is also what maps the [admin provisioning endpoints](/provisioning-accounts#the-three-admin-endpoints-need-an-admin-role) |
 | `Oidc:RequireAdminRoleGlobally` | `false` | Puts the admin role in the fallback policy and the default policy, so every endpoint that is not anonymous - a bare `[Authorize]` and this package's own included - is admin-only |
 | `Oidc:QueryToken:IncludePaths:0` | | Path prefixes where `?access_token=` is honoured, for SignalR |
