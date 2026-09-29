@@ -30,8 +30,9 @@ quietly leave a dashboard empty.
 ### Tag values
 
 `result` on a sign-in is the outcome the caller was told, in snake case: `succeeded`,
-`unknown_user`, `invalid_password`, `locked_out`, `two_factor_required`, and so on for every member
-of `SignInOutcome`.
+`invalid_grant`, `two_factor_required`, and so on for every member of `SignInOutcome`. An unknown
+name, a wrong password and a locked account are all `invalid_grant`, because the caller is told the
+same thing for all three; the log says which one it was.
 
 `amr` is the space-separated RFC 8176 methods the attempt ended up proving - `pwd`, `pwd mfa`,
 `pwd otp mfa` - and `none` for an attempt that issued nothing. Summing over `amr` gives you attempts;
@@ -41,6 +42,14 @@ summing over `result` gives you sign-ins split by how they were proved.
 
 `result` on the password histogram is what the hasher answered - `succeeded`, `rehash_needed`,
 `failed` - plus `no_credential` for the derivation run against an identifier that does not exist.
+
+::: warning Keep the scrape endpoint off the public internet
+The series here are aggregate, but not blind. `no_credential` on the password histogram counts
+derivations run for names that do not exist, and `toamaisutaa.lockouts` counts accounts that have
+just been locked. Somebody who can read those while making their own attempts can tell a real
+account from an invented one. Serve `/metrics` on an internal port, or behind authentication - never
+alongside the API the attempts are made against.
+:::
 
 ## Four things worth knowing before you graph them
 

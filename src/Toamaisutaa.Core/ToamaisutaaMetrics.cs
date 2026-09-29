@@ -145,12 +145,16 @@ internal sealed class ToamaisutaaMetrics : IDisposable
     /// cannot rename a series somebody has been graphing for a year. A value added to the enum and
     /// not added here reports under its member name until it is.
     /// </summary>
+    /// <remarks>
+    /// An unknown name, a wrong password and a locked account are one value, because they are one
+    /// answer on the wire. Kept apart, the series told anyone who could read the scrape endpoint
+    /// which of their guesses named a real account - the enumeration the identical 401 exists to
+    /// prevent. The log still says which, for whoever is diagnosing a sign-in.
+    /// </remarks>
     private static string Describe(SignInOutcome outcome) => outcome switch
     {
         SignInOutcome.Succeeded => Succeeded,
-        SignInOutcome.UnknownUser => "unknown_user",
-        SignInOutcome.InvalidPassword => "invalid_password",
-        SignInOutcome.LockedOut => "locked_out",
+        SignInOutcome.UnknownUser or SignInOutcome.InvalidPassword or SignInOutcome.LockedOut => "invalid_grant",
         SignInOutcome.NoLocalCredential => "no_local_credential",
         SignInOutcome.InvalidRefreshToken => "invalid_refresh_token",
         SignInOutcome.RefreshTokenExpired => "refresh_token_expired",

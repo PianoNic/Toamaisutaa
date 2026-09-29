@@ -44,19 +44,23 @@ public class MetricsTests
 
         var measurement = probe.For(SignIns).Single();
 
-        await Assert.That(measurement.Tag("result")).IsEqualTo("invalid_password");
+        await Assert.That(measurement.Tag("result")).IsEqualTo("invalid_grant");
         await Assert.That(measurement.Tag("amr")).IsEqualTo("none");
     }
 
+    /// <summary>
+    /// The same value as a wrong password, because the caller is told the same thing. A result of its
+    /// own told whoever could read the series which guesses named real accounts.
+    /// </summary>
     [Test]
-    public async Task AnUnknownIdentifierIsCountedUnderItsOwnResult()
+    public async Task AnUnknownIdentifierIsCountedAsTheSameRefusalAsAWrongPassword()
     {
         var harness = PasswordHarness.Create();
 
         using var probe = new MeterProbe(harness.Metrics.Meter);
         await harness.SignInAsync("nobody", Password);
 
-        await Assert.That(probe.For(SignIns).Single().Tag("result")).IsEqualTo("unknown_user");
+        await Assert.That(probe.For(SignIns).Single().Tag("result")).IsEqualTo("invalid_grant");
     }
 
     /// <summary>
