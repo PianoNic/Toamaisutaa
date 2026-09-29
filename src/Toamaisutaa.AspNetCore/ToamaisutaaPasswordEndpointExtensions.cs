@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.DependencyInjection;
@@ -348,10 +349,13 @@ public static class ToamaisutaaPasswordEndpointExtensions
         LoginRequest request,
         HttpContext context,
         IPasswordSignInService signIn,
+        IOptions<ToamaisutaaLocalLoginOptions> options,
         CancellationToken cancellationToken)
     {
         if (request is null || string.IsNullOrEmpty(request.Identifier) || string.IsNullOrEmpty(request.Password))
             return SignInFailed();
+
+        var started = Stopwatch.GetTimestamp();
 
         var result = await signIn.SignInAsync(
             new PasswordSignInRequest
@@ -376,7 +380,18 @@ public static class ToamaisutaaPasswordEndpointExtensions
             });
         }
 
-        return result.Succeeded ? SignInSucceeded(result) : SignInFailed();
+        if (result.Succeeded)
+            return SignInSucceeded(result);
+
+        // Every refusal takes at least as long as the floor. The bodies were already identical, but
+        // the clock was not: a wrong password wrote the failure count and an unknown name wrote
+        // nothing, and an old hash still on a slower algorithm took far longer than the dummy an
+        // unknown name is checked against. Either difference told a caller which accounts exist.
+        var remaining = options.Value.SignInRefusalFloor - Stopwatch.GetElapsedTime(started);
+        if (remaining > TimeSpan.Zero)
+            await Task.Delay(remaining, cancellationToken);
+
+        return SignInFailed();
     }
 
     /// <summary>

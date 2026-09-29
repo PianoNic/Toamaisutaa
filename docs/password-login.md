@@ -376,6 +376,7 @@ hands you - rather than expecting to construct one.
 | `LocalLogin:LockoutEnabled` | `true` | |
 | `LocalLogin:MaxFailedAttempts` | `5` | |
 | `LocalLogin:LockoutWindow` / `LockoutDuration` | `00:15:00` | |
+| `LocalLogin:SignInRefusalFloor` | `00:00:01` | The least time a refused `/auth/login` takes, so an unknown name, a wrong password and a locked account cannot be told apart by the clock |
 | `LocalLogin:FirstPasswordProofWindow` | `00:05:00` | How recent a sign-in must be to give a passwordless account its first password |
 | `LocalLogin:MinimumPasswordLength` | `8` | NIST: a length floor, no composition rules |
 | `LocalLogin:MaximumPasswordLength` | `128` | Not a strength rule - a bound on an anonymous endpoint |
