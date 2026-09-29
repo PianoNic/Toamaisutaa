@@ -120,7 +120,9 @@ public sealed class ToamaisutaaLocalLoginOptions
     /// <summary>
     /// How long after a reset or magic-link request for an address the next one for that address is
     /// quietly dropped. Each request mails a new link and retires the last, so without it one inbox
-    /// can be flooded and its owner never holds a link long enough to use. Zero turns it off.
+    /// can be flooded and its owner never holds a link long enough to use. Also how long an account
+    /// waits between email-change requests, which mail whatever address the caller names and would
+    /// otherwise make this domain a relay. Zero turns it off.
     /// </summary>
     public TimeSpan MailRequestCooldown { get; set; } = TimeSpan.FromMinutes(1);
 

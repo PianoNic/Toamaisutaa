@@ -50,6 +50,27 @@ public class DefaultEmailVerificationEmailTemplateTests
         await Assert.That(content.PlainTextBody).DoesNotContain("old@example.com");
     }
 
+    /// <summary>
+    /// The recipient is whoever the signed-in caller named, and the name is whatever they registered
+    /// with. Greeting by it let anyone send their own sentence and URL from this domain to any inbox.
+    /// </summary>
+    [Test]
+    public async Task CarriesNothingTheUserChose()
+    {
+        var user = User();
+        user.DisplayName = "Claim your refund at https://evil.example";
+        user.UserName = "refund-desk";
+
+        var content = Template("https://app.example.com/verify?token={token}")
+            .Build(user, "victim@example.com", "raw-token-123");
+
+        foreach (var body in new[] { content.PlainTextBody, content.HtmlBody! })
+        {
+            await Assert.That(body).DoesNotContain("evil.example");
+            await Assert.That(body).DoesNotContain("refund-desk");
+        }
+    }
+
     [Test]
     public async Task ThrowsWhenNoLinkTemplateIsConfigured()
     {

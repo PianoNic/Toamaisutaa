@@ -10,16 +10,20 @@ internal sealed class DefaultEmailVerificationEmailTemplate(IOptions<Toamaisutaa
     public EmailVerificationEmailContent Build(ToamaisutaaUser user, string email, string verificationToken)
     {
         var link = BuildLink(verificationToken);
-        var name = string.IsNullOrWhiteSpace(user.DisplayName) ? user.UserName ?? "there" : user.DisplayName;
 
-        // Naming the address is the whole point of this line: the person reading it is the only one
-        // who can tell whether the account should be pointing here at all.
+        // No name, deliberately. This goes to an address nobody has proven yet, chosen by whoever is
+        // signed in, and the name is whatever they registered with - a sentence and a URL, if they
+        // like. Greeting by it would let anyone mail their own words, from this domain, to any
+        // inbox they choose.
+        //
+        // Naming the address is the whole point of the next line: the person reading it is the only
+        // one who can tell whether the account should be pointing here at all.
         return new EmailVerificationEmailContent
         {
             Subject = "Verify your email address",
             PlainTextBody =
                 $"""
-                Hi {name},
+                Hi,
 
                 Use the link below to confirm that {email} belongs to your account:
 
@@ -29,7 +33,7 @@ internal sealed class DefaultEmailVerificationEmailTemplate(IOptions<Toamaisutaa
                 """,
             HtmlBody =
                 $"""
-                <p>Hi {System.Net.WebUtility.HtmlEncode(name)},</p>
+                <p>Hi,</p>
                 <p>Use the link below to confirm that {System.Net.WebUtility.HtmlEncode(email)} belongs to your account:</p>
                 <p><a href="{System.Net.WebUtility.HtmlEncode(link)}">{System.Net.WebUtility.HtmlEncode(link)}</a></p>
                 <p>If you did not request this, you can ignore this email. Nothing changes until the link is used.</p>
