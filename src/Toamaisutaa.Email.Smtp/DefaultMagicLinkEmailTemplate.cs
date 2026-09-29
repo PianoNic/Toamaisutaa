@@ -17,9 +17,11 @@ internal sealed class DefaultMagicLinkEmailTemplate(
     public MagicLinkEmailContent Build(ToamaisutaaUser user, string magicLinkToken)
     {
         var link = BuildLink(magicLinkToken);
-        var name = string.IsNullOrWhiteSpace(user.DisplayName) ? user.UserName ?? "there" : user.DisplayName;
         var minutes = (int)Math.Ceiling(localLogin.Value.MagicLinkTokenLifetime.TotalMinutes);
 
+        // No name, for the reason the verification mail gives: it is whatever the account registered
+        // with, and the address this goes to is one its owner may never have proven.
+        //
         // The "do not forward" line earns its place: every other link this package sends leads to a
         // form that asks for something else first, and this one does not.
         return new MagicLinkEmailContent
@@ -27,7 +29,7 @@ internal sealed class DefaultMagicLinkEmailTemplate(
             Subject = "Your sign-in link",
             PlainTextBody =
                 $"""
-                Hi {name},
+                Hi,
 
                 Use the link below to sign in. It works once, and it expires in about {minutes} minutes:
 
@@ -38,7 +40,7 @@ internal sealed class DefaultMagicLinkEmailTemplate(
                 """,
             HtmlBody =
                 $"""
-                <p>Hi {System.Net.WebUtility.HtmlEncode(name)},</p>
+                <p>Hi,</p>
                 <p>Use the link below to sign in. It works once, and it expires in about {minutes} minutes:</p>
                 <p><a href="{System.Net.WebUtility.HtmlEncode(link)}">{System.Net.WebUtility.HtmlEncode(link)}</a></p>
                 <p>Anyone who opens this link is signed in as you, so do not forward it. If you did not ask to sign in,

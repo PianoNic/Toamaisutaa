@@ -34,6 +34,9 @@ internal sealed class PasswordAccountService(
         if (IsAddressShaped(request.UserName))
             return AccountResult.Failure(AddressShapedUserName);
 
+        if (!string.IsNullOrWhiteSpace(request.Email) && !IsBareAddress(request.Email))
+            return AccountResult.Failure(NotABareAddress);
+
         var errors = await validator.ValidateAsync(request.Password, cancellationToken);
         if (errors.Count > 0)
             return new AccountResult { Succeeded = false, Errors = errors };
@@ -175,6 +178,9 @@ internal sealed class PasswordAccountService(
 
         if (IsAddressShaped(userName))
             return AccountResult.Failure(AddressShapedUserName);
+
+        if (!string.IsNullOrWhiteSpace(email) && !IsBareAddress(email))
+            return AccountResult.Failure(NotABareAddress);
 
         var adminNotifier = ResolveAdminPasswordNotifier();
         var effectivePassword = password ?? AdminPasswordGenerator.Generate();
@@ -324,6 +330,9 @@ internal sealed class PasswordAccountService(
 
         if (string.IsNullOrWhiteSpace(newEmail))
             return AccountResult.Failure("Give an email address.");
+
+        if (!IsBareAddress(newEmail))
+            return AccountResult.Failure(NotABareAddress);
 
         var user = await users.FindByIdAsync(userId, cancellationToken);
         if (user is null)
@@ -554,6 +563,9 @@ internal sealed class PasswordAccountService(
 
         if (string.IsNullOrWhiteSpace(email))
             return AccountResult.Failure("Give an email address.");
+
+        if (!IsBareAddress(email))
+            return AccountResult.Failure(NotABareAddress);
 
         var invitationNotifier = ResolveInvitationNotifier();
         var now = timeProvider.GetUtcNow();
@@ -950,6 +962,15 @@ internal sealed class PasswordAccountService(
         + "because nothing here has proved it.";
 
     private static bool IsAddressShaped(string userName) => userName.Contains('@');
+
+    // An address with a display name in front - "any sentence at all" <victim@example.com> - parsed
+    // into a To header and a mail body that carried the sentence, from this domain, to any inbox.
+    private const string NotABareAddress = "Give just the email address, with nothing around it.";
+
+    private static bool IsBareAddress(string email) =>
+        System.Net.Mail.MailAddress.TryCreate(email.Trim(), out var parsed)
+        && parsed.DisplayName.Length == 0
+        && string.Equals(parsed.Address, email.Trim(), StringComparison.Ordinal);
 
     // Never the email: that is only what an identity provider asserted, and in the user-name column
     // it becomes a hold on the address that proving the mailbox cannot release.

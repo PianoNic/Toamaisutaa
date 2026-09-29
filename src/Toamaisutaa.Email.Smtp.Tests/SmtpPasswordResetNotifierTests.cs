@@ -44,6 +44,20 @@ public class SmtpPasswordResetNotifierTests
         await Assert.That(message.To.Mailboxes.Single().Address).IsEqualTo("ada@example.com");
     }
 
+    /// <summary>The display name is whatever the account registered with, and this address may be
+    /// one nobody proved, so the name does not ride along in the To header.</summary>
+    [Test]
+    public async Task AddressesTheMailboxWithoutTheUsersDisplayName()
+    {
+        var (notifier, sender, _) = Build();
+        var user = User();
+        user.DisplayName = "Payroll on hold - https://evil.example";
+
+        await notifier.SendAsync(user, ResetToken);
+
+        await Assert.That(sender.Sent!.To.Mailboxes.Single().Name ?? string.Empty).IsEmpty();
+    }
+
     [Test]
     public async Task SkipsSendingWhenTheUserHasNoEmail()
     {

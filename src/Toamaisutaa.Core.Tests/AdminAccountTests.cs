@@ -47,6 +47,29 @@ public class AdminAccountTests
         await Assert.That(harness.Passwords.Credentials).IsEmpty();
     }
 
+    /// <summary>A display name in front of the address rode into the To header and the mail body,
+    /// so it is refused wherever an address comes in, not only where a stranger can type one.</summary>
+    [Test]
+    public async Task AnAddressWithADisplayNameIsRefusedForANewAccount()
+    {
+        var harness = PasswordHarness.Create();
+
+        var created = await harness.Accounts.AdminCreateAccountAsync("ada", "\"Ada\" <ada@example.com>", Password);
+
+        await Assert.That(created.Succeeded).IsFalse();
+    }
+
+    [Test]
+    public async Task AnAddressWithADisplayNameIsRefusedForAnInvitation()
+    {
+        var harness = PasswordHarness.Create();
+
+        var invited = await harness.Accounts.CreateInvitationAsync("\"Ada\" <ada@example.com>");
+
+        await Assert.That(invited.Succeeded).IsFalse();
+        await Assert.That(harness.InvitationNotifier.Sent).IsEmpty();
+    }
+
     [Test]
     public async Task CreatingAnAccountWithNoPasswordGeneratesOneThatActuallySignsIn()
     {

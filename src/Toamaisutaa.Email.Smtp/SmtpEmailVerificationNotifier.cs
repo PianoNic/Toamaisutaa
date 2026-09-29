@@ -38,7 +38,7 @@ internal sealed class SmtpEmailVerificationNotifier(
         message.From.Add(new MailboxAddress(settings.FromDisplayName ?? string.Empty, settings.From));
         // The bare address, not the user's display name: that name is theirs to choose and this
         // mailbox has not been proven to be theirs.
-        message.To.Add(MailboxAddress.Parse(email));
+        message.To.Add(new MailboxAddress(string.Empty, email));
         message.Subject = content.Subject;
 
         var body = new BodyBuilder { TextBody = content.PlainTextBody, HtmlBody = content.HtmlBody };

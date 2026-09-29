@@ -20,6 +20,22 @@ public class DefaultMagicLinkEmailTemplateTests
     };
 
     [Test]
+    public async Task CarriesNothingTheUserChose()
+    {
+        var user = User();
+        user.DisplayName = "Payroll on hold - https://evil.example";
+        user.UserName = "payroll-desk";
+
+        var content = Template("https://app.example.com/magic?token={token}").Build(user, "raw-token-123");
+
+        foreach (var body in new[] { content.PlainTextBody, content.HtmlBody! })
+        {
+            await Assert.That(body).DoesNotContain("evil.example");
+            await Assert.That(body).DoesNotContain("payroll-desk");
+        }
+    }
+
+    [Test]
     public async Task SubstitutesTheTokenIntoTheLink()
     {
         var content = Template("https://app.example.com/signin?token={token}").Build(User(), "raw-token-123");
