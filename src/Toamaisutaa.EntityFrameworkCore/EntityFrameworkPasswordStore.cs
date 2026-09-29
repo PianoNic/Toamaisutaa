@@ -19,13 +19,20 @@ internal sealed class EntityFrameworkPasswordStore<TContext>(TContext context)
 {
     // ── Credentials ──
 
+    // Every credential read is tracked explicitly, whatever the context's default. UpdateAsync writes
+    // what changed since the read and compares the concurrency tokens against it, and neither can
+    // happen for an instance the context never tracked: under a no-tracking default a password change
+    // or a lockout returned success and wrote nothing.
+
     public async Task<ToamaisutaaPasswordCredential?> FindByUserIdAsync(Guid userId, CancellationToken cancellationToken = default) =>
         await context.Set<ToamaisutaaPasswordCredential>()
+            .AsTracking()
             .FirstOrDefaultAsync(credential => credential.UserId == userId, cancellationToken);
 
     public async Task<ToamaisutaaPasswordCredential?> FindByIdentifierAsync(string normalizedIdentifier, CancellationToken cancellationToken = default)
     {
         var matches = await context.Set<ToamaisutaaPasswordCredential>()
+            .AsTracking()
             .Where(credential => credential.NormalizedUserName == normalizedIdentifier
                 || credential.NormalizedEmail == normalizedIdentifier)
             .Take(2)
@@ -45,6 +52,7 @@ internal sealed class EntityFrameworkPasswordStore<TContext>(TContext context)
 
     public async Task<ToamaisutaaPasswordCredential?> FindByNormalizedEmailAsync(string normalizedEmail, CancellationToken cancellationToken = default) =>
         await context.Set<ToamaisutaaPasswordCredential>()
+            .AsTracking()
             .FirstOrDefaultAsync(credential => credential.NormalizedEmail == normalizedEmail, cancellationToken);
 
     public async Task CreateAsync(ToamaisutaaPasswordCredential credential, CancellationToken cancellationToken = default)
@@ -73,13 +81,18 @@ internal sealed class EntityFrameworkPasswordStore<TContext>(TContext context)
     {
         var entry = context.Entry(credential);
 
-        // Tracked is the normal case - the flows update the row they just read - and it is what makes
-        // this safe: only changed columns are written, and the concurrency tokens are compared against
-        // the values that were read. Update() would mark every column modified and write the whole
-        // stale row back.
+        // Tracked is the normal case - the flows update the row they just read, and the reads above
+        // always track - and it is what makes this safe: only changed columns are written, and the
+        // concurrency tokens are compared against the values that were read. Update() would mark every
+        // column modified and write the whole stale row back.
+        //
+        // An instance this context never saw carries no record of what it was read as, so there is
+        // nothing to compare against: it is written over the current row, last write wins. Only a
+        // caller that built or cached a credential itself ends up here.
         if (entry.State == EntityState.Detached)
         {
             var tracked = await context.Set<ToamaisutaaPasswordCredential>()
+                .AsTracking()
                 .FirstOrDefaultAsync(stored => stored.UserId == credential.UserId, cancellationToken)
                 ?? throw new InvalidOperationException($"There is no credential for user {credential.UserId} to update.");
 
