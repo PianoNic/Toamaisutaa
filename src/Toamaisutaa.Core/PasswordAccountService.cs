@@ -134,10 +134,17 @@ internal sealed class PasswordAccountService(
             if (currentPassword is null)
                 return AccountResult.Failure("Give your current password.");
 
+            var checkedHash = credential.PasswordHash;
+
             if (await CheckCurrentPasswordAsync(credential, currentPassword, "Password change", now, cancellationToken) is { } refusal)
                 return AccountResult.Failure(refusal);
 
-            await ApplyNewPasswordAsync(credential, newPassword, now, cancellationToken);
+            if (!await ApplyNewPasswordAsync(credential, newPassword, now, cancellationToken, replacing: checkedHash))
+            {
+                logger.LogWarning("Password change refused for user {UserId}: the password was changed by another request first.", userId);
+                return AccountResult.Failure("Your password was changed by another request. Sign in again and retry.");
+            }
+
             logger.LogInformation("Changed the password for user {UserId}.", userId);
         }
 
@@ -1029,20 +1036,31 @@ internal sealed class PasswordAccountService(
         CancellationToken cancellationToken) =>
         credentials.CheckCurrentPasswordAsync(credential, currentPassword, hasher, events, options.Value, logger, action, now, cancellationToken);
 
-    private Task ApplyNewPasswordAsync(
+    // replacing is the hash the caller's current password was checked against, for a change that
+    // proved one. A retry that finds another hash there has lost a race with a reset, and writing over
+    // it would leave the owner holding a reset password that no longer works. Null for a reset or an
+    // admin setting it, which replace whatever is there on purpose. False when it no longer matched.
+    private async Task<bool> ApplyNewPasswordAsync(
         ToamaisutaaPasswordCredential credential,
         string newPassword,
         DateTimeOffset now,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        string? replacing = null)
     {
         // Hashed once, outside the retry: it is the expensive half, and the value does not depend on
         // what the row held.
         var hash = hasher.Hash(newPassword);
+        var replaced = true;
 
-        return credentials.UpdateAsync(
+        await credentials.UpdateAsync(
             credential,
             current =>
             {
+                replaced = replacing is null || current.PasswordHash == replacing;
+
+                if (!replaced)
+                    return;
+
                 current.PasswordHash = hash;
                 current.UpdatedAt = now;
 
@@ -1050,6 +1068,8 @@ internal sealed class PasswordAccountService(
                 LockoutPolicy.RegisterSuccess(current);
             },
             cancellationToken);
+
+        return replaced;
     }
 
     /// <summary>

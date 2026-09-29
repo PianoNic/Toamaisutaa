@@ -128,4 +128,55 @@ public class ConcurrentCredentialWriteHttpTests
         await Assert.That(stored!.SecurityStamp).IsEqualTo("after-the-change");
         await Assert.That(stored.DisplayName).IsEqualTo("Ada Lovelace");
     }
+
+    /// <summary>
+    /// Somebody holding the password and a token changes it; the owner resets it while that change is
+    /// between checking the old password and writing the new one. The change's write conflicts, and
+    /// its retry used to write over the reset regardless, so the owner's new password did not work.
+    /// </summary>
+    [Test]
+    public async Task A_password_change_does_not_write_over_a_reset_that_landed_first()
+    {
+        var hasher = new HeldHasher();
+        var resets = new List<string>();
+
+        await using var app = await TestApp.StartAsync(configureServices: services =>
+        {
+            hasher.Register(services);
+            services.AddSingleton<IPasswordResetNotifier>(new ResetCapture(resets));
+        });
+
+        var account = await Account.RegisterAsync(app);
+        const string changed = "the password the change sets";
+        const string reset = "the password the owner reset to";
+
+        hasher.Hold = changed;
+
+        var change = app.Client.PostJson(
+            "/auth/password",
+            new { currentPassword = account.Password, newPassword = changed },
+            account.AccessToken);
+
+        await hasher.Entered.Task.WaitAsync(TimeSpan.FromSeconds(30));
+
+        await app.Client.PostJson("/auth/password/forgot", new { email = account.Email });
+        var resetResponse = await app.Client.PostJson("/auth/password/reset", new { token = resets.Single(), newPassword = reset });
+        await Assert.That(resetResponse.StatusCode).IsEqualTo(HttpStatusCode.NoContent);
+
+        hasher.Let();
+
+        await Assert.That((await change).IsSuccessStatusCode).IsFalse();
+
+        var signIn = await app.Client.PostJson("/auth/login", new { identifier = account.UserName, password = reset });
+        await Assert.That(signIn.StatusCode).IsEqualTo(HttpStatusCode.OK);
+    }
+
+    private sealed class ResetCapture(List<string> issued) : IPasswordResetNotifier
+    {
+        public Task SendAsync(ToamaisutaaUser user, string resetToken, CancellationToken cancellationToken = default)
+        {
+            issued.Add(resetToken);
+            return Task.CompletedTask;
+        }
+    }
 }
