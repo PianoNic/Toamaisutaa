@@ -542,6 +542,10 @@ namespace Toamaisutaa.EntityFrameworkCore.Migrations.Sqlite.Migrations
                     b.Property<int>("Purpose")
                         .HasColumnType("INTEGER");
 
+                    b.Property<string>("SecurityStamp")
+                        .HasMaxLength(128)
+                        .HasColumnType("TEXT");
+
                     b.Property<string>("TokenHash")
                         .IsRequired()
                         .HasMaxLength(64)

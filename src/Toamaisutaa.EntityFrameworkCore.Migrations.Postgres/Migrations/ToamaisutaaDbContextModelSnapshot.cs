@@ -547,6 +547,10 @@ namespace Toamaisutaa.EntityFrameworkCore.Migrations.Postgres.Migrations
                     b.Property<int>("Purpose")
                         .HasColumnType("integer");
 
+                    b.Property<string>("SecurityStamp")
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)");
+
                     b.Property<string>("TokenHash")
                         .IsRequired()
                         .HasMaxLength(64)

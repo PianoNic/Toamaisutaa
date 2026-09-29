@@ -112,6 +112,15 @@ public class ToamaisutaaTwoFactorChallenge
     /// is what every row written before this column existed was.
     /// </remarks>
     public string AuthenticationMethods { get; set; } = string.Empty;
+
+    /// <summary>
+    /// The user's security stamp when the challenge was issued. A challenge whose stamp no longer
+    /// matches is refused: a password reset or change, or anything else that moves the stamp, is
+    /// somebody reacting to another person having had access, and a half-finished sign-in that
+    /// person started must not be finishable afterwards. Null on rows written before the column
+    /// existed, which are accepted until they expire.
+    /// </summary>
+    public string? SecurityStamp { get; set; }
 }
 
 /// <summary>Which ceremony a challenge belongs to. Not interchangeable.</summary>

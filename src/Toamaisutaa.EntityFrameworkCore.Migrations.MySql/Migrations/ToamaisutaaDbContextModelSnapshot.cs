@@ -544,6 +544,10 @@ namespace Toamaisutaa.EntityFrameworkCore.Migrations.MySql.Migrations
                     b.Property<int>("Purpose")
                         .HasColumnType("int");
 
+                    b.Property<string>("SecurityStamp")
+                        .HasMaxLength(128)
+                        .HasColumnType("varchar(128)");
+
                     b.Property<string>("TokenHash")
                         .IsRequired()
                         .HasMaxLength(64)
