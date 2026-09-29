@@ -371,8 +371,12 @@ public class IdentityProviderTokenHttpTests
     /// third party as a bearer token on every request. A provider token still goes, which is what
     /// shows the call is wired at all.
     /// </summary>
+    /// <remarks>Under the legacy validators too, where the validated token is a JwtSecurityToken
+    /// rather than a JsonWebToken, and a check on the one type let every local token through.</remarks>
     [Test]
-    public async Task A_local_token_is_never_sent_to_the_providers_userinfo_endpoint()
+    [Arguments(false)]
+    [Arguments(true)]
+    public async Task A_local_token_is_never_sent_to_the_providers_userinfo_endpoint(bool legacyValidators)
     {
         using var identityProviderKey = RSA.Create(2048);
         using var localKey = ECDsa.Create(ECCurve.NamedCurves.nistP256);
@@ -382,9 +386,16 @@ public class IdentityProviderTokenHttpTests
         await using var app = await StartAsync(
             identityProviderKey,
             localKey,
-            services => services
-                .AddHttpClient(ToamaisutaaDefaults.UserInfoHttpClientName)
-                .ConfigurePrimaryHttpMessageHandler(() => userInfo),
+            services =>
+            {
+                services
+                    .AddHttpClient(ToamaisutaaDefaults.UserInfoHttpClientName)
+                    .ConfigurePrimaryHttpMessageHandler(() => userInfo);
+
+                services.PostConfigure<JwtBearerOptions>(
+                    JwtBearerDefaults.AuthenticationScheme,
+                    options => options.UseSecurityTokenValidators = legacyValidators);
+            },
             fetchUserInfo: true);
 
         var local = await Account.RegisterAsync(app);
