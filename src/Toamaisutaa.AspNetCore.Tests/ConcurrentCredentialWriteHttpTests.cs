@@ -63,4 +63,33 @@ public class ConcurrentCredentialWriteHttpTests
 
         await Assert.That(stored!.PasswordHash).IsEqualTo("reset-hash");
     }
+
+    /// <summary>
+    /// A profile sync reads the user at the start of the request. If a password change moves the
+    /// stamp before the sync saves, writing the whole row back put the old stamp back, and every token
+    /// the change was meant to kill came back to life.
+    /// </summary>
+    [Test]
+    public async Task A_profile_sync_from_a_stale_read_does_not_undo_a_security_stamp_change()
+    {
+        await using var app = await TestApp.StartAsync();
+        var account = await Account.RegisterAsync(app);
+        var userId = Guid.Parse(account.Claims().String("sub")!);
+
+        await using var sync = app.Services.CreateAsyncScope();
+        await using var change = app.Services.CreateAsyncScope();
+
+        var syncUsers = sync.ServiceProvider.GetRequiredService<IUserStore>();
+        var stale = (await syncUsers.FindByIdAsync(userId))!;
+
+        await change.ServiceProvider.GetRequiredService<IUserStore>().UpdateSecurityStampAsync(userId, "after-the-change");
+
+        await syncUsers.UpdateProfileAsync(stale, new ExternalUserProfile { Subject = "irrelevant", DisplayName = "Ada Lovelace" });
+
+        await using var check = app.Services.CreateAsyncScope();
+        var stored = await check.ServiceProvider.GetRequiredService<IUserStore>().FindByIdAsync(userId);
+
+        await Assert.That(stored!.SecurityStamp).IsEqualTo("after-the-change");
+        await Assert.That(stored.DisplayName).IsEqualTo("Ada Lovelace");
+    }
 }
