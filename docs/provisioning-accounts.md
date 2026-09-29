@@ -142,10 +142,16 @@ builder.Services.AddToamaisutaaSmtpInvitationEmail();
 raw token, and startup fails without it - the same way the reset link template is handled, and for
 the same reason: the shipped template cannot invent a page it knows nothing about.
 
-A notifier that throws here takes the reservation with it: the reserved row and its token are
-deleted and `POST /auth/invitations` answers **502** with the same `notification_failed` body, so a
-retry reserves one account rather than a second one. Nothing looks for an existing reservation
-before making one, which is why the rollback rather than a report-and-leave.
+Inviting an address that already has an open invitation reuses that reservation and retires its
+earlier links, so only the newest one works - a first link that leaked is dead the moment the address
+is invited again. A notifier that throws takes a new reservation with it: the reserved row and its
+token are deleted and `POST /auth/invitations` answers **502** with the same `notification_failed`
+body. A reservation that already existed stays, with its links retired, and the retry finds it again.
+
+`POST /auth/invitations/revoke` with `{ "email": "..." }` withdraws an open invitation: its links stop
+working and the reserved account is removed. It answers **404** when the address has no open
+invitation, including one already completed into an account, which it never touches. Admin role
+required, like creating one.
 
 `POST /auth/invitations/complete` is mapped whether or not an admin role is configured. It is
 redeemed by the invited person, and the invitation it completes may have come from a worker calling
