@@ -1,12 +1,19 @@
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Toamaisutaa.Abstractions;
 
 namespace Toamaisutaa.AspNetCore;
 
-internal sealed class ToamaisutaaClientConfigurationProvider(IOptions<ToamaisutaaOidcOptions> options)
+internal sealed class ToamaisutaaClientConfigurationProvider(
+    IOptions<ToamaisutaaOidcOptions> options,
+    IHostEnvironment environment,
+    ILogger<ToamaisutaaClientConfigurationProvider> logger)
     : IToamaisutaaClientConfigurationProvider
 {
+    private int _warnedAboutHost;
+
     public ToamaisutaaClientConfiguration GetConfiguration(HttpContext context)
     {
         ArgumentNullException.ThrowIfNull(context);
@@ -15,10 +22,16 @@ internal sealed class ToamaisutaaClientConfigurationProvider(IOptions<Toamaisuta
 
         // Explicit setting first, then the configured public URL, then whatever the request came in
         // on. The last one keeps a local run working with nothing configured at all.
-        var redirectUri =
-            NullIfBlank(settings.RedirectUri)
-            ?? WithTrailingSlash(NullIfBlank(settings.PublicUrl))
-            ?? WithTrailingSlash(Origin(context))!;
+        var configured = NullIfBlank(settings.RedirectUri) ?? WithTrailingSlash(NullIfBlank(settings.PublicUrl));
+
+        if (configured is null && !environment.IsDevelopment() && Interlocked.Exchange(ref _warnedAboutHost, 1) == 0)
+        {
+            logger.LogWarning(
+                "Neither Oidc:PublicUrl nor Oidc:RedirectUri is set, so the redirect URI in /config is built from the "
+                + "request's Host header, which the caller controls. Set Oidc:PublicUrl.");
+        }
+
+        var redirectUri = configured ?? WithTrailingSlash(Origin(context))!;
 
         return new ToamaisutaaClientConfiguration
         {
