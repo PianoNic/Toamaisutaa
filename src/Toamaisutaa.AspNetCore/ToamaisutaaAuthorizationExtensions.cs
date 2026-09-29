@@ -113,9 +113,18 @@ internal sealed class ConfigureToamaisutaaAuthorizationOptions(IOptions<Toamaisu
 
         // The whole application behind one role, rather than per endpoint. Ignored when no admin
         // role is configured, so turning the flag on alone cannot lock everyone out.
-        if (settings.RequireAdminRoleGlobally && !string.IsNullOrWhiteSpace(settings.AdminRole))
-            fallback = fallback.RequireRole(settings.AdminRole);
+        var adminOnly = settings.RequireAdminRoleGlobally && !string.IsNullOrWhiteSpace(settings.AdminRole);
 
-        authorization.FallbackPolicy = fallback.Build();
+        if (adminOnly)
+            fallback = fallback.RequireRole(settings.AdminRole!);
+
+        var policy = fallback.Build();
+        authorization.FallbackPolicy = policy;
+
+        // The fallback only covers endpoints that say nothing. One marked with a bare [Authorize] or
+        // RequireAuthorization() uses the default policy instead - "signed in" - so "admin-only"
+        // quietly meant "admin-only, except wherever anyone asked for authorization".
+        if (adminOnly)
+            authorization.DefaultPolicy = policy;
     }
 }
