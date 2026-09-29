@@ -259,21 +259,30 @@ internal static class CredentialWrites
     }
 
     /// <summary>Clears the enrolment's count once a code has been accepted.</summary>
+    /// <remarks>
+    /// Retried, because a count that moved in between is only more failures and the right code clears
+    /// those too. One write that missed left the person signed in one typo from a lockout.
+    /// </remarks>
     internal static async Task RegisterSuccessAsync(this ITwoFactorStore store, Guid userId, CancellationToken cancellationToken)
     {
-        if (await store.FindAsync(userId, cancellationToken) is not { } enrolment || LockoutState.Of(enrolment) == LockoutState.Clear)
-            return;
+        for (var attempt = 1; attempt <= MaxAttempts; attempt++)
+        {
+            if (await store.FindAsync(userId, cancellationToken) is not { } enrolment || LockoutState.Of(enrolment) == LockoutState.Clear)
+                return;
 
-        // A count that moved in between is only more failures; the right code clears it regardless.
-        await store.UpdateFailedAttemptsAsync(
-            userId,
-            enrolment.FailedAttemptCount,
-            enrolment.FirstFailedAttemptAt,
-            enrolment.LockedOutUntil,
-            0,
-            null,
-            null,
-            cancellationToken);
+            if (await store.UpdateFailedAttemptsAsync(
+                    userId,
+                    enrolment.FailedAttemptCount,
+                    enrolment.FirstFailedAttemptAt,
+                    enrolment.LockedOutUntil,
+                    0,
+                    null,
+                    null,
+                    cancellationToken))
+            {
+                return;
+            }
+        }
     }
 
     /// <summary>

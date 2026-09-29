@@ -458,7 +458,11 @@ internal sealed class PasswordSignInService(
             return new StepUpResult { Outcome = redemption.Outcome };
         }
 
-        await RegisterSuccessAsync(credential, now, cancellationToken);
+        // Only this code's own reservation back, not the whole count. The count is the password's too,
+        // and clearing it here let a session holder guess the password four times, step up, and go
+        // again - around eleven thousand guesses a day instead of a few hundred.
+        if (reservation is { } spent)
+            await credentials.RefundAsync(spent, now, cancellationToken);
 
         // A recovery code means the authenticator is gone, and that inference does not change based
         // on which endpoint it was typed into. Same revocation as at sign-in.

@@ -254,11 +254,12 @@ internal sealed class TwoFactorService(
         // or a passkey-only one - so a stolen token cannot guess it unthrottled either.
         bool allowed;
         bool lockedByThisAttempt;
+        AttemptReservation? reservation = null;
 
         if (credential is not null)
         {
-            var reservation = await passwords!.ReserveAttemptAsync(credential, localLogin, now, cancellationToken);
-            (credential, allowed, lockedByThisAttempt) = (reservation.Credential, reservation.Allowed, reservation.LockedByThisAttempt);
+            reservation = await passwords!.ReserveAttemptAsync(credential, localLogin, now, cancellationToken);
+            (credential, allowed, lockedByThisAttempt) = (reservation.Value.Credential, reservation.Value.Allowed, reservation.Value.LockedByThisAttempt);
         }
         else
         {
@@ -277,8 +278,10 @@ internal sealed class TwoFactorService(
 
         if (verification.Succeeded)
         {
-            if (credential is not null)
-                await passwords!.RegisterSuccessAsync(credential, now, cancellationToken);
+            // The credential's count is the password's too, so only this code's reservation comes back,
+            // never the whole count - the reason step-up gives. An enrolment's count is codes alone.
+            if (reservation is { } spent)
+                await passwords!.RefundAsync(spent, now, cancellationToken);
             else
                 await enrolments.RegisterSuccessAsync(userId, cancellationToken);
 
