@@ -80,6 +80,22 @@ public class PasswordSignInServiceTests
         await Assert.That(result.Outcome).IsEqualTo(SignInOutcome.LockedOut);
     }
 
+    /// <summary>The last allowed attempt is counted before it is checked, which is what locks the
+    /// account. Right, it still signs in, exactly as a fifth try did when counting came after.</summary>
+    [Test]
+    public async Task TheRightPasswordOnTheLastAllowedAttemptSignsIn()
+    {
+        var harness = PasswordHarness.Create();
+        await harness.RegisterAsync();
+
+        for (var attempt = 0; attempt < 4; attempt++)
+            await harness.SignInAsync("pianonic", "wrong");
+
+        var result = await harness.SignInAsync("pianonic", Password);
+
+        await Assert.That(result.Outcome).IsEqualTo(SignInOutcome.Succeeded);
+    }
+
     [Test]
     public async Task SigningInWorksAgainOnceTheLockExpires()
     {

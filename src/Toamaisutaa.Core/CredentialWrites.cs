@@ -276,6 +276,43 @@ internal static class CredentialWrites
             cancellationToken);
     }
 
+    /// <summary>
+    /// Clears the count for a right password, unless a lock that other attempts set while this one
+    /// was being hashed now stands. Clearing it regardless let one right guess in a parallel wave
+    /// sign in and unlock the account the rest of the wave had just locked.
+    /// </summary>
+    /// <returns>False when the sign-in has to be refused as locked out.</returns>
+    internal static async Task<bool> TryRegisterSuccessAsync(
+        this IPasswordCredentialStore store,
+        ToamaisutaaPasswordCredential credential,
+        AttemptReservation reservation,
+        DateTimeOffset now,
+        CancellationToken cancellationToken)
+    {
+        var refused = false;
+
+        await store.UpdateAsync(
+            credential,
+            current =>
+            {
+                var state = LockoutState.Of(current);
+
+                // A lock this attempt's own reservation set is the ordinary last try, and a right
+                // password there signs in exactly as it would have one at a time.
+                refused = LockoutPolicy.IsLockedOut(state, now)
+                    && !(reservation.LockedByThisAttempt && state == reservation.After);
+
+                if (refused)
+                    return;
+
+                LockoutPolicy.RegisterSuccess(current);
+                current.UpdatedAt = now;
+            },
+            cancellationToken);
+
+        return !refused;
+    }
+
     /// <summary>Clears the count once a sign-in or step-up has finished.</summary>
     internal static Task<ToamaisutaaPasswordCredential> RegisterSuccessAsync(
         this IPasswordCredentialStore store,
