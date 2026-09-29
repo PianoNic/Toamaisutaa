@@ -7,7 +7,16 @@ public interface IRefreshTokenStore
     Task CreateAsync(ToamaisutaaRefreshToken token, CancellationToken cancellationToken = default);
 
     /// <summary>Marks a token as exchanged. Presenting it again is the reuse signal.</summary>
-    Task MarkRotatedAsync(Guid tokenId, DateTimeOffset rotatedAt, CancellationToken cancellationToken = default);
+    /// <returns>
+    /// True only when this call is the one that moved the row from live - neither rotated nor revoked
+    /// - to rotated, in a single conditional write. False when another request got there first.
+    /// </returns>
+    /// <remarks>
+    /// The flow reads the row, sees it live, then calls this. Two requests between those two steps
+    /// both saw it live; an unconditional write let both through and forked the family without
+    /// either one being detected as reuse. The answer here is what decides which of them won.
+    /// </remarks>
+    Task<bool> MarkRotatedAsync(Guid tokenId, DateTimeOffset rotatedAt, CancellationToken cancellationToken = default);
 
     /// <summary>Revokes every live token in the chain. Called when reuse is detected, on the
     /// assumption that one of the two holders is not the account owner.</summary>

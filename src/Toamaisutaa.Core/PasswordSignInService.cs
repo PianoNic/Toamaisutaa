@@ -619,32 +619,7 @@ internal sealed class PasswordSignInService(
             return Failed(SignInOutcome.InvalidRefreshToken);
 
         if (stored.RotatedAt is not null)
-        {
-            // This token was already exchanged, so two parties hold the chain and one of them is
-            // not the account owner. There is no way to tell which, so neither keeps it.
-            logger.LogWarning(
-                "Refresh token reuse detected for user {UserId}. Token {TokenId} was already rotated at {RotatedAt}; "
-                + "revoking the whole family {FamilyId}. Treat this as a possible stolen token.",
-                stored.UserId,
-                stored.Id,
-                stored.RotatedAt,
-                stored.FamilyId);
-
-            metrics.RefreshTokenReuseDetected();
-
-            await events.PublishAsync(
-                new RefreshTokenReuseDetected { OccurredAt = now, UserId = stored.UserId, SessionId = stored.FamilyId },
-                cancellationToken);
-
-            await RevokeFamilyAsync(stored, "refresh-token-reuse", now, cancellationToken);
-
-            // Explicit, because the stamp cannot carry this one either: bumping it would revoke
-            // this user's other legitimate sessions, which is a behaviour change beyond what reuse
-            // detection has ever done.
-            await trustedDevices.RevokeAllAsync(stored.UserId, "refresh-token-reuse", now, cancellationToken);
-
-            return Failed(SignInOutcome.RefreshTokenReused);
-        }
+            return await RefuseReusedAsync(stored, now, cancellationToken);
 
         if (stored.RevokedAt is not null)
             return Failed(SignInOutcome.RefreshTokenRevoked);
@@ -683,7 +658,11 @@ internal sealed class PasswordSignInService(
             return Failed(SignInOutcome.SecurityStampChanged);
         }
 
-        await refreshTokens.MarkRotatedAsync(stored.Id, now, cancellationToken);
+        // The check above and this write are not one step, so a second request can pass the check
+        // in between. The conditional write is what decides: whoever loses it presented a token that
+        // another request is exchanging right now, which is reuse, and is answered as reuse.
+        if (!await refreshTokens.MarkRotatedAsync(stored.Id, now, cancellationToken))
+            return await RefuseReusedAsync(stored, now, cancellationToken);
 
         return await IssueAsync(
             user,
@@ -706,6 +685,35 @@ internal sealed class PasswordSignInService(
             client: new ClientMetadata.SessionClient(stored.UserAgent, stored.IpAddress),
             now,
             cancellationToken);
+    }
+
+    /// <summary>
+    /// This token was already exchanged, so two parties hold the chain and one of them is not the
+    /// account owner. There is no way to tell which, so neither keeps it.
+    /// </summary>
+    private async Task<SignInResult> RefuseReusedAsync(ToamaisutaaRefreshToken stored, DateTimeOffset now, CancellationToken cancellationToken)
+    {
+        logger.LogWarning(
+            "Refresh token reuse detected for user {UserId}. Token {TokenId} was already rotated; "
+            + "revoking the whole family {FamilyId}. Treat this as a possible stolen token.",
+            stored.UserId,
+            stored.Id,
+            stored.FamilyId);
+
+        metrics.RefreshTokenReuseDetected();
+
+        await events.PublishAsync(
+            new RefreshTokenReuseDetected { OccurredAt = now, UserId = stored.UserId, SessionId = stored.FamilyId },
+            cancellationToken);
+
+        await RevokeFamilyAsync(stored, "refresh-token-reuse", now, cancellationToken);
+
+        // Explicit, because the stamp cannot carry this one either: bumping it would revoke this
+        // user's other legitimate sessions, which is a behaviour change beyond what reuse detection
+        // has ever done.
+        await trustedDevices.RevokeAllAsync(stored.UserId, "refresh-token-reuse", now, cancellationToken);
+
+        return Failed(SignInOutcome.RefreshTokenReused);
     }
 
     public async Task SignOutAsync(string refreshToken, CancellationToken cancellationToken = default)
