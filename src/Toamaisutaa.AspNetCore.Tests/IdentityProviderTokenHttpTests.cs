@@ -3,7 +3,10 @@ using System.Globalization;
 using System.Security.Claims;
 using System.Security.Cryptography;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.DependencyInjection;
+using Toamaisutaa.Abstractions;
 using Microsoft.IdentityModel.JsonWebTokens;
 using Microsoft.IdentityModel.Protocols;
 using Microsoft.IdentityModel.Protocols.OpenIdConnect;
@@ -42,7 +45,11 @@ public class IdentityProviderTokenHttpTests
     /// key, which is the deployment shape the break needed: with no local keys configured the bearer
     /// options are left exactly as the handler wrote them and the resolver is never installed.
     /// </summary>
-    private static Task<TestApp> StartAsync(RSA identityProviderKey, ECDsa localKey)
+    private static Task<TestApp> StartAsync(
+        RSA identityProviderKey,
+        ECDsa localKey,
+        Action<IServiceCollection>? configureServices = null,
+        Action<IEndpointRouteBuilder>? mapExtra = null)
     {
         var discovered = new OpenIdConnectConfiguration { Issuer = IdentityProvider };
         discovered.SigningKeys.Add(new RsaSecurityKey(identityProviderKey) { KeyId = IdentityProviderKeyId });
@@ -60,10 +67,16 @@ public class IdentityProviderTokenHttpTests
                 settings["LocalLogin:SigningKeys:0:Kid"] = LocalKeyId;
                 settings["LocalLogin:SigningKeys:0:Pem"] = localKey.ExportPkcs8PrivateKeyPem();
             },
-            configureServices: services => services.PostConfigure<JwtBearerOptions>(
-                JwtBearerDefaults.AuthenticationScheme,
-                options => options.ConfigurationManager =
-                    new StaticConfigurationManager<OpenIdConnectConfiguration>(discovered)));
+            configureServices: services =>
+            {
+                services.PostConfigure<JwtBearerOptions>(
+                    JwtBearerDefaults.AuthenticationScheme,
+                    options => options.ConfigurationManager =
+                        new StaticConfigurationManager<OpenIdConnectConfiguration>(discovered));
+
+                configureServices?.Invoke(services);
+            },
+            mapExtra: mapExtra);
     }
 
     /// <summary>
@@ -256,6 +269,52 @@ public class IdentityProviderTokenHttpTests
 
         var begun = await app.Client.PostEmpty("/auth/2fa/begin", fresh);
         await Assert.That(begun.StatusCode).IsEqualTo(HttpStatusCode.OK);
+    }
+
+    /// <summary>
+    /// A user who once enrolled locally, signing in through a provider that asked for nothing more
+    /// than a password. The transformation used to write <c>amr=mfa</c> for them, and the
+    /// second-factor policy let a phished provider password straight through.
+    /// </summary>
+    [Test]
+    public async Task A_local_enrolment_does_not_satisfy_the_second_factor_policy_for_a_provider_sign_in()
+    {
+        using var identityProviderKey = RSA.Create(2048);
+        using var localKey = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+
+        await using var app = await StartAsync(
+            identityProviderKey,
+            localKey,
+            services => services.AddToamaisutaaTwoFactorClaims(),
+            endpoints =>
+            {
+                endpoints.MapGet("/test/second-factor", () => "ok").RequireAuthorization("Toamaisutaa.TwoFactor");
+                endpoints.MapGet("/test/claims", (ClaimsPrincipal user) =>
+                    user.Claims.Select(claim => new { claim.Type, claim.Value }));
+            });
+
+        var key = new RsaSecurityKey(identityProviderKey) { KeyId = IdentityProviderKeyId };
+        var fresh = Mint(app, key, SecurityAlgorithms.RsaSha256, IdentityProvider, "grace-subject", AuthTime(app.Time.Now.AddMinutes(-1)));
+
+        var begin = await app.Client.PostEmpty("/auth/2fa/begin", fresh);
+        var secret = (await begin.Json()).String("secret")!;
+
+        app.Time.AdvanceToNextTotpStep();
+        var confirm = await app.Client.PostJson("/auth/2fa/confirm", new { code = Totp.Code(secret, app.Time.Now) }, fresh);
+        await Assert.That(confirm.StatusCode).IsEqualTo(HttpStatusCode.OK);
+
+        // A later sign-in at the provider, which says nothing about how it was proved.
+        var later = Mint(app, key, SecurityAlgorithms.RsaSha256, IdentityProvider, "grace-subject");
+
+        var guarded = await app.Client.Get("/test/second-factor", later);
+        await Assert.That(guarded.StatusCode).IsEqualTo(HttpStatusCode.Forbidden);
+
+        var claims = (await (await app.Client.Get("/test/claims", later)).Json()).EnumerateArray()
+            .Select(claim => (Type: claim.String("type"), Value: claim.String("value")))
+            .ToList();
+
+        await Assert.That(claims).Contains((ToamaisutaaDefaults.TwoFactorEnrolledClaim, "true"));
+        await Assert.That(claims.Any(claim => claim.Type == ToamaisutaaDefaults.AuthenticationMethodClaim)).IsFalse();
     }
 
     private static Claim AuthTime(DateTimeOffset at) =>

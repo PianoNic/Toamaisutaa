@@ -6,15 +6,15 @@ using Toamaisutaa.Abstractions;
 namespace Toamaisutaa.AspNetCore;
 
 /// <summary>
-/// Adds <c>amr</c> and <c>toa_2fa_required</c> to a token this package did not issue, so the same
-/// policy covers identity-provider sign-ins.
+/// Adds <c>toa_2fa_enrolled</c> and <c>toa_2fa_required</c> to a token this package did not issue, so
+/// a policy can see the local enrolment of somebody who signed in through an identity provider.
 /// </summary>
 /// <remarks>
-/// This is enforcement by the application, not by the package. Toamaisutaa never sees the exchange
-/// where an identity provider decides what a user proved, so all this can do is read what the local
-/// enrolment says and let a policy act on it. A user enrolled here who signs in there is described
-/// as having presented a second factor because their provider, not this package, is what actually
-/// asked for one.
+/// Toamaisutaa never sees the exchange where an identity provider decides what a user proved, so all
+/// this can report is what the local enrolment says. It used to write that as <c>amr=mfa</c>, which
+/// RFC 8176 and this package both define as a second factor actually presented - so a phished
+/// provider password satisfied the second-factor policy for anyone who had once enrolled here. Being
+/// enrolled is a different fact and now has a claim of its own; <c>amr</c> is left to the provider.
 /// </remarks>
 internal sealed class TwoFactorClaimsTransformation(
     IServiceProvider services,
@@ -59,7 +59,7 @@ internal sealed class TwoFactorClaimsTransformation(
         var identity = clone.Identities.First();
 
         if (enrolled)
-            identity.AddClaim(new Claim(ToamaisutaaDefaults.AuthenticationMethodClaim, ToamaisutaaDefaults.MultiFactorMethod));
+            identity.AddClaim(new Claim(ToamaisutaaDefaults.TwoFactorEnrolledClaim, "true"));
         else if (options.Value.Enforcement == TwoFactorEnforcement.RequiredForAll)
             identity.AddClaim(new Claim(ToamaisutaaDefaults.TwoFactorRequiredClaim, "true"));
 

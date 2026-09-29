@@ -94,6 +94,14 @@ public static class ToamaisutaaDefaults
     /// </summary>
     public const string TwoFactorRequiredClaim = "toa_2fa_required";
 
+    /// <summary>
+    /// Set by <c>AddToamaisutaaTwoFactorClaims</c> on an identity provider's token when the user has
+    /// a confirmed local enrolment. It says the user enrolled, and nothing about what they presented
+    /// at this sign-in - which is why it is not <see cref="MultiFactorMethod"/> in <c>amr</c>, and
+    /// why the <c>Toamaisutaa.TwoFactor</c> policy does not accept it.
+    /// </summary>
+    public const string TwoFactorEnrolledClaim = "toa_2fa_enrolled";
+
     /// <summary>Configuration section trusted devices bind from.</summary>
     public const string TrustedDevicesConfigurationSection = "TrustedDevices";
 

@@ -315,8 +315,19 @@ this package could insist on a second factor for a user signing in through Keycl
 that, configure it there.
 
 What it can do is `AddToamaisutaaTwoFactorClaims`, an opt-in `IClaimsTransformation` that looks up
-the local enrolment and adds `amr` to an externally issued token, so the same policy works for both.
-It costs a database read per authenticated request, which is why it is off by default.
+the local enrolment and adds `toa_2fa_enrolled` to an externally issued token (and `toa_2fa_required`
+under `RequiredForAll`). It costs a database read per authenticated request, which is why it is off
+by default. It replaces the framework's do-nothing transformation, but not one of your own.
+
+`toa_2fa_enrolled` says the user has enrolled, and nothing about what they presented at this
+sign-in, so the `Toamaisutaa.TwoFactor` policy does not accept it: that policy wants `amr=mfa`, and
+for a provider sign-in only the provider can put it there. An earlier version wrote `amr=mfa` for any
+enrolled user, which let a phished provider password pass the second-factor policy. If "has enrolled"
+is genuinely what you want to require, say so with a policy of your own:
+
+```csharp
+options.AddPolicy("Enrolled", policy => policy.RequireClaim("toa_2fa_enrolled", "true"));
+```
 
 ## What revoking actually does
 

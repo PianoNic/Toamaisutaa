@@ -64,6 +64,18 @@ public static class ToamaisutaaTwoFactorExtensions
 
         services.AddOptions<ToamaisutaaTwoFactorOptions>();
         services.AddOptions<ToamaisutaaProvisioningOptions>();
+
+        // AddAuthentication registers a do-nothing transformation, and AddToamaisutaaBearer - which
+        // has to come first - calls it. A plain TryAdd therefore never registered this at all, and
+        // the transformation silently never ran. Only the framework's placeholder is replaced: an
+        // application's own transformation still wins, as it did.
+        var placeholder = services.FirstOrDefault(descriptor =>
+            descriptor.ServiceType == typeof(IClaimsTransformation)
+            && descriptor.ImplementationType == typeof(NoopClaimsTransformation));
+
+        if (placeholder is not null)
+            services.Remove(placeholder);
+
         services.TryAddScoped<IClaimsTransformation, TwoFactorClaimsTransformation>();
 
         return services;
