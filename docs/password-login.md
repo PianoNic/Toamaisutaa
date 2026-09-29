@@ -113,6 +113,10 @@ token must carry an `auth_time` from the identity provider, or a `toa_2fa_at`, w
 be enough to add a password that outlives it. Send the user back through the identity provider with
 `max_age` or `prompt=login` first, so the token they come back with is fresh.
 
+The new credential signs in with the user name and carries no email address. The provider's email is
+only what the provider asserted, and copying it in made it a reset address for a mailbox nobody had
+shown the account owns. Add the address through `/auth/email`, which proves it.
+
 ```json
 { "currentPassword": "the old one", "newPassword": "the new one" }
 ```
@@ -237,6 +241,11 @@ by middleware you have to remember to add.
 
 A taken user name answers 409. Hiding that needs an email round trip, and email delivery is
 deliberately not in this package. Registration is off by default; turning it on accepts this.
+
+An address registration takes is held unproven. Whoever later proves it - by redeeming an
+`/auth/email` verification link, or by completing an invitation sent to it - takes it over, and the
+account that only typed it loses it. Otherwise registering somebody else's address first would lock
+its owner out of every way in.
 
 That email round trip - and two other ways to get someone into an account without open
 registration - are their own page: [Provisioning accounts](/provisioning-accounts). Proving that an
