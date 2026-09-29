@@ -276,8 +276,14 @@ public class IdentityProviderTokenHttpTests
     /// than a password. The transformation used to write <c>amr=mfa</c> for them, and the
     /// second-factor policy let a phished provider password straight through.
     /// </summary>
+    /// <remarks>
+    /// Run under the default provider key and a configured one. The transformation used to look the
+    /// login up under the default constant, so with any other key it found no enrolment at all.
+    /// </remarks>
     [Test]
-    public async Task A_local_enrolment_does_not_satisfy_the_second_factor_policy_for_a_provider_sign_in()
+    [Arguments(null)]
+    [Arguments("keycloak")]
+    public async Task A_local_enrolment_does_not_satisfy_the_second_factor_policy_for_a_provider_sign_in(string? providerKey)
     {
         using var identityProviderKey = RSA.Create(2048);
         using var localKey = ECDsa.Create(ECCurve.NamedCurves.nistP256);
@@ -285,7 +291,13 @@ public class IdentityProviderTokenHttpTests
         await using var app = await StartAsync(
             identityProviderKey,
             localKey,
-            services => services.AddToamaisutaaTwoFactorClaims(),
+            services =>
+            {
+                services.AddToamaisutaaTwoFactorClaims();
+
+                if (providerKey is not null)
+                    services.Configure<ToamaisutaaProvisioningOptions>(options => options.ProviderKey = providerKey);
+            },
             endpoints =>
             {
                 endpoints.MapGet("/test/second-factor", () => "ok").RequireAuthorization("Toamaisutaa.TwoFactor");
