@@ -41,17 +41,26 @@ public interface IPasswordAccountService
     Task<AccountResult> AdminCreateAccountAsync(string userName, string? email, string? password, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Overwrites <paramref name="userId"/>'s password unconditionally - no current-password check,
-    /// because the caller is acting on someone else's account, not their own. Revokes every local
-    /// session the account holds, the same as a self-service change. <paramref name="password"/> is
-    /// optional: omit it and Toamaisutaa generates one. Either way, the raw value goes to
+    /// Overwrites <paramref name="userId"/>'s password with no current-password check, because the
+    /// caller is acting on someone else's account, not their own. Revokes every local session the
+    /// account holds, the same as a self-service change. <paramref name="password"/> is optional:
+    /// omit it and Toamaisutaa generates one. Either way, the raw value goes to
     /// <see cref="IAdminPasswordIssuedNotifier"/> and is never returned from this call.
     /// </summary>
     /// <remarks>
+    /// <para>
+    /// The notifier is handed the credential's own address, never the profile's: an account with no
+    /// credential, or none on it, reaches the notifier with no address, and the SMTP notifier then
+    /// mails nothing. With <see cref="ToamaisutaaLocalLoginOptions.RequireVerifiedEmailForPasswordReset"/>
+    /// on, an address that was never verified refuses the call before anything changes; an account
+    /// with no address at all is not refused, since nothing would be mailed.
+    /// </para>
+    /// <para>
     /// The revocation happens before the notifier is called and does not depend on it. A notifier
     /// that throws leaves the password set and every session gone, and says so through
     /// <see cref="AccountResult.NotificationFailed"/> - the value reached nobody, so set one again
     /// once delivery works.
+    /// </para>
     /// </remarks>
     Task<AccountResult> AdminSetPasswordAsync(Guid userId, string? password, CancellationToken cancellationToken = default);
 
