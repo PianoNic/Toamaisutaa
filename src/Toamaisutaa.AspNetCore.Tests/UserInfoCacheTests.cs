@@ -235,6 +235,7 @@ public class UserInfoCacheTests
 
         return new UserInfoClaimsEnricher(
             Options.Create(settings ?? new ToamaisutaaOidcOptions()),
+            Options.Create(new ToamaisutaaLocalLoginOptions()),
             new OneHandlerFactory(handler),
             cache,
             NullLoggerFactory.Instance);

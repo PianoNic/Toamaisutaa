@@ -49,9 +49,15 @@ public class IdentityProviderTokenHttpTests
         RSA identityProviderKey,
         ECDsa localKey,
         Action<IServiceCollection>? configureServices = null,
-        Action<IEndpointRouteBuilder>? mapExtra = null)
+        Action<IEndpointRouteBuilder>? mapExtra = null,
+        bool fetchUserInfo = false)
     {
-        var discovered = new OpenIdConnectConfiguration { Issuer = IdentityProvider };
+        var discovered = new OpenIdConnectConfiguration
+        {
+            Issuer = IdentityProvider,
+            UserInfoEndpoint = $"{IdentityProvider}/userinfo",
+        };
+
         discovered.SigningKeys.Add(new RsaSecurityKey(identityProviderKey) { KeyId = IdentityProviderKeyId });
 
         return TestApp.StartAsync(
@@ -59,9 +65,9 @@ public class IdentityProviderTokenHttpTests
             {
                 settings["Oidc:Authority"] = IdentityProvider;
 
-                // The enricher would otherwise ask the stand-in for a userinfo endpoint it has no
-                // reason to publish. These tests are about which key validates a signature.
-                settings["Oidc:FetchClaimsFromUserInfo"] = "false";
+                // Off unless asked for: most of these tests are about which key validates a
+                // signature, and the stand-in has no userinfo endpoint to answer on.
+                settings["Oidc:FetchClaimsFromUserInfo"] = fetchUserInfo ? "true" : "false";
 
                 settings.Remove("LocalLogin:SigningKey");
                 settings["LocalLogin:SigningKeys:0:Kid"] = LocalKeyId;
@@ -327,6 +333,58 @@ public class IdentityProviderTokenHttpTests
 
         await Assert.That(claims).Contains((ToamaisutaaDefaults.TwoFactorEnrolledClaim, "true"));
         await Assert.That(claims.Any(claim => claim.Type == ToamaisutaaDefaults.AuthenticationMethodClaim)).IsFalse();
+    }
+
+    /// <summary>
+    /// A local token carries no role until an application supplies one, which is exactly what used
+    /// to send it to the provider's userinfo endpoint - a credential this package minted, handed to a
+    /// third party as a bearer token on every request. A provider token still goes, which is what
+    /// shows the call is wired at all.
+    /// </summary>
+    [Test]
+    public async Task A_local_token_is_never_sent_to_the_providers_userinfo_endpoint()
+    {
+        using var identityProviderKey = RSA.Create(2048);
+        using var localKey = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+
+        var userInfo = new UserInfoRecorder();
+
+        await using var app = await StartAsync(
+            identityProviderKey,
+            localKey,
+            services => services
+                .AddHttpClient(ToamaisutaaDefaults.UserInfoHttpClientName)
+                .ConfigurePrimaryHttpMessageHandler(() => userInfo),
+            fetchUserInfo: true);
+
+        var local = await Account.RegisterAsync(app);
+        await Assert.That((await app.Client.Get("/test/me", local.AccessToken)).StatusCode).IsEqualTo(HttpStatusCode.OK);
+        await Assert.That(userInfo.BearerTokens).DoesNotContain(local.AccessToken);
+
+        var provider = Mint(
+            app,
+            new RsaSecurityKey(identityProviderKey) { KeyId = IdentityProviderKeyId },
+            SecurityAlgorithms.RsaSha256,
+            IdentityProvider,
+            "grace-subject");
+
+        await app.Client.Get("/test/me", provider);
+        await Assert.That(userInfo.BearerTokens).Contains(provider);
+    }
+
+    private sealed class UserInfoRecorder : HttpMessageHandler
+    {
+        public System.Collections.Concurrent.ConcurrentQueue<string> BearerTokens { get; } = new();
+
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            BearerTokens.Enqueue(request.Headers.Authorization?.Parameter ?? string.Empty);
+
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent("{}", System.Text.Encoding.UTF8, "application/json"),
+            });
+        }
     }
 
     private static Claim AuthTime(DateTimeOffset at) =>

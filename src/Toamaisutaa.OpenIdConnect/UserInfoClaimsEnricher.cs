@@ -30,6 +30,7 @@ namespace Toamaisutaa.OpenIdConnect;
 /// </remarks>
 internal sealed class UserInfoClaimsEnricher(
     IOptions<ToamaisutaaOidcOptions> options,
+    IOptions<ToamaisutaaLocalLoginOptions> localLogin,
     IHttpClientFactory httpClientFactory,
     HybridCache cache,
     ILoggerFactory loggerFactory)
@@ -39,6 +40,15 @@ internal sealed class UserInfoClaimsEnricher(
     public async Task EnrichAsync(TokenValidatedContext context)
     {
         var settings = options.Value;
+
+        // A token this package signed is not the identity provider's to read. Sending it there
+        // handed a local credential to a third party as a bearer token, on every request by any
+        // user whose token carries no role - and it only ever came back 401.
+        if (context.SecurityToken is JsonWebToken token
+            && string.Equals(token.Issuer, localLogin.Value.Issuer, StringComparison.Ordinal))
+        {
+            return;
+        }
 
         if (!UserInfoDecision.ShouldFetch(settings.FetchClaimsFromUserInfo, context.Principal, settings.RoleClaim))
             return;
