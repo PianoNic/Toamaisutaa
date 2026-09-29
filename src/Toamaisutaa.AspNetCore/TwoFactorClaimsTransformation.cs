@@ -19,7 +19,8 @@ namespace Toamaisutaa.AspNetCore;
 internal sealed class TwoFactorClaimsTransformation(
     IServiceProvider services,
     IOptions<ToamaisutaaTwoFactorOptions> options,
-    IOptions<ToamaisutaaProvisioningOptions> provisioningOptions) : IClaimsTransformation
+    IOptions<ToamaisutaaProvisioningOptions> provisioningOptions,
+    IOptions<ToamaisutaaLocalLoginOptions> localLogin) : IClaimsTransformation
 {
     public async Task<ClaimsPrincipal> TransformAsync(ClaimsPrincipal principal)
     {
@@ -28,10 +29,14 @@ internal sealed class TwoFactorClaimsTransformation(
         if (principal.Identity?.IsAuthenticated != true)
             return principal;
 
-        // A locally issued token already carries amr from the issuer, and it is the authority on
-        // what was actually presented. Nothing to add, and nothing worth a database read.
-        if (principal.HasClaim(claim => claim.Type == ToamaisutaaDefaults.AuthenticationMethodClaim))
+        // A locally issued token already says what was presented and whether enrolment is owed.
+        // Recognised by its issuer: this used to be any token carrying amr, and most providers send
+        // one, so their users never got either claim.
+        if (principal.FindFirst("iss")?.Value is { } issuer
+            && string.Equals(issuer, localLogin.Value.Issuer, StringComparison.Ordinal))
+        {
             return principal;
+        }
 
         var subject = principal.FindFirst(provisioningOptions.Value.ClaimNames.Subject)?.Value
             ?? principal.FindFirst(ClaimTypes.NameIdentifier)?.Value;
