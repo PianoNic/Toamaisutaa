@@ -17,28 +17,26 @@ namespace Toamaisutaa.AspNetCore;
 /// </remarks>
 internal sealed class MailRequestCooldown(IOptions<ToamaisutaaLocalLoginOptions> options, TimeProvider timeProvider)
 {
-    /// <summary>Past this many remembered addresses, the expired ones are swept on the next call.</summary>
-    private const int SweepThreshold = 10_000;
+    /// <summary>The longest address RFC 5321 allows. Anything longer names no mailbox, and was
+    /// only ever a way to pin megabytes in this dictionary.</summary>
+    internal const int MaxAddressLength = 254;
 
     private readonly ConcurrentDictionary<string, DateTimeOffset> _lastRequested = new(StringComparer.Ordinal);
+    private long _lastSweepTicks;
 
-    /// <summary>True when a request for <paramref name="email"/> may go ahead now.</summary>
+    /// <summary>True when a request for <paramref name="email"/> may go ahead now. Always false for
+    /// something too long to be an address, which is dropped rather than remembered.</summary>
     internal bool TryEnter(string purpose, string email)
     {
+        if (email.Length > MaxAddressLength)
+            return false;
+
         var cooldown = options.Value.MailRequestCooldown;
         if (cooldown <= TimeSpan.Zero)
             return true;
 
         var now = timeProvider.GetUtcNow();
-
-        if (_lastRequested.Count > SweepThreshold)
-        {
-            foreach (var (key, at) in _lastRequested)
-            {
-                if (now - at >= cooldown)
-                    _lastRequested.TryRemove(key, out _);
-            }
-        }
+        Sweep(now, cooldown);
 
         var address = Key(purpose, email);
 
@@ -63,5 +61,26 @@ internal sealed class MailRequestCooldown(IOptions<ToamaisutaaLocalLoginOptions>
     /// password does not cost the person a minute.</summary>
     internal void Release(string purpose, string email) => _lastRequested.TryRemove(Key(purpose, email), out _);
 
-    private static string Key(string purpose, string email) => $"{purpose}:{Normalizer.Normalize(email)}";
+    /// <summary>The count this holds for testing: what is remembered right now.</summary>
+    internal int Count => _lastRequested.Count;
+
+    // Once a window, whatever the count. Sweeping only past a threshold left everything below it in
+    // memory for the life of the process. What is left is at most one window of requests.
+    private void Sweep(DateTimeOffset now, TimeSpan cooldown)
+    {
+        var last = Interlocked.Read(ref _lastSweepTicks);
+
+        if (now.UtcTicks - last < cooldown.Ticks || Interlocked.CompareExchange(ref _lastSweepTicks, now.UtcTicks, last) != last)
+            return;
+
+        foreach (var (key, at) in _lastRequested)
+        {
+            if (now - at >= cooldown)
+                _lastRequested.TryRemove(key, out _);
+        }
+    }
+
+    // Hashed, so an entry costs the same whatever the caller sent.
+    private static string Key(string purpose, string email) =>
+        $"{purpose}:{Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(Normalizer.Normalize(email))))}";
 }

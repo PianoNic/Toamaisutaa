@@ -583,7 +583,18 @@ public static class ToamaisutaaPasswordEndpointExtensions
                 statusCode: StatusCodes.Status429TooManyRequests);
         }
 
-        var result = await accounts.RequestEmailChangeAsync(user.Id, request.NewEmail, request.CurrentPassword, cancellationToken);
+        AccountResult result;
+
+        try
+        {
+            result = await accounts.RequestEmailChangeAsync(user.Id, request.NewEmail, request.CurrentPassword, cancellationToken);
+        }
+        catch
+        {
+            // A mail server that timed out sent nothing, and the retry must not be told it did.
+            cooldown.Release("email-change", account);
+            throw;
+        }
 
         if (result.Succeeded)
             return Results.NoContent();
