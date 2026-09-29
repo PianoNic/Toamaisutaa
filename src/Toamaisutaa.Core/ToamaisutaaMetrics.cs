@@ -51,6 +51,7 @@ internal sealed class ToamaisutaaMetrics : IDisposable
     private readonly Counter<long> _refreshTokenReuse;
     private readonly Counter<long> _rateLimitRejections;
     private readonly Histogram<double> _passwordVerification;
+    private readonly Counter<long> _mailRequestsDropped;
 
     public ToamaisutaaMetrics()
     {
@@ -83,6 +84,11 @@ internal sealed class ToamaisutaaMetrics : IDisposable
             "toamaisutaa.password.verification.duration",
             unit: "s",
             description: "Time spent in a password key derivation during sign-in.");
+
+        _mailRequestsDropped = _meter.CreateCounter<long>(
+            "toamaisutaa.mail_requests.dropped",
+            unit: "{request}",
+            description: "Reset and magic-link requests answered 204 but dropped because the mail queue was full.");
     }
 
     /// <summary>The meter these instruments belong to, so a test can listen to its own host's
@@ -123,6 +129,9 @@ internal sealed class ToamaisutaaMetrics : IDisposable
     internal void RefreshTokenReuseDetected() => _refreshTokenReuse.Add(1);
 
     internal void RateLimitRejected() => _rateLimitRejections.Add(1);
+
+    /// <summary>A request somebody was told is on its way, that never will be. Never routine.</summary>
+    internal void MailRequestDropped() => _mailRequestsDropped.Add(1);
 
     /// <summary>
     /// One key derivation on the sign-in path.
