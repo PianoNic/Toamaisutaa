@@ -56,13 +56,14 @@ public class EmailVerificationTests
     {
         var harness = PasswordHarness.Create();
         var user = await harness.RegisterAsync();
-        await harness.RegisterAsync("grace", "grace@example.com", "another whole password");
+        await RegisterVerifiedAsync(harness, "grace", "grace@example.com");
+        var sentBefore = harness.EmailVerificationNotifier.Sent.Count;
 
         var result = await harness.Accounts.RequestEmailChangeAsync(user.Id, "grace@example.com", "correct horse battery");
 
         await Assert.That(result.Succeeded).IsFalse();
         await Assert.That(result.Conflict).IsTrue();
-        await Assert.That(harness.EmailVerificationNotifier.Sent).IsEmpty();
+        await Assert.That(harness.EmailVerificationNotifier.Sent.Count).IsEqualTo(sentBefore);
     }
 
     [Test]
@@ -198,15 +199,45 @@ public class EmailVerificationTests
         var harness = PasswordHarness.Create();
         var user = await harness.RegisterAsync();
         await harness.Accounts.RequestEmailChangeAsync(user.Id, "contested@example.com", "correct horse battery");
+        var link = harness.EmailVerificationNotifier.Sent.Single().Token;
 
-        await harness.RegisterAsync("grace", "contested@example.com", "another whole password");
+        await RegisterVerifiedAsync(harness, "grace", "contested@example.com");
 
-        var result = await harness.Accounts.VerifyEmailAsync(harness.EmailVerificationNotifier.Sent.Single().Token);
+        var result = await harness.Accounts.VerifyEmailAsync(link);
 
         await Assert.That(result.Succeeded).IsFalse();
         await Assert.That(result.Conflict).IsTrue();
         await Assert.That(harness.Passwords.Credentials.First(credential => credential.UserId == user.Id).Email)
             .IsEqualTo("nic@example.com");
+    }
+
+    /// <summary>
+    /// Registration takes whatever address it is typed. Holding one that nobody proved used to be
+    /// enough to refuse its real owner forever; proving it now takes it back.
+    /// </summary>
+    [Test]
+    public async Task ProvingAnAddressTakesItFromAnAccountThatNeverDid()
+    {
+        var harness = PasswordHarness.Create();
+        var owner = await harness.RegisterAsync();
+        var squatter = await harness.RegisterAsync("mallory", "contested@example.com", "another whole password");
+
+        var request = await harness.Accounts.RequestEmailChangeAsync(owner.Id, "contested@example.com", "correct horse battery");
+        var result = await harness.Accounts.VerifyEmailAsync(harness.EmailVerificationNotifier.Sent.Single().Token);
+
+        await Assert.That(request.Succeeded).IsTrue();
+        await Assert.That(result.Succeeded).IsTrue();
+        await Assert.That(harness.Passwords.Credentials.First(credential => credential.UserId == owner.Id).Email)
+            .IsEqualTo("contested@example.com");
+        await Assert.That(harness.Passwords.Credentials.First(credential => credential.UserId == squatter.Id).Email)
+            .IsNull();
+    }
+
+    private static async Task RegisterVerifiedAsync(PasswordHarness harness, string userName, string email)
+    {
+        var user = await harness.RegisterAsync(userName, email, "another whole password");
+        await harness.Accounts.RequestEmailChangeAsync(user.Id, email, "another whole password");
+        await harness.Accounts.VerifyEmailAsync(harness.EmailVerificationNotifier.Sent[^1].Token);
     }
 
     // A password change is the moment someone is most likely reacting to a break-in, and a pending

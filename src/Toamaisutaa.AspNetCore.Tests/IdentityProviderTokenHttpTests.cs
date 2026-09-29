@@ -203,6 +203,39 @@ public class IdentityProviderTokenHttpTests
     }
 
     /// <summary>
+    /// The provider's email is only what the provider asserted. A first password used to copy it
+    /// onto the credential as a login identifier and a reset address, for a mailbox nobody had shown
+    /// this account owns.
+    /// </summary>
+    [Test]
+    public async Task A_first_password_does_not_make_the_providers_email_a_login_identifier()
+    {
+        using var identityProviderKey = RSA.Create(2048);
+        using var localKey = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+
+        await using var app = await StartAsync(identityProviderKey, localKey);
+        var key = new RsaSecurityKey(identityProviderKey) { KeyId = IdentityProviderKeyId };
+
+        var fresh = Mint(
+            app,
+            key,
+            SecurityAlgorithms.RsaSha256,
+            IdentityProvider,
+            "grace-subject",
+            AuthTime(app.Time.Now.AddMinutes(-1)),
+            new Claim("email", "victim@example.com"));
+
+        var set = await app.Client.PostJson("/auth/password", new { newPassword = Account.DefaultPassword }, fresh);
+        await Assert.That(set.StatusCode).IsEqualTo(HttpStatusCode.NoContent);
+
+        var byEmail = await app.Client.PostJson("/auth/login", new { identifier = "victim@example.com", password = Account.DefaultPassword });
+        var byUserName = await app.Client.PostJson("/auth/login", new { identifier = "grace", password = Account.DefaultPassword });
+
+        await Assert.That(byEmail.StatusCode).IsEqualTo(HttpStatusCode.Unauthorized);
+        await Assert.That(byUserName.StatusCode).IsEqualTo(HttpStatusCode.OK);
+    }
+
+    /// <summary>
     /// An account an identity provider owns has no password to give, so a recent sign-in there is
     /// the proof enrolment takes instead.
     /// </summary>

@@ -107,6 +107,24 @@ public class PasswordAccountServiceTests
         await Assert.That(harness.Passwords.Credentials).IsEmpty();
     }
 
+    /// <summary>
+    /// The provider's address is only what the provider asserted. Copied onto the credential, it was
+    /// a reset address for a mailbox nobody had proven this account owns - so the mailbox's real
+    /// owner could reset and adopt an account whose provider login belongs to someone else.
+    /// </summary>
+    [Test]
+    public async Task AFirstPasswordDoesNotMakeTheProvidersAddressAResetAddress()
+    {
+        var harness = PasswordHarness.Create();
+        var user = harness.ProvisionExternalUser("victim@example.com", "ssouser");
+
+        await harness.Accounts.SetPasswordAsync(user.Id, null, Password, harness.Clock.GetUtcNow());
+        var outcome = await harness.Accounts.RequestPasswordResetAsync("victim@example.com");
+
+        await Assert.That(outcome).IsNotEqualTo(PasswordResetRequestOutcome.Sent);
+        await Assert.That(harness.Notifier.Sent).IsEmpty();
+    }
+
     [Test]
     public async Task GivingACurrentPasswordToAnAccountThatHasNoneIsRefused()
     {
@@ -320,6 +338,11 @@ public class PasswordAccountServiceTests
         });
 
         await harness.Accounts.SetPasswordAsync(user.Id, null, Password, harness.Clock.GetUtcNow());
+
+        // A first password carries no address, so one is proven before a reset can be asked for.
+        await harness.Accounts.RequestEmailChangeAsync(user.Id, "both@example.com", Password);
+        await harness.Accounts.VerifyEmailAsync(harness.EmailVerificationNotifier.Sent.Single().Token);
+
         await harness.Accounts.RequestPasswordResetAsync("both@example.com");
         await harness.Accounts.ResetPasswordAsync(harness.Notifier.Sent.Single().Token, "a whole new password");
 

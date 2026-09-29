@@ -64,7 +64,10 @@ public class EmailVerificationHttpTests
     {
         await using var app = await TestApp.StartAsync();
         var account = await Account.RegisterAsync(app);
-        await Account.RegisterAsync(app, "grace");
+
+        // Verified, because an unproven hold gives way to whoever proves the address.
+        var grace = await Account.RegisterAsync(app, "grace");
+        await grace.VerifyEmailAsync();
 
         var response = await app.Client.PostJson(
             "/auth/email",

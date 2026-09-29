@@ -111,10 +111,15 @@ internal sealed class PasswordAccountService(
             if (string.IsNullOrWhiteSpace(userName))
                 return AccountResult.Failure("This account has no user name or email address to sign in with. Set one first.");
 
+            // No email on the credential. The address on the profile is whatever the identity
+            // provider asserted, and nothing here knows that anybody proved it: copied in, it became
+            // a login identifier and a reset address for a mailbox the account may not own, so the
+            // real owner's forgot-password adopted an account somebody else's provider login still
+            // opens. The address can be added through /auth/email, which proves it.
             try
             {
                 await credentials.CreateCheckedAsync(
-                    BuildCredential(userId, userName.Trim(), user.Email, newPassword, now),
+                    BuildCredential(userId, userName.Trim(), email: null, newPassword, now),
                     cancellationToken);
             }
             catch (PasswordIdentifierConflictException)
@@ -316,8 +321,10 @@ internal sealed class PasswordAccountService(
 
         // Checked here as well as on redemption. Doing it only on redemption would mail a link that
         // cannot work, and the person holding it has no way to tell that from a broken link. Against
-        // user names too: the sign-in box takes either, so they are one namespace.
-        if (await credentials.IsTakenByAnotherAsync(userId, normalized, cancellationToken))
+        // user names too: the sign-in box takes either, so they are one namespace. An address another
+        // account holds without having proven it is not refused: redeeming this link proves it, and
+        // releases theirs.
+        if (await IsHeldFirmlyByAnotherAsync(normalized, userId, cancellationToken))
         {
             logger.LogInformation("Email change refused for user {UserId}: another local account already uses that address.", userId);
             return AccountResult.Taken("That email address is already in use.");
@@ -372,12 +379,15 @@ internal sealed class PasswordAccountService(
 
         // Checked again, because the link may have sat in a mailbox for a day while somebody else
         // took the address. The unique index would answer this too, as an exception rather than a
-        // sentence the person can read.
-        if (await credentials.IsTakenByAnotherAsync(stored.UserId, normalized, cancellationToken))
+        // sentence the person can read. Redeeming the link is proof of the mailbox, so an unproven
+        // hold on the address gives way to it rather than refusing it.
+        if (await IsHeldFirmlyByAnotherAsync(normalized, stored.UserId, cancellationToken))
         {
             logger.LogInformation("Email verification refused for user {UserId}: another local account now uses that address.", stored.UserId);
             return AccountResult.Taken("That email address is already in use.");
         }
+
+        await ReleaseUnverifiedHoldAsync(normalized, stored.UserId, now, cancellationToken);
 
         var previousEmail = credential.Email;
 
@@ -600,16 +610,27 @@ internal sealed class PasswordAccountService(
 
         var trimmedUserName = userName.Trim();
 
+        // The invitation went to this address and came back, which proves the mailbox. So it is
+        // verified from the start, and an unproven hold on it - a registration that got there
+        // first - gives way instead of turning every name the invitee tries into a 409.
+        var credential = BuildCredential(user.Id, trimmedUserName, user.Email, password, now);
+
+        if (credential.NormalizedEmail is { } invitedAddress)
+        {
+            credential.EmailConfirmedAt = now;
+            await ReleaseUnverifiedHoldAsync(invitedAddress, user.Id, now, cancellationToken);
+        }
+
         try
         {
-            await credentials.CreateCheckedAsync(BuildCredential(user.Id, trimmedUserName, user.Email, password, now), cancellationToken);
+            await credentials.CreateCheckedAsync(credential, cancellationToken);
         }
         catch (PasswordIdentifierConflictException)
         {
-            // The reservation survives a taken user name untouched: the token is still unconsumed
-            // and nothing was written to the user row, so the same person can simply try again.
-            logger.LogInformation("Invitation completion refused: the user name is already in use.");
-            return AccountResult.Taken("That user name is already in use.");
+            // The reservation survives a conflict untouched: the token is still unconsumed and
+            // nothing was written to the user row, so the same person can simply try again.
+            logger.LogInformation("Invitation completion refused: the user name or the invited address is already in use.");
+            return AccountResult.Taken("That user name or email address is already in use.");
         }
 
         await users.SetUserNameAsync(user.Id, trimmedUserName, cancellationToken);
@@ -808,6 +829,54 @@ internal sealed class PasswordAccountService(
             CreatedAt = now,
             UpdatedAt = now,
         };
+
+    /// <summary>
+    /// A proven claim to an address outranks an unproven hold on it. Registration takes whatever
+    /// address it is typed, so without this anybody could register a new hire's address first and
+    /// leave the real owner with a 409 on every way in and no way to put it right.
+    /// </summary>
+    private async Task ReleaseUnverifiedHoldAsync(
+        string normalizedEmail,
+        Guid claimant,
+        DateTimeOffset now,
+        CancellationToken cancellationToken)
+    {
+        var holder = await credentials.FindByNormalizedEmailAsync(normalizedEmail, cancellationToken);
+        if (holder is null || holder.UserId == claimant || holder.EmailConfirmedAt is not null)
+            return;
+
+        await credentials.UpdateAsync(
+            holder,
+            current =>
+            {
+                if (current.EmailConfirmedAt is not null || current.NormalizedEmail != normalizedEmail)
+                    return;
+
+                current.Email = null;
+                current.NormalizedEmail = null;
+                current.UpdatedAt = now;
+            },
+            cancellationToken);
+
+        logger.LogWarning(
+            "Released the unverified email address held by user {HolderId}: user {ClaimantId} proved they own it.",
+            holder.UserId,
+            claimant);
+    }
+
+    /// <summary>
+    /// Whether an address is held in a way a proven claim cannot take over: as another account's user
+    /// name, or as its verified email. An unverified email hold does not count - verifying releases it.
+    /// </summary>
+    private async Task<bool> IsHeldFirmlyByAnotherAsync(string normalizedEmail, Guid userId, CancellationToken cancellationToken)
+    {
+        var holder = await credentials.FindByIdentifierAsync(normalizedEmail, cancellationToken);
+
+        if (holder is null || holder.UserId == userId)
+            return false;
+
+        return holder.NormalizedEmail != normalizedEmail || holder.EmailConfirmedAt is not null;
+    }
 
     /// <summary>
     /// The user as a notifier should see them: addressed to the email on the credential, which is
