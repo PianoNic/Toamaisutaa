@@ -66,6 +66,31 @@ public class MetricsHttpTests
 /// <see cref="TestApp"/> in the suite publishes a meter called <c>Toamaisutaa</c> and two of them
 /// running at once would otherwise count each other.
 /// </remarks>
+/// <summary>
+/// The sign-in series says what the caller was told, and the caller is told the same thing for an
+/// unknown name, a wrong password and a locked account. Tagged apart, whoever could read the scrape
+/// endpoint learned which of their guesses named a real account.
+/// </summary>
+public class SignInMetricTagHttpTests
+{
+    [Test]
+    public async Task An_unknown_name_and_a_wrong_password_are_counted_under_one_result()
+    {
+        await using var app = await TestApp.StartAsync();
+        var account = await Account.RegisterAsync(app);
+
+        using var probe = new InstrumentProbe(app, "toamaisutaa.sign_in.attempts");
+
+        await app.Client.PostJson("/auth/login", new { identifier = "nobody-at-all", password = "whatever" });
+        await app.Client.PostJson("/auth/login", new { identifier = account.UserName, password = "not the password" });
+
+        var results = probe.Results.ToList();
+
+        await Assert.That(results).HasCount().EqualTo(2);
+        await Assert.That(results[0]).IsEqualTo(results[1]);
+    }
+}
+
 internal sealed class InstrumentProbe : IDisposable
 {
     private readonly MeterListener _listener = new();
@@ -81,11 +106,24 @@ internal sealed class InstrumentProbe : IDisposable
                 listener.EnableMeasurementEvents(instrument);
         };
 
-        _listener.SetMeasurementEventCallback<long>((_, value, _, _) => Interlocked.Add(ref _total, value));
+        _listener.SetMeasurementEventCallback<long>((_, value, tags, _) =>
+        {
+            Interlocked.Add(ref _total, value);
+
+            foreach (var tag in tags)
+            {
+                if (tag.Key == "result")
+                    Results.Enqueue(tag.Value?.ToString());
+            }
+        });
+
         _listener.Start();
     }
 
     internal long Total => Interlocked.Read(ref _total);
+
+    /// <summary>The <c>result</c> tag of every measurement, in order.</summary>
+    internal System.Collections.Concurrent.ConcurrentQueue<string?> Results { get; } = new();
 
     public void Dispose() => _listener.Dispose();
 }
