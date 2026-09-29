@@ -25,9 +25,10 @@ public interface IMagicLinkNotifier
     /// is a hash. Put it in a link your own sign-in page understands.
     /// </summary>
     /// <remarks>
-    /// Send it to <see cref="ToamaisutaaUser.Email"/> and nowhere else. That address has been
-    /// verified by the time this is called, which is the whole reason a link is allowed to be a
-    /// credential at all.
+    /// Send it to <see cref="ToamaisutaaUser.Email"/> on the <paramref name="user"/> passed here and
+    /// nowhere else. That is the verified address on the local credential, filled in for this call,
+    /// which is the whole reason a link is allowed to be a credential at all. Do not look the user
+    /// up again and mail the profile's address instead: an identity provider's sync writes that one.
     /// </remarks>
     Task SendAsync(ToamaisutaaUser user, string magicLinkToken, CancellationToken cancellationToken = default);
 }
