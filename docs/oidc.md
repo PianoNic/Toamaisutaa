@@ -37,7 +37,7 @@ Everything binds from the `Oidc` section.
 | `Oidc:RequireAdminRoleGlobally` | `false` | Puts the admin role in the fallback policy and the default policy, so every endpoint that is not anonymous - a bare `[Authorize]` and this package's own included - is admin-only |
 | `Oidc:QueryToken:IncludePaths:0` | | Path prefixes where `?access_token=` is honoured, for SignalR |
 | `Oidc:QueryToken:ExcludePaths:0` | | Carved back out of the above |
-| `Oidc:HealthCheck:RefreshInterval` | `00:05:00` | How long the health check trusts a successful fetch |
+| `Oidc:HealthCheck:RefreshInterval` | `00:05:00` | How long the health check trusts a successful fetch, and remembers a failed one |
 | `Oidc:HealthCheck:Timeout` | `00:00:05` | How long one fetch is given before it counts as unreachable |
 | `Oidc:HealthCheck:DegradedFor` | `00:15:00` | How long after the last successful fetch an unreachable issuer stays degraded |
 
@@ -148,7 +148,9 @@ app.MapHealthChecks("/ready", new HealthCheckOptions { Predicate = check => chec
 
 A successful fetch is trusted for `Oidc:HealthCheck:RefreshInterval`, and probes in between are
 answered from it. Readiness probes run every few seconds across every replica, and fetching on each
-one would put a steady load on the issuer for an answer that changes rarely.
+one would put a steady load on the issuer for an answer that changes rarely. A failed fetch is
+remembered for the same interval, and probes that arrive together share one request, so an issuer
+that is struggling is not also handed a fetch per probe - the health endpoint is usually anonymous.
 
 To put a proxy or a handler on the probe without touching the path a signed-in request takes,
 configure the named client `toamaisutaa-discovery`.

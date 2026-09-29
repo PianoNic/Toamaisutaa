@@ -40,6 +40,15 @@ internal sealed class DiscoveryHealthCheck(
 {
     private volatile Fetch? _lastSuccess;
 
+    /// <summary>The last failed probe, answered from until it is as old as a success would be. The
+    /// endpoint is anonymous, and without this every probe while the issuer was failing went out to
+    /// it again - the moment it could least take the traffic.</summary>
+    private volatile Failure? _lastFailure;
+
+    /// <summary>One probe at a time. The ones that arrive while it runs wait for its answer instead
+    /// of each sending their own.</summary>
+    private readonly SemaphoreSlim _probing = new(1, 1);
+
     public async Task<HealthCheckResult> CheckHealthAsync(
         HealthCheckContext context,
         CancellationToken cancellationToken = default)
@@ -56,22 +65,63 @@ internal sealed class DiscoveryHealthCheck(
         }
 
         var now = time.GetUtcNow();
+
+        if (Answered(address, settings, now) is { } answered)
+            return answered;
+
+        await _probing.WaitAsync(cancellationToken);
+
+        try
+        {
+            // Whoever held the gate may have just answered this.
+            now = time.GetUtcNow();
+
+            if (Answered(address, settings, now) is { } justAnswered)
+                return justAnswered;
+
+            var (issuer, failure) = await ProbeAsync(address, settings.HealthCheck.Timeout, cancellationToken);
+
+            if (issuer is not null)
+            {
+                var fetched = new Fetch(now, issuer);
+                _lastSuccess = fetched;
+                _lastFailure = null;
+                return Reachable(address, fetched, now);
+            }
+
+            _lastFailure = new Failure(now, failure!);
+            return Unreachable(address, settings, _lastSuccess, failure!, now);
+        }
+        finally
+        {
+            _probing.Release();
+        }
+    }
+
+    /// <summary>
+    /// The last result, when it is recent enough to stand. A readiness probe runs every few seconds
+    /// across every replica, and the issuer would otherwise carry all of it - succeeding or not.
+    /// </summary>
+    private HealthCheckResult? Answered(string address, ToamaisutaaOidcOptions settings, DateTimeOffset now)
+    {
         var cached = _lastSuccess;
 
-        // Answered from the last result in between, because a readiness probe runs every few
-        // seconds across every replica and the issuer would carry all of it.
         if (cached is not null && now - cached.At < settings.HealthCheck.RefreshInterval)
             return Reachable(address, cached, now);
 
-        var (issuer, failure) = await ProbeAsync(address, settings.HealthCheck.Timeout, cancellationToken);
+        if (_lastFailure is { } failed && now - failed.At < settings.HealthCheck.RefreshInterval)
+            return Unreachable(address, settings, cached, failed.Reason, now);
 
-        if (issuer is not null)
-        {
-            var fetched = new Fetch(now, issuer);
-            _lastSuccess = fetched;
-            return Reachable(address, fetched, now);
-        }
+        return null;
+    }
 
+    private static HealthCheckResult Unreachable(
+        string address,
+        ToamaisutaaOidcOptions settings,
+        Fetch? cached,
+        string failure,
+        DateTimeOffset now)
+    {
         if (cached is null)
         {
             return HealthCheckResult.Unhealthy(
@@ -191,4 +241,6 @@ internal sealed class DiscoveryHealthCheck(
     }
 
     private sealed record Fetch(DateTimeOffset At, string Issuer);
+
+    private sealed record Failure(DateTimeOffset At, string Reason);
 }
