@@ -1,6 +1,8 @@
 using System.Globalization;
 using System.Security.Claims;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Mvc.ModelBinding;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
@@ -53,15 +55,21 @@ public static class ToamaisutaaPasskeyEndpointExtensions
 
         group.MapDelete("/{id:guid}", DeleteAsync)
             .RequireAuthorization()
+            .AddEndpointFilter<PasswordRateLimitFilter>()
             .WithName($"{endpointNamePrefix}ToamaisutaaDeletePasskey")
-            .WithSummary("Deletes one passkey by its id.")
+            .WithSummary("Deletes one passkey by its id. Takes the same proof registering does.")
             .WithDescription(
-                "404 covers both a passkey that does not exist and one belonging to someone else, so "
-                + "this cannot be used to discover another account's credential ids. Deleting the "
-                + "last one on an account with no password leaves nothing to sign in with.")
+                "Send `currentPassword`, or call this from a session that presented a second factor "
+                + "within `Passkeys:RegistrationProofWindow`. 404 covers both a passkey that does not "
+                + "exist and one belonging to someone else, so this cannot be used to discover another "
+                + "account's credential ids. Deleting one ends every session on the account, this one "
+                + "included. Deleting the last one on an account with no password leaves nothing to "
+                + "sign in with.")
             .Produces(StatusCodes.Status204NoContent)
+            .Produces<ValidationErrorResponse>(StatusCodes.Status400BadRequest)
             .Produces<ErrorResponse>(StatusCodes.Status401Unauthorized)
-            .Produces(StatusCodes.Status404NotFound);
+            .Produces(StatusCodes.Status404NotFound)
+            .Produces(StatusCodes.Status429TooManyRequests);
 
         group.MapPost("/register/begin", BeginRegistrationAsync)
             .RequireAuthorization()
@@ -138,15 +146,27 @@ public static class ToamaisutaaPasskeyEndpointExtensions
 
     private static async Task<IResult> DeleteAsync(
         Guid id,
+        [FromBody(EmptyBodyBehavior = EmptyBodyBehavior.Allow)] PasskeyRegistrationProof? proof,
+        HttpContext context,
         ICurrentUser currentUser,
         IPasskeyService passkeys,
         CancellationToken cancellationToken)
     {
         var user = await currentUser.GetOrProvisionAsync(cancellationToken);
 
-        return await passkeys.DeleteAsync(user.Id, id, cancellationToken)
-            ? Results.NoContent()
-            : Results.NotFound();
+        // As for registration: the second factor comes off the caller's own token, never the body.
+        var presented = (proof ?? new PasskeyRegistrationProof()) with { SecondFactorAt = SecondFactorAt(context.User) };
+
+        try
+        {
+            return await passkeys.DeleteAsync(user.Id, id, presented, cancellationToken)
+                ? Results.NoContent()
+                : Results.NotFound();
+        }
+        catch (PasskeyRegistrationException exception)
+        {
+            return Results.BadRequest(new ValidationErrorResponse { Errors = [exception.Message] });
+        }
     }
 
     private static async Task<IResult> BeginRegistrationAsync(

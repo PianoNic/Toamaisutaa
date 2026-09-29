@@ -517,14 +517,68 @@ public class PasskeyHttpTests
         var created = await (await Passkeys.RegisterAsync(app, account.AccessToken, authenticator)).Json();
         var id = created.String("id")!;
 
-        await Assert.That((await app.Client.Delete($"/auth/passkeys/{id}", account.AccessToken)).StatusCode)
+        await Assert.That((await app.Client.Delete($"/auth/passkeys/{id}", new { currentPassword = account.Password }, account.AccessToken)).StatusCode)
             .IsEqualTo(HttpStatusCode.NoContent);
 
-        var listed = await (await app.Client.Get("/auth/passkeys", account.AccessToken)).Json();
+        // Deleting ended every session, the one that did it included, so the list is read from a new one.
+        var signedIn = await (await account.LoginAsync()).Json();
+        var listed = await (await app.Client.Get("/auth/passkeys", signedIn.String("access_token"))).Json();
         await Assert.That(listed.EnumerateArray().ToList()).HasCount().EqualTo(0);
 
         await Assert.That((await Passkeys.SignInAsync(app, authenticator)).StatusCode)
             .IsEqualTo(HttpStatusCode.Unauthorized);
+    }
+
+    /// <summary>
+    /// A bearer token alone used to be enough to delete a passkey - every passkey, on an account that
+    /// has no password, which is the owner locked out by whoever lifted the token.
+    /// </summary>
+    [Test]
+    public async Task Deleting_a_passkey_takes_more_than_a_bearer_token()
+    {
+        await using var app = await TestApp.StartAsync();
+        var account = await Account.RegisterAsync(app);
+        using var authenticator = new SoftwareAuthenticator();
+
+        var id = (await (await Passkeys.RegisterAsync(app, account.AccessToken, authenticator)).Json()).String("id")!;
+
+        var bare = await app.Client.Delete($"/auth/passkeys/{id}", account.AccessToken);
+        var wrong = await app.Client.Delete($"/auth/passkeys/{id}", new { currentPassword = "not the password" }, account.AccessToken);
+
+        await Assert.That(bare.StatusCode).IsEqualTo(HttpStatusCode.BadRequest);
+        await Assert.That(wrong.StatusCode).IsEqualTo(HttpStatusCode.BadRequest);
+
+        var listed = await (await app.Client.Get("/auth/passkeys", account.AccessToken)).Json();
+        await Assert.That(listed.EnumerateArray().ToList()).HasCount().EqualTo(1);
+    }
+
+    /// <summary>
+    /// A key is removed when somebody suspects it is not only in their hands. Nothing records which
+    /// session it opened, so every session ends - or the one it opened outlives it.
+    /// </summary>
+    [Test]
+    public async Task Deleting_a_passkey_ends_the_sessions_on_the_account()
+    {
+        await using var app = await TestApp.StartAsync();
+        var account = await Account.RegisterAsync(app);
+        using var authenticator = new SoftwareAuthenticator();
+
+        var id = (await (await Passkeys.RegisterAsync(app, account.AccessToken, authenticator)).Json()).String("id")!;
+        var opened = await (await Passkeys.SignInAsync(app, authenticator)).Json();
+
+        await app.Client.Delete($"/auth/passkeys/{id}", new { currentPassword = account.Password }, account.AccessToken);
+
+        var refreshed = await app.Client.PostJson("/auth/refresh", new { refreshToken = opened.String("refresh_token") });
+        await Assert.That(refreshed.StatusCode).IsEqualTo(HttpStatusCode.Unauthorized);
+
+        // Access tokens already out there stop working too, not only their refresh.
+        await Assert.That((await app.Client.Get("/auth/passkeys", opened.String("access_token"))).StatusCode)
+            .IsEqualTo(HttpStatusCode.Unauthorized);
+
+        // Ended, not merely unrefreshable: a fresh sign-in sees itself and nothing from before.
+        var fresh = await (await account.LoginAsync()).Json();
+        var sessions = await (await app.Client.Get("/auth/sessions", fresh.String("access_token"))).Json();
+        await Assert.That(sessions.EnumerateArray().ToList()).HasCount().EqualTo(1);
     }
 
     /// <summary>
@@ -541,7 +595,7 @@ public class PasskeyHttpTests
 
         var created = await (await Passkeys.RegisterAsync(app, owner.AccessToken, authenticator)).Json();
 
-        var response = await app.Client.Delete($"/auth/passkeys/{created.String("id")}", other.AccessToken);
+        var response = await app.Client.Delete($"/auth/passkeys/{created.String("id")}", new { currentPassword = other.Password }, other.AccessToken);
         await Assert.That(response.StatusCode).IsEqualTo(HttpStatusCode.NotFound);
 
         // And it is still there for the person who owns it.

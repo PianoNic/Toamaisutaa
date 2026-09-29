@@ -225,6 +225,14 @@ one shot, so a failed one is not a typo.
 uses. `404` covers both a passkey that does not exist and one belonging to somebody else, so the
 endpoint cannot be used to find out which ids are real.
 
+It takes the same proof registering does - `{ "currentPassword": "..." }` in the body, or a second
+factor within `Passkeys:RegistrationProofWindow` - and answers `400` without it. A bearer token alone
+could otherwise delete every passkey on an account that has no password.
+
+Deleting one ends every session on the account, including the one that asked. Nothing records which
+session a given key opened, and a key is removed when somebody suspects it is not only in their hands,
+so none of them is left to outlive it. Sign in again afterwards.
+
 ### And by a password reset
 
 Setting a password deletes every passkey on the account, wherever it is set from: `/auth/password`,
