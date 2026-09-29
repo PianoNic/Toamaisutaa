@@ -118,6 +118,13 @@ public sealed class ToamaisutaaLocalLoginOptions
     public TimeSpan PasswordResetTokenLifetime { get; set; } = TimeSpan.FromHours(1);
 
     /// <summary>
+    /// How long after a reset or magic-link request for an address the next one for that address is
+    /// quietly dropped. Each request mails a new link and retires the last, so without it one inbox
+    /// can be flooded and its owner never holds a link long enough to use. Zero turns it off.
+    /// </summary>
+    public TimeSpan MailRequestCooldown { get; set; } = TimeSpan.FromMinutes(1);
+
+    /// <summary>
     /// Longer than <see cref="PasswordResetTokenLifetime"/> on purpose: a reset link answers "I
     /// cannot sign in right now", read within minutes; an invitation waits on someone who was not
     /// expecting it, and a week is nearer how long that email actually sits unread.

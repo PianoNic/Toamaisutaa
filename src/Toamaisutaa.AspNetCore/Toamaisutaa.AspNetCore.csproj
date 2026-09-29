@@ -21,5 +21,8 @@
          like the ones next to them - the same stale-stamp filter, the same limiter, the same body
          as /auth/login - and a second copy of any of those would be a second answer. -->
     <InternalsVisibleTo Include="Toamaisutaa.Passkeys" />
+    <!-- For the mail queue, whose work runs after the response: the test host waits for it so a
+         test can read what a notifier was handed, the way it could when sending was inline. -->
+    <InternalsVisibleTo Include="Toamaisutaa.AspNetCore.Tests" />
   </ItemGroup>
 </Project>

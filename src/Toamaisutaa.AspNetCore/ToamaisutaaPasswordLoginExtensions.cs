@@ -98,6 +98,11 @@ public static class ToamaisutaaPasswordLoginExtensions
         // Program.cs cannot silently leave the anonymous endpoints unthrottled.
         services.TryAddSingleton<PasswordRateLimiter>();
 
+        services.TryAddSingleton<MailRequestCooldown>();
+        services.TryAddSingleton<MailRequestQueue>();
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IHostedService, MailRequestQueue>(
+            provider => provider.GetRequiredService<MailRequestQueue>()));
+
         // A typed factory, not a plain one: TryAddEnumerable needs to know the implementation type
         // to tell this apart from every other hosted service.
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IHostedService, PasswordLoginStartupCheck>(provider =>

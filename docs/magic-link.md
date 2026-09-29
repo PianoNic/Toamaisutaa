@@ -40,7 +40,9 @@ inbox view, and keep the page it points at off anything that records query strin
 
 **`POST /auth/magic-link`** - anonymous. Answers 204 for an address nobody holds, for an account an
 identity provider owns, and for an address nobody has verified, exactly as it does for a link on its
-way. The log says which.
+way. The log says which. As with a reset, the work happens after the response, so the time taken
+says nothing either, and `LocalLogin:MailRequestCooldown` drops a second request for one address
+inside a minute.
 
 ```json
 { "email": "ada@example.com" }

@@ -142,7 +142,7 @@ public static class ToamaisutaaPasswordEndpointExtensions
             .Produces<ErrorResponse>(StatusCodes.Status401Unauthorized)
             .Produces(StatusCodes.Status429TooManyRequests);
 
-        group.MapPost("/password/forgot", ForgotPasswordAsync)
+        group.MapPost("/password/forgot", ForgotPassword)
             .AllowAnonymous()
             .AddEndpointFilter<PasswordRateLimitFilter>()
             .WithName($"{endpointNamePrefix}ToamaisutaaForgotPassword")
@@ -194,7 +194,7 @@ public static class ToamaisutaaPasswordEndpointExtensions
         // Same reasoning again: no IMagicLinkNotifier, nowhere for the token to go, no endpoints.
         if (endpoints.ServiceProvider.GetService<IMagicLinkNotifier>() is not null)
         {
-            group.MapPost("/magic-link", RequestMagicLinkAsync)
+            group.MapPost("/magic-link", RequestMagicLink)
                 .AllowAnonymous()
                 .AddEndpointFilter<PasswordRateLimitFilter>()
                 .WithName($"{endpointNamePrefix}ToamaisutaaMagicLink")
@@ -494,13 +494,19 @@ public static class ToamaisutaaPasswordEndpointExtensions
             : Results.BadRequest(new ValidationErrorResponse { Errors = result.Errors });
     }
 
-    private static async Task<IResult> ForgotPasswordAsync(
+    private static IResult ForgotPassword(
         ForgotPasswordRequest request,
-        IPasswordAccountService accounts,
-        CancellationToken cancellationToken)
+        MailRequestQueue queue,
+        MailRequestCooldown cooldown)
     {
-        if (request is not null && !string.IsNullOrEmpty(request.Email))
-            await accounts.RequestPasswordResetAsync(request.Email, cancellationToken);
+        // Queued rather than awaited, so an address with an account takes no longer to answer than
+        // one without: waiting on the mail server here told the clock what the body would not.
+        if (request is not null && !string.IsNullOrEmpty(request.Email) && cooldown.TryEnter("reset", request.Email))
+        {
+            var email = request.Email;
+            queue.Enqueue((services, cancellationToken) =>
+                services.GetRequiredService<IPasswordAccountService>().RequestPasswordResetAsync(email, cancellationToken));
+        }
 
         // Unknown address, no local credential, and a link on its way are one answer. The log tells
         // them apart.
@@ -561,13 +567,18 @@ public static class ToamaisutaaPasswordEndpointExtensions
             : Results.BadRequest(new ValidationErrorResponse { Errors = result.Errors });
     }
 
-    private static async Task<IResult> RequestMagicLinkAsync(
+    private static IResult RequestMagicLink(
         MagicLinkRequest request,
-        IPasswordAccountService accounts,
-        CancellationToken cancellationToken)
+        MailRequestQueue queue,
+        MailRequestCooldown cooldown)
     {
-        if (request is not null && !string.IsNullOrEmpty(request.Email))
-            await accounts.RequestMagicLinkAsync(request.Email, cancellationToken);
+        // Queued for the same reason as a reset: the answer must not wait on whether mail is sent.
+        if (request is not null && !string.IsNullOrEmpty(request.Email) && cooldown.TryEnter("magic-link", request.Email))
+        {
+            var email = request.Email;
+            queue.Enqueue((services, cancellationToken) =>
+                services.GetRequiredService<IPasswordAccountService>().RequestMagicLinkAsync(email, cancellationToken));
+        }
 
         // Unknown address, no local credential, an unverified address and a link on its way are one
         // answer. The log tells them apart.

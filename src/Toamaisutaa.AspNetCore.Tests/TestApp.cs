@@ -14,6 +14,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.IdentityModel.JsonWebTokens;
 using Microsoft.IdentityModel.Tokens;
 using Toamaisutaa.Abstractions;
+using Toamaisutaa.AspNetCore;
 using Toamaisutaa.EntityFrameworkCore;
 
 namespace Toamaisutaa.AspNetCore.Tests;
@@ -74,6 +75,10 @@ internal sealed class TestApp : IAsyncDisposable
     public const string AdminUserName = "admin";
 
     public HttpClient Client { get; }
+
+    /// <summary>A client that returns the moment the response does, without waiting for queued
+    /// mail. For the test that the response does not wait for it either.</summary>
+    public HttpClient RawClient => _app.GetTestClient();
 
     /// <summary>The host's own container. For the few assertions that have to read what landed in
     /// the database rather than what came back in a body - a stored password hash is never on the
@@ -171,6 +176,8 @@ internal sealed class TestApp : IAsyncDisposable
             ["LocalLogin:AllowSelfRegistration"] = "true",
             // The limiter is per caller address and every request here comes from the same one.
             ["LocalLogin:RateLimit:Enabled"] = "false",
+            // Tests ask for links to the same address back to back. The cooldown has its own test.
+            ["LocalLogin:MailRequestCooldown"] = "00:00:00",
             ["TwoFactor:EncryptionKey"] = Convert.ToBase64String(new byte[32]),
             ["TrustedDevices:IpAddressStorage"] = "Truncated",
             ["LocalLogin:IpAddressStorage"] = "Truncated",
@@ -307,10 +314,20 @@ internal sealed class TestApp : IAsyncDisposable
 
         await app.StartAsync();
 
+        var server = app.GetTestServer();
+        var queue = app.Services.GetRequiredService<MailRequestQueue>();
+
+        // Waits for queued mail after every response, so a test reads what a notifier was handed the
+        // way it did when sending happened inside the request. RawClient does not wait.
+        var client = new HttpClient(new MailDrainingHandler(queue) { InnerHandler = server.CreateHandler() })
+        {
+            BaseAddress = server.BaseAddress,
+        };
+
         return new TestApp(
             app,
             connection,
-            app.GetTestClient(),
+            client,
             time,
             issuedPasswords,
             issuedInvitations,
@@ -449,5 +466,16 @@ internal sealed class MutableTimeProvider(DateTimeOffset now) : TimeProvider
         var period = TimeSpan.FromSeconds(30);
         var elapsed = TimeSpan.FromTicks(Now.UtcTicks % period.Ticks);
         Advance(period - elapsed + TimeSpan.FromSeconds(1));
+    }
+}
+
+/// <summary>Holds each response until the mail it queued has been handed to its notifier.</summary>
+internal sealed class MailDrainingHandler(MailRequestQueue queue) : DelegatingHandler
+{
+    protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+    {
+        var response = await base.SendAsync(request, cancellationToken);
+        await queue.WhenIdleAsync();
+        return response;
     }
 }
