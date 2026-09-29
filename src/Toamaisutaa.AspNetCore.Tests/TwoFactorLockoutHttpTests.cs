@@ -124,6 +124,36 @@ public class TwoFactorLockoutHttpTests
     }
 
     /// <summary>
+    /// Confirming an enrolment checked its code against nothing: a stolen token that found an
+    /// enrolment the owner had abandoned could guess until two-factor switched on.
+    /// </summary>
+    [Test]
+    public async Task Wrong_codes_at_confirm_lock_the_account_so_the_right_code_is_refused()
+    {
+        await using var app = await TestApp.StartAsync();
+        var account = await Account.RegisterAsync(app);
+
+        var begin = await app.Client.PostJson("/auth/2fa/begin", new { currentPassword = account.Password }, account.AccessToken);
+        var secret = (await begin.Json()).String("secret")!;
+
+        for (var i = 0; i < Threshold; i++)
+        {
+            app.Time.AdvanceToNextTotpStep();
+            var code = Totp.Code(secret, app.Time.Now);
+            var wrong = (char)('0' + ((code[0] - '0' + 1) % 10)) + code[1..];
+
+            await Assert.That((await app.Client.PostJson("/auth/2fa/confirm", new { code = wrong }, account.AccessToken)).StatusCode)
+                .IsEqualTo(HttpStatusCode.BadRequest);
+        }
+
+        app.Time.AdvanceToNextTotpStep();
+        var right = await app.Client.PostJson("/auth/2fa/confirm", new { code = Totp.Code(secret, app.Time.Now) }, account.AccessToken);
+
+        await Assert.That(right.StatusCode).IsEqualTo(HttpStatusCode.BadRequest);
+        await Assert.That((await app.Client.Get("/auth/2fa", account.AccessToken)).Json().Result.Bool("enabled")).IsFalse();
+    }
+
+    /// <summary>
     /// The account-wide count cannot reach an account an identity provider owns, which has no
     /// password to keep it on, so the per-address limit has to be on these routes too.
     /// </summary>

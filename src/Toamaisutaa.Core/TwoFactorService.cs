@@ -107,9 +107,14 @@ internal sealed class TwoFactorService(
         if (enrolment.IsEnabled)
             throw new TwoFactorEnrolmentException("This account already has a confirmed second factor.");
 
-        var verification = await verifier.VerifyAsync(userId, code, requireConfirmed: false, cancellationToken);
+        // Counted like every other code, because confirming pays out too: a stolen token finding an
+        // abandoned enrolment could guess its way to switching two-factor on, unthrottled.
+        var (_, refusal) = await VerifyProofAsync(userId, code, timeProvider.GetUtcNow(), cancellationToken, requireConfirmed: false);
 
-        if (!verification.Succeeded)
+        if (refusal == LockedOutRefusal)
+            throw new TwoFactorEnrolmentException(refusal);
+
+        if (refusal is not null)
         {
             // We cannot tell a wrong code from a stale one - the superseded secret is gone, so
             // there is nothing left to check the code against. What we can tell is that the row was
@@ -234,7 +239,8 @@ internal sealed class TwoFactorService(
         Guid userId,
         string proof,
         DateTimeOffset now,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        bool requireConfirmed = true)
     {
         var passwords = provider.GetService<IPasswordCredentialStore>();
         var credential = passwords is null ? null : await passwords.FindByUserIdAsync(userId, cancellationToken);
@@ -264,10 +270,10 @@ internal sealed class TwoFactorService(
             logger.LogWarning("Two-factor proof refused for user {UserId}: locked out.", userId);
 
             await PublishWrongProofAsync(userId, SignInOutcome.LockedOut, now, cancellationToken);
-            return (default, "Too many wrong codes. Try again later.");
+            return (default, LockedOutRefusal);
         }
 
-        var verification = await verifier.VerifyAsync(userId, proof, requireConfirmed: true, cancellationToken);
+        var verification = await verifier.VerifyAsync(userId, proof, requireConfirmed, cancellationToken);
 
         if (verification.Succeeded)
         {
@@ -302,6 +308,8 @@ internal sealed class TwoFactorService(
         await PublishWrongProofAsync(userId, SignInOutcome.InvalidTwoFactorCode, now, cancellationToken);
         return (verification, "That code is not right.");
     }
+
+    private const string LockedOutRefusal = "Too many wrong codes. Try again later.";
 
     private Task PublishWrongProofAsync(Guid userId, SignInOutcome reason, DateTimeOffset now, CancellationToken cancellationToken) =>
         events.PublishAsync(new TwoFactorFailed { OccurredAt = now, UserId = userId, Reason = reason }, cancellationToken);
