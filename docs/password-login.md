@@ -237,6 +237,24 @@ alternative is an unthrottled online guessing oracle, which is worse. Per-IP rat
 anonymous endpoints covers the other half, and is enforced by the endpoints themselves rather than
 by middleware you have to remember to add.
 
+### Behind a proxy, configure forwarded headers
+
+The limiter keys on the connection's address. An IPv6 caller counts as its /64, since that is what
+one customer is handed; an IPv4 caller counts as its address. Behind a reverse proxy the connection
+comes from the proxy, so unless `UseForwardedHeaders()` rewrites it, every client shares one limit and
+ten junk logins a minute answer 429 for the whole site. When requests arrive from a private or
+loopback address with `X-Forwarded-For` still on them, the package logs a warning once saying so.
+
+```csharp
+builder.Services.Configure<ForwardedHeadersOptions>(options =>
+{
+    options.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;
+    options.KnownProxies.Add(IPAddress.Parse("10.0.0.2")); // your proxy, and only your proxy
+});
+
+app.UseForwardedHeaders();
+```
+
 ### Registration reveals whether an account exists
 
 A taken user name answers 409. Hiding that needs an email round trip, and email delivery is

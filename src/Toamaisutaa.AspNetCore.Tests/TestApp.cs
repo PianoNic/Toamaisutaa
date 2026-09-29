@@ -76,6 +76,9 @@ internal sealed class TestApp : IAsyncDisposable
 
     public HttpClient Client { get; }
 
+    /// <summary>Test-host only: a request carrying this header arrives from the address it names.</summary>
+    public const string RemoteIpHeader = "X-Test-Remote-Ip";
+
     /// <summary>A client that returns the moment the response does, without waiting for queued
     /// mail. For the test that the response does not wait for it either.</summary>
     public HttpClient RawClient => _app.GetTestClient();
@@ -276,14 +279,16 @@ internal sealed class TestApp : IAsyncDisposable
         if (handleStaleStampGlobally)
             app.UseExceptionHandler();
 
-        if (remoteIpAddress is not null)
+        // A per-request address wins over the per-app one, for tests about how callers are told apart.
+        app.Use((context, next) =>
         {
-            app.Use((context, next) =>
-            {
+            if (context.Request.Headers.TryGetValue(RemoteIpHeader, out var perRequest))
+                context.Connection.RemoteIpAddress = System.Net.IPAddress.Parse(perRequest.ToString());
+            else if (remoteIpAddress is not null)
                 context.Connection.RemoteIpAddress = System.Net.IPAddress.Parse(remoteIpAddress);
-                return next(context);
-            });
-        }
+
+            return next(context);
+        });
 
         app.UseAuthentication();
         app.UseAuthorization();
