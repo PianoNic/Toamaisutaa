@@ -163,7 +163,8 @@ internal sealed class PasswordSignInService(
                 return new SignInResult { Outcome = SignInOutcome.TwoFactorRequired, Challenge = challenge };
             }
 
-            await RegisterSuccessAsync(credential, now, cancellationToken);
+            if (!await credentials.TryRegisterSuccessAsync(credential, reservation, now, cancellationToken))
+                return await LockedWhileVerifyingAsync(user.Id, now, cancellationToken);
 
             logger.LogInformation("Sign-in succeeded for user {UserId} with a cached second factor.", user.Id);
 
@@ -189,7 +190,8 @@ internal sealed class PasswordSignInService(
             return cachedResult;
         }
 
-        await RegisterSuccessAsync(credential, now, cancellationToken);
+        if (!await credentials.TryRegisterSuccessAsync(credential, reservation, now, cancellationToken))
+            return await LockedWhileVerifyingAsync(user.Id, now, cancellationToken);
 
         logger.LogInformation("Sign-in succeeded for user {UserId}.", user.Id);
 
@@ -858,6 +860,17 @@ internal sealed class PasswordSignInService(
 
     /// <summary>The count comes off only when a sign-in or step-up has finished, never after a
     /// first factor that still owes a second.</summary>
+    private async Task<SignInResult> LockedWhileVerifyingAsync(Guid userId, DateTimeOffset now, CancellationToken cancellationToken)
+    {
+        logger.LogWarning("Sign-in refused for user {UserId}: the password was right, but other attempts locked the account while it was being checked.", userId);
+
+        await events.PublishAsync(
+            new SignInFailed { OccurredAt = now, UserId = userId, Reason = SignInOutcome.LockedOut },
+            cancellationToken);
+
+        return Refused(SignInOutcome.LockedOut);
+    }
+
     private Task RegisterSuccessAsync(ToamaisutaaPasswordCredential credential, DateTimeOffset now, CancellationToken cancellationToken) =>
         credentials.RegisterSuccessAsync(credential, now, cancellationToken);
 
