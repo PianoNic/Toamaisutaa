@@ -35,7 +35,7 @@ internal sealed class SmtpInvitationNotifier(
 
         var message = new MimeMessage();
         message.From.Add(new MailboxAddress(settings.FromDisplayName ?? string.Empty, settings.From));
-        message.To.Add(new MailboxAddress(user.DisplayName ?? user.Email, user.Email));
+        message.To.Add(new MailboxAddress(string.Empty, user.Email));
         message.Subject = content.Subject;
 
         var body = new BodyBuilder { TextBody = content.PlainTextBody, HtmlBody = content.HtmlBody };

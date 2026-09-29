@@ -43,15 +43,50 @@ public class IdentifierNamespaceHttpTests
         await Assert.That(squat.StatusCode).IsEqualTo(HttpStatusCode.BadRequest);
     }
 
+    /// <summary>
+    /// An address with a display name in front parsed into a To header, and a mail body, that
+    /// carried whatever sentence the caller wrote to whichever inbox they named, from this domain.
+    /// </summary>
+    [Test]
+    public async Task An_address_with_anything_around_it_is_refused_at_registration()
+    {
+        await using var app = await TestApp.StartAsync();
+
+        var register = await app.Client.PostJson(
+            "/auth/register",
+            new { userName = "mallory", email = Dressed, password = Account.DefaultPassword });
+
+        await Assert.That(register.StatusCode).IsEqualTo(HttpStatusCode.BadRequest);
+    }
+
+    [Test]
+    public async Task An_address_with_anything_around_it_is_refused_as_a_new_email()
+    {
+        await using var app = await TestApp.StartAsync();
+        var account = await Account.RegisterAsync(app);
+
+        var change = await app.Client.PostJson(
+            "/auth/email",
+            new { newEmail = Dressed, currentPassword = account.Password },
+            account.AccessToken);
+
+        await Assert.That(change.StatusCode).IsEqualTo(HttpStatusCode.BadRequest);
+    }
+
+    private const string Dressed = "\"Payroll on hold - https://evil.example\" <victim@example.com>";
+
+    /// <summary>A user name can no longer be an address, but one from before that rule still is, and
+    /// the email column must not be handed a second account answering to it.</summary>
     [Test]
     public async Task An_email_equal_to_another_accounts_user_name_is_refused()
     {
         await using var app = await TestApp.StartAsync();
         var victim = await Account.RegisterAsync(app);
+        await GiveAnAddressShapedUserNameAsync(app, victim.UserName, LegacyUserName);
 
         var squat = await app.Client.PostJson(
             "/auth/register",
-            new { userName = "mallory", email = victim.UserName, password = Account.DefaultPassword });
+            new { userName = "mallory", email = LegacyUserName, password = Account.DefaultPassword });
 
         await Assert.That(squat.StatusCode).IsEqualTo(HttpStatusCode.Conflict);
     }
@@ -61,14 +96,29 @@ public class IdentifierNamespaceHttpTests
     {
         await using var app = await TestApp.StartAsync();
         var victim = await Account.RegisterAsync(app);
+        await GiveAnAddressShapedUserNameAsync(app, victim.UserName, LegacyUserName);
         var mallory = await Account.RegisterAsync(app, "mallory");
 
         var change = await app.Client.PostJson(
             "/auth/email",
-            new { newEmail = victim.UserName, currentPassword = mallory.Password },
+            new { newEmail = LegacyUserName, currentPassword = mallory.Password },
             mallory.AccessToken);
 
         await Assert.That(change.StatusCode).IsEqualTo(HttpStatusCode.Conflict);
+    }
+
+    private const string LegacyUserName = "legacy@example.com";
+
+    /// <summary>Written straight through the store, the way a row from before the rule was.</summary>
+    private static async Task GiveAnAddressShapedUserNameAsync(TestApp app, string userName, string address)
+    {
+        await using var scope = app.Services.CreateAsyncScope();
+        var store = scope.ServiceProvider.GetRequiredService<IPasswordCredentialStore>();
+        var credential = (await store.FindByIdentifierAsync(userName.ToUpperInvariant()))!;
+
+        credential.UserName = address;
+        credential.NormalizedUserName = address.ToUpperInvariant();
+        await store.UpdateAsync(credential);
     }
 
     /// <summary>

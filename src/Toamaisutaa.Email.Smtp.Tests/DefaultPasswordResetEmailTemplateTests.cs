@@ -42,11 +42,20 @@ public class DefaultPasswordResetEmailTemplateTests
         await Assert.That(() => Template(null).Build(User(), "raw-token-123")).Throws<InvalidOperationException>();
     }
 
+    /// <summary>
+    /// Anyone could register with a sentence and a URL for a name and somebody else's address, then
+    /// ask for a reset: the mail greeted the stranger's inbox with those words, from this domain.
+    /// </summary>
     [Test]
-    public async Task FallsBackToTheUserNameWhenThereIsNoDisplayName()
+    public async Task CarriesNothingTheUserChose()
     {
-        var content = Template("https://app.example.com/reset?token={token}").Build(User(displayName: null, userName: "ada"), "raw-token-123");
+        var content = Template("https://app.example.com/reset?token={token}")
+            .Build(User(displayName: "Payroll on hold - https://evil.example", userName: "payroll-desk"), "raw-token-123");
 
-        await Assert.That(content.PlainTextBody).Contains("Hi ada,");
+        foreach (var body in new[] { content.PlainTextBody, content.HtmlBody! })
+        {
+            await Assert.That(body).DoesNotContain("evil.example");
+            await Assert.That(body).DoesNotContain("payroll-desk");
+        }
     }
 }
