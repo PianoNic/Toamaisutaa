@@ -56,6 +56,37 @@ public class CurrentPasswordLockoutHttpTests
         await Assert.That(statuses).Contains(HttpStatusCode.TooManyRequests);
     }
 
+    /// <summary>
+    /// A right second factor used to clear the whole count, and the count is the password's too: a
+    /// session holder with the codes could guess the password four times, prove a code, and go again.
+    /// </summary>
+    [Test]
+    [Arguments("step-up")]
+    [Arguments("/auth/2fa/recovery-codes")]
+    public async Task A_right_second_factor_does_not_clear_wrong_passwords(string proveWith)
+    {
+        await using var app = await TestApp.StartAsync();
+        var account = await Account.RegisterAsync(app);
+        await account.EnrolAsync();
+
+        for (var i = 0; i < Threshold - 1; i++)
+            await app.Client.PostJson("/auth/password", Body(account, "not the password"), account.AccessToken);
+
+        app.Time.AdvanceToNextTotpStep();
+
+        var proved = proveWith == "step-up"
+            ? await account.StepUpAsync()
+            : await app.Client.PostJson(proveWith, new { proof = Totp.Code(account.Secret!, app.Time.Now) }, account.AccessToken);
+
+        await Assert.That(proved.IsSuccessStatusCode).IsTrue();
+
+        // At the front door, which reads the same count: new recovery codes move the security stamp,
+        // so the access token is no good for the rest of this.
+        await app.Client.PostJson("/auth/login", new { identifier = account.UserName, password = "not the password" });
+
+        await Assert.That((await account.LoginAsync()).StatusCode).IsEqualTo(HttpStatusCode.Unauthorized);
+    }
+
     private static object Body(Account account, string currentPassword) =>
         new { currentPassword, newPassword = "a whole new passphrase", newEmail = account.Email };
 }
