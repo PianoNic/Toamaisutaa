@@ -50,10 +50,16 @@ internal sealed class EntityFrameworkPasswordStore<TContext>(TContext context)
             : matches.Single(credential => credential.NormalizedUserName == normalizedIdentifier);
     }
 
+    // Compared again once it is back, for the reason FindAsync gives: MySQL's default collation
+    // ignores accents, so VÍCTIM@ and VICTIM@ found the same row and every spelling mailed it past a
+    // cooldown that tells them apart.
     public async Task<ToamaisutaaPasswordCredential?> FindByNormalizedEmailAsync(string normalizedEmail, CancellationToken cancellationToken = default) =>
         await context.Set<ToamaisutaaPasswordCredential>()
             .AsTracking()
-            .FirstOrDefaultAsync(credential => credential.NormalizedEmail == normalizedEmail, cancellationToken);
+            .FirstOrDefaultAsync(credential => credential.NormalizedEmail == normalizedEmail, cancellationToken) is { } found
+            && string.Equals(found.NormalizedEmail, normalizedEmail, StringComparison.Ordinal)
+                ? found
+                : null;
 
     public async Task CreateAsync(ToamaisutaaPasswordCredential credential, CancellationToken cancellationToken = default)
     {
