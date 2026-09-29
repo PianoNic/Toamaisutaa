@@ -211,8 +211,9 @@ back to the password.
 
 The same count covers the proof `/auth/2fa/disable` and `/auth/2fa/recovery-codes` ask for, and all
 three code-taking management endpoints (`confirm`, `disable`, `recovery-codes`) sit behind the
-per-address rate limiter. The count lives on the password credential, so an account an identity
-provider owns has only the rate limiter.
+per-address rate limiter. The count lives on the password credential; an account without one - owned
+by an identity provider, or signing in with a passkey alone - keeps the same count, under the same
+`LocalLogin` thresholds, on its two-factor enrolment instead.
 
 ## Recovery codes
 

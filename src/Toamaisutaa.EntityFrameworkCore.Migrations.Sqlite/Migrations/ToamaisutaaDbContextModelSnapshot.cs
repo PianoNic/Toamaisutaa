@@ -619,7 +619,18 @@ namespace Toamaisutaa.EntityFrameworkCore.Migrations.Sqlite.Migrations
                         .HasMaxLength(64)
                         .HasColumnType("TEXT");
 
+                    b.Property<int>("FailedAttemptCount")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER")
+                        .HasDefaultValue(0);
+
+                    b.Property<long?>("FirstFailedAttemptAt")
+                        .HasColumnType("INTEGER");
+
                     b.Property<long?>("LastUsedStep")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<long?>("LockedOutUntil")
                         .HasColumnType("INTEGER");
 
                     b.Property<byte[]>("SecretCiphertext")

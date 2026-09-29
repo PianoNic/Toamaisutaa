@@ -17,6 +17,13 @@ public sealed class ToamaisutaaUserTwoFactorConfiguration : IEntityTypeConfigura
         builder.HasKey(enrolment => enrolment.UserId);
         builder.Property(enrolment => enrolment.UserId).ValueGeneratedNever();
 
+        // The wrong-code count for an account with no password credential to keep it on. Zero for
+        // every row written before the columns existed; instants as Unix milliseconds, like every
+        // other timestamp here, so SQLite can compare them.
+        builder.Property(enrolment => enrolment.FailedAttemptCount).HasDefaultValue(0);
+        builder.Property(enrolment => enrolment.FirstFailedAttemptAt).HasConversion(InstantConverters.NullableInstant);
+        builder.Property(enrolment => enrolment.LockedOutUntil).HasConversion(InstantConverters.NullableInstant);
+
         // 20 bytes of secret plus AES-GCM's fixed overhead. Sized generously because
         // SecretSizeBytes is configurable and a column limit is a poor way to discover that.
         builder.Property(enrolment => enrolment.SecretCiphertext).HasMaxLength(256).IsRequired();

@@ -34,6 +34,17 @@ public class ToamaisutaaUserTwoFactor
     /// </summary>
     public long? LastUsedStep { get; set; }
 
+    /// <summary>
+    /// Wrong codes counted against an account that has no password credential to count them on -
+    /// one that signs in with a passkey alone, or that an identity provider owns. An account with a
+    /// password counts them there instead, alongside wrong passwords.
+    /// </summary>
+    public int FailedAttemptCount { get; set; }
+
+    public DateTimeOffset? FirstFailedAttemptAt { get; set; }
+
+    public DateTimeOffset? LockedOutUntil { get; set; }
+
     public DateTimeOffset CreatedAt { get; set; }
 
     public DateTimeOffset UpdatedAt { get; set; }

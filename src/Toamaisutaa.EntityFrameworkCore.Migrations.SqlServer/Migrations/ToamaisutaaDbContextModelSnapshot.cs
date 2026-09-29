@@ -625,7 +625,18 @@ namespace Toamaisutaa.EntityFrameworkCore.Migrations.SqlServer.Migrations
                         .HasMaxLength(64)
                         .HasColumnType("nvarchar(64)");
 
+                    b.Property<int>("FailedAttemptCount")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int")
+                        .HasDefaultValue(0);
+
+                    b.Property<long?>("FirstFailedAttemptAt")
+                        .HasColumnType("bigint");
+
                     b.Property<long?>("LastUsedStep")
+                        .HasColumnType("bigint");
+
+                    b.Property<long?>("LockedOutUntil")
                         .HasColumnType("bigint");
 
                     b.Property<byte[]>("SecretCiphertext")

@@ -217,7 +217,7 @@ internal sealed class PasswordSignInService(
         var now = timeProvider.GetUtcNow();
 
         // Found through the challenge, which is the only thing here that names the account. Null for
-        // an account with no password, a passkey-only one, which has no count to put a guess against.
+        // an account with no password - a passkey-only one - whose count lives on the enrolment.
         ToamaisutaaPasswordCredential? credential = null;
 
         var redemption = await twoFactor.RedeemChallengeAsync(
@@ -228,7 +228,10 @@ internal sealed class PasswordSignInService(
             isLockedOut: async userId =>
             {
                 credential = await credentials.FindByUserIdAsync(userId, cancellationToken);
-                return credential is not null && LockoutPolicy.IsLockedOut(credential, now);
+
+                return credential is not null
+                    ? LockoutPolicy.IsLockedOut(credential, now)
+                    : await twoFactor.IsEnrolmentLockedOutAsync(userId, now, cancellationToken);
             });
 
         if (redemption.Outcome != SignInOutcome.Succeeded)
@@ -237,6 +240,8 @@ internal sealed class PasswordSignInService(
             // unlimited guesses and the per-address limiter is the only thing in the way.
             if (redemption.Outcome == SignInOutcome.InvalidTwoFactorCode && credential is not null)
                 await RegisterWrongCodeAsync(credential, "Sign-in", now, cancellationToken);
+            else if (redemption.Outcome == SignInOutcome.InvalidTwoFactorCode && redemption.UserId is { } userId)
+                await twoFactor.RegisterEnrolmentFailureAsync(userId, options.Value, now, cancellationToken);
 
             await events.PublishAsync(
                 new TwoFactorFailed { OccurredAt = now, UserId = redemption.UserId, Reason = redemption.Outcome },
@@ -247,6 +252,8 @@ internal sealed class PasswordSignInService(
 
         if (credential is not null)
             await RegisterSuccessAsync(credential, now, cancellationToken);
+        else
+            await twoFactor.RegisterEnrolmentSuccessAsync(redemption.UserId!.Value, cancellationToken);
 
         var user = await users.FindByIdAsync(redemption.UserId!.Value, cancellationToken)
             ?? throw new InvalidOperationException($"Challenge points at user {redemption.UserId}, which does not exist.");
