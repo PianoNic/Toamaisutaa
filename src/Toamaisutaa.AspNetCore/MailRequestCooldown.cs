@@ -40,7 +40,7 @@ internal sealed class MailRequestCooldown(IOptions<ToamaisutaaLocalLoginOptions>
             }
         }
 
-        var address = $"{purpose}:{Normalizer.Normalize(email)}";
+        var address = Key(purpose, email);
 
         while (true)
         {
@@ -58,4 +58,10 @@ internal sealed class MailRequestCooldown(IOptions<ToamaisutaaLocalLoginOptions>
             }
         }
     }
+
+    /// <summary>Hands back an entry taken for a request that ended up sending nothing, so a mistyped
+    /// password does not cost the person a minute.</summary>
+    internal void Release(string purpose, string email) => _lastRequested.TryRemove(Key(purpose, email), out _);
+
+    private static string Key(string purpose, string email) => $"{purpose}:{Normalizer.Normalize(email)}";
 }

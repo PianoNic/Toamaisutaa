@@ -532,17 +532,32 @@ public static class ToamaisutaaPasswordEndpointExtensions
         ChangeEmailRequest request,
         ICurrentUser currentUser,
         IPasswordAccountService accounts,
+        MailRequestCooldown cooldown,
         CancellationToken cancellationToken)
     {
         if (request is null || string.IsNullOrEmpty(request.NewEmail) || string.IsNullOrEmpty(request.CurrentPassword))
             return Results.BadRequest();
 
         var user = await currentUser.GetOrProvisionAsync(cancellationToken);
+        var account = user.Id.ToString();
+
+        // Per account rather than per recipient: the recipient is whatever the caller types, so a
+        // cooldown on it would only slow down somebody sending to one inbox. The account is the one
+        // thing they cannot change between requests. Answered openly, because the caller is signed
+        // in and asking about their own account.
+        if (!cooldown.TryEnter("email-change", account))
+        {
+            return Results.Json(
+                new ValidationErrorResponse { Errors = ["A verification link was sent a moment ago. Wait a minute before asking for another."] },
+                statusCode: StatusCodes.Status429TooManyRequests);
+        }
 
         var result = await accounts.RequestEmailChangeAsync(user.Id, request.NewEmail, request.CurrentPassword, cancellationToken);
 
         if (result.Succeeded)
             return Results.NoContent();
+
+        cooldown.Release("email-change", account);
 
         return result.Conflict
             ? Results.Json(new ValidationErrorResponse { Errors = result.Errors }, statusCode: StatusCodes.Status409Conflict)
