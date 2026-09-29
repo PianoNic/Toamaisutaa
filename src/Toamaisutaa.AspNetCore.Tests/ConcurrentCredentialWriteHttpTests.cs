@@ -65,6 +65,42 @@ public class ConcurrentCredentialWriteHttpTests
     }
 
     /// <summary>
+    /// The interleaving the parallel lockout test only hits by luck, pinned down. A lock resets the
+    /// wrong-code count to zero, so a request that read the row before any failure still sees the count
+    /// it expects afterwards - and a write conditional on the count alone landed, clearing the lock.
+    /// </summary>
+    [Test]
+    public async Task A_stale_wrong_code_write_does_not_clear_a_lock_on_the_enrolment()
+    {
+        await using var app = await TestApp.StartAsync();
+        var account = await Account.RegisterAsync(app);
+        await account.EnrolAsync();
+        var userId = Guid.Parse(account.Claims().String("sub")!);
+
+        await using var stale = app.Services.CreateAsyncScope();
+        await using var locking = app.Services.CreateAsyncScope();
+
+        var staleStore = stale.ServiceProvider.GetRequiredService<ITwoFactorStore>();
+        var before = (await staleStore.FindAsync(userId))!;
+        var read = (Count: before.FailedAttemptCount, First: before.FirstFailedAttemptAt, Until: before.LockedOutUntil);
+
+        var lockedUntil = app.Time.Now.AddMinutes(15);
+        var locked = await locking.ServiceProvider.GetRequiredService<ITwoFactorStore>()
+            .UpdateFailedAttemptsAsync(userId, read.Count, read.First, read.Until, 0, null, lockedUntil);
+
+        await Assert.That(locked).IsTrue();
+
+        // The stale request now writes the one failure it saw, from the state it read.
+        var landed = await staleStore.UpdateFailedAttemptsAsync(userId, read.Count, read.First, read.Until, 1, app.Time.Now, null);
+
+        await using var check = app.Services.CreateAsyncScope();
+        var stored = await check.ServiceProvider.GetRequiredService<ITwoFactorStore>().FindAsync(userId);
+
+        await Assert.That(landed).IsFalse();
+        await Assert.That(stored!.LockedOutUntil).IsNotNull();
+    }
+
+    /// <summary>
     /// A profile sync reads the user at the start of the request. If a password change moves the
     /// stamp before the sync saves, writing the whole row back put the old stamp back, and every token
     /// the change was meant to kill came back to life.

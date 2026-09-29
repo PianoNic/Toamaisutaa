@@ -193,6 +193,8 @@ internal static class CredentialWrites
             if (await store.UpdateFailedAttemptsAsync(
                     userId,
                     current.FailedAttemptCount,
+                    current.FirstFailedAttemptAt,
+                    current.LockedOutUntil,
                     next.FailedAttemptCount,
                     next.FirstFailedAttemptAt,
                     next.LockedOutUntil,
@@ -213,7 +215,15 @@ internal static class CredentialWrites
             return;
 
         // A count that moved in between is only more failures; the right code clears it regardless.
-        await store.UpdateFailedAttemptsAsync(userId, enrolment.FailedAttemptCount, 0, null, null, cancellationToken);
+        await store.UpdateFailedAttemptsAsync(
+            userId,
+            enrolment.FailedAttemptCount,
+            enrolment.FirstFailedAttemptAt,
+            enrolment.LockedOutUntil,
+            0,
+            null,
+            null,
+            cancellationToken);
     }
 
     /// <summary>Clears the count once a sign-in or step-up has finished.</summary>
