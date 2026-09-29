@@ -30,6 +30,17 @@ public sealed record AccessTokenRequest
     public IReadOnlyList<string> Roles { get; init; } = [];
 
     /// <summary>
+    /// The address the token may assert in <c>email</c>: the local credential's, and only once it
+    /// has been verified. Null otherwise, and then the token carries no <c>email</c> at all.
+    /// </summary>
+    /// <remarks>
+    /// Not <see cref="ToamaisutaaUser.Email"/>. Registration writes whatever address it is typed,
+    /// and a token asserting it under the same claim an identity provider uses let anybody register
+    /// as someone else's address and pass every policy keyed on it.
+    /// </remarks>
+    public string? VerifiedEmail { get; init; }
+
+    /// <summary>
     /// RFC 8176 authentication method references, written to <c>amr</c>: <c>pwd</c> for a password,
     /// <c>otp</c> for a TOTP code, <c>mfa</c> whenever a second factor was actually presented.
     /// Standard rather than invented, so anything that already reads <c>amr</c> keeps working.

@@ -43,7 +43,7 @@ internal sealed class LocalAccessTokenIssuer(
         var claims = new List<Claim> { new(names.Subject, user.Id.ToString()) };
 
         Add(claims, names.UserName, user.UserName);
-        Add(claims, names.Email, user.Email);
+        Add(claims, names.Email, request.VerifiedEmail);
         Add(claims, names.DisplayName, user.DisplayName);
         Add(claims, names.Picture, user.PictureUrl);
 

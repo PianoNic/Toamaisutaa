@@ -459,6 +459,7 @@ internal sealed class PasswordSignInService(
             {
                 User = user,
                 Roles = await roles.GetRolesAsync(user, cancellationToken),
+                VerifiedEmail = credential.EmailConfirmedAt is not null ? credential.Email : null,
                 AuthenticationMethods = methods,
                 TwoFactorEnrolmentRequired = await twoFactor.MustEnrolAsync(user.Id, cancellationToken),
                 TwoFactorSource = source,

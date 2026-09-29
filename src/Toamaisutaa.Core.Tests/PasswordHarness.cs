@@ -127,7 +127,8 @@ internal sealed class PasswordHarness
             new EmptyUserRoleProvider(),
             gate,
             publisher,
-            wrapped);
+            wrapped,
+            provider);
 
         SignIn = new PasswordSignInService(
             Passwords,

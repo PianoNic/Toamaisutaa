@@ -247,6 +247,12 @@ An address registration takes is held unproven. Whoever later proves it - by red
 account that only typed it loses it. Otherwise registering somebody else's address first would lock
 its owner out of every way in.
 
+For the same reason a local access token carries `email` only once the address is verified, and then
+it is the credential's address, read again on every issue including a refresh. `email` is the claim
+an identity provider's token uses too, and everything downstream reads it as proven: a token that
+asserted a typed address let anyone register as somebody else's and pass every policy keyed on it.
+If you replace `IAccessTokenIssuer`, write `AccessTokenRequest.VerifiedEmail`, not `User.Email`.
+
 That email round trip - and two other ways to get someone into an account without open
 registration - are their own page: [Provisioning accounts](/provisioning-accounts). Proving that an
 address belongs to whoever typed it, and changing it afterwards, is

@@ -19,7 +19,8 @@ internal sealed class LocalSessionIssuer(
     IUserRoleProvider roles,
     TwoFactorGate twoFactor,
     AuthenticationEventPublisher events,
-    IOptions<ToamaisutaaLocalLoginOptions> options)
+    IOptions<ToamaisutaaLocalLoginOptions> options,
+    IServiceProvider provider)
 {
     internal async Task<IssuedSession> IssueAsync(LocalSessionRequest request, CancellationToken cancellationToken)
     {
@@ -36,6 +37,12 @@ internal sealed class LocalSessionIssuer(
             {
                 User = user,
                 Roles = userRoles,
+
+                // Read off the credential on every issue, refresh included, rather than carried on
+                // the refresh row: a verification or a change of address has to show up in the next
+                // token, and the credential is where both land.
+                VerifiedEmail = await VerifiedEmailAsync(user.Id, cancellationToken),
+
                 AuthenticationMethods = request.Methods,
 
                 // A sign-in that already presented a second factor is not one to be told to enrol
@@ -109,6 +116,14 @@ internal sealed class LocalSessionIssuer(
             },
         };
     }
+
+    /// <summary>The credential's address once somebody has proven it, and null before. Resolved
+    /// rather than injected, because a passkey-only deployment registers no password store.</summary>
+    internal async Task<string?> VerifiedEmailAsync(Guid userId, CancellationToken cancellationToken) =>
+        provider.GetService(typeof(IPasswordCredentialStore)) is IPasswordCredentialStore store
+            && await store.FindByUserIdAsync(userId, cancellationToken) is { EmailConfirmedAt: not null } credential
+            ? credential.Email
+            : null;
 }
 
 /// <summary>
