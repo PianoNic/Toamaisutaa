@@ -39,6 +39,23 @@ internal sealed class TokenCleanupService(
         while (await timer.WaitForNextTickAsync(stoppingToken));
     }
 
+    /// <summary>
+    /// Refresh rows are kept until their family is past its absolute lifetime, not merely until the
+    /// row itself expires.
+    /// </summary>
+    /// <remarks>
+    /// A rotated row is the evidence reuse detection works from: present it again and the family is
+    /// revoked. Deleted at its own expiry, fourteen days by default, a stolen rotated token presented
+    /// after that answered a plain unknown-token refusal - no revocation, no event - for the rest of a
+    /// ninety-day family. A row expires one refresh lifetime after it was written, and its family had
+    /// started by then, so anything that expired before this cutoff belongs to a family already dead.
+    /// </remarks>
+    internal static DateTimeOffset RefreshCutoff(DateTimeOffset now, ToamaisutaaLocalLoginOptions settings)
+    {
+        var margin = settings.RefreshTokenAbsoluteLifetime - settings.RefreshTokenLifetime;
+        return margin > TimeSpan.Zero ? now - margin : now;
+    }
+
     /// <summary>One sweep. Internal rather than private because the host decides when
     /// <see cref="ExecuteAsync"/> first runs its body, which makes start-then-stop a race the tests
     /// lose; they run a sweep directly instead.</summary>
@@ -50,7 +67,7 @@ internal sealed class TokenCleanupService(
         var refreshTokens = scope.ServiceProvider.GetRequiredService<IRefreshTokenStore>();
         var resetTokens = scope.ServiceProvider.GetRequiredService<IPasswordResetTokenStore>();
 
-        var removedRefresh = await refreshTokens.DeleteExpiredAsync(now, cancellationToken);
+        var removedRefresh = await refreshTokens.DeleteExpiredAsync(RefreshCutoff(now, options.Value), cancellationToken);
         var removedReset = await resetTokens.DeleteExpiredAsync(now, cancellationToken);
 
         // Optional, because two-factor is. Challenges expire in five minutes and every sign-in that

@@ -78,7 +78,13 @@ public interface IRefreshTokenStore
         DateTimeOffset secondFactorAt,
         CancellationToken cancellationToken = default);
 
-    /// <summary>Deletes spent and expired rows. Nothing calls this unless the application opts into
-    /// the cleanup service or schedules it itself.</summary>
+    /// <summary>Deletes rows whose <c>ExpiresAt</c> is at or before <paramref name="expiredBefore"/>,
+    /// rotated or not. Nothing calls this unless the application opts into the cleanup service or
+    /// schedules it itself.</summary>
+    /// <remarks>
+    /// The cleanup service passes a cutoff well before now, so a family's rotated rows outlive their
+    /// own expiry for as long as the family could still be refreshed. They are what reuse detection
+    /// works from. A caller scheduling this itself should do the same rather than passing now.
+    /// </remarks>
     Task<int> DeleteExpiredAsync(DateTimeOffset expiredBefore, CancellationToken cancellationToken = default);
 }
