@@ -45,7 +45,9 @@ internal sealed class TwoFactorClaimsTransformation(
         if (logins is null || enrolments is null)
             return principal;
 
-        var login = await logins.FindAsync(ToamaisutaaDefaults.ProviderKey, subject);
+        // The key provisioning wrote the login under. The default constant matched only while nobody
+        // had changed it, and with any other key no enrolment was ever found.
+        var login = await logins.FindAsync(provisioningOptions.Value.ProviderKey, subject);
         if (login is null)
             return principal;
 
