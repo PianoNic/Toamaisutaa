@@ -93,6 +93,51 @@ public class InvitationHttpTests
         await Assert.That((await ada.LoginAsync()).StatusCode).IsEqualTo(HttpStatusCode.OK);
     }
 
+    /// <summary>
+    /// Completion took the address from the user row, whose profile email a provider sync can move.
+    /// The address proven is the one the invitation went to, recorded on its token.
+    /// </summary>
+    [Test]
+    public async Task Completing_verifies_the_address_the_invitation_went_to()
+    {
+        await using var app = await TestApp.StartAsync();
+        var admin = await Account.RegisterAsync(app, TestApp.AdminUserName);
+
+        await app.Client.PostJson("/auth/invitations", new { email = "invited@example.com" }, admin.AccessToken);
+        var (reservedId, token) = app.IssuedInvitations.Single();
+
+        await using (var scope = app.Services.CreateAsyncScope())
+            await scope.ServiceProvider.GetRequiredService<IUserStore>().SetEmailAsync(reservedId, "ceo@example.com");
+
+        await app.Client.PostJson(
+            "/auth/invitations/complete",
+            new { token, userName = "invited", password = Account.DefaultPassword });
+
+        var byInvited = await app.Client.PostJson("/auth/login", new { identifier = "invited@example.com", password = Account.DefaultPassword });
+        var byRewritten = await app.Client.PostJson("/auth/login", new { identifier = "ceo@example.com", password = Account.DefaultPassword });
+
+        await Assert.That(byInvited.StatusCode).IsEqualTo(HttpStatusCode.OK);
+        await Assert.That(byRewritten.StatusCode).IsEqualTo(HttpStatusCode.Unauthorized);
+    }
+
+    /// <summary>Two completions of one link at once both reached the insert, and the second
+    /// answered 500.</summary>
+    [Test]
+    public async Task Completing_one_link_in_parallel_succeeds_once_and_never_500s()
+    {
+        await using var app = await TestApp.StartAsync();
+        var admin = await Account.RegisterAsync(app, TestApp.AdminUserName);
+
+        await app.Client.PostJson("/auth/invitations", new { email = "invited@example.com" }, admin.AccessToken);
+        var token = app.IssuedInvitations.Single().Token;
+
+        var attempts = await Task.WhenAll(Enumerable.Range(0, 8).Select(index =>
+            app.Client.PostJson("/auth/invitations/complete", new { token, userName = $"invited{index}", password = Account.DefaultPassword })));
+
+        await Assert.That(attempts.Count(response => response.StatusCode == HttpStatusCode.Created)).IsEqualTo(1);
+        await Assert.That(attempts.Any(response => response.StatusCode == HttpStatusCode.InternalServerError)).IsFalse();
+    }
+
     [Test]
     public async Task Revoking_an_invitation_is_for_administrators_only()
     {

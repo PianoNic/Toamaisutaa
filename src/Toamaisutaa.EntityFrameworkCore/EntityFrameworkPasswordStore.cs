@@ -236,6 +236,15 @@ internal sealed class EntityFrameworkPasswordStore<TContext>(TContext context)
             .Where(token => token.ExpiresAt <= expiredBefore)
             .ExecuteDeleteAsync(cancellationToken);
 
+    async Task<ToamaisutaaInvitationToken?> IInvitationTokenStore.FindOpenByEmailAsync(
+        string normalizedEmail,
+        DateTimeOffset now,
+        CancellationToken cancellationToken) =>
+        await context.Set<ToamaisutaaInvitationToken>()
+            .Where(token => token.NormalizedEmail == normalizedEmail && token.ConsumedAt == null && token.ExpiresAt > now)
+            .OrderByDescending(token => token.CreatedAt)
+            .FirstOrDefaultAsync(cancellationToken);
+
     async Task IInvitationTokenStore.InvalidateAllForUserAsync(Guid userId, DateTimeOffset consumedAt, CancellationToken cancellationToken) =>
         await context.Set<ToamaisutaaInvitationToken>()
             .Where(token => token.UserId == userId && token.ConsumedAt == null)
