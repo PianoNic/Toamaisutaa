@@ -316,10 +316,16 @@ public class IdentityProviderTokenHttpTests
     /// Run under the default provider key and a configured one. The transformation used to look the
     /// login up under the default constant, so with any other key it found no enrolment at all.
     /// </remarks>
+    /// <remarks>
+    /// And with the provider's own <c>amr</c> on the token, as Entra, Okta, Auth0 and Keycloak send
+    /// it: any <c>amr</c> used to be read as "a local token", so none of these ever learned about
+    /// the local enrolment, and an unenrolled one was never told it had to.
+    /// </remarks>
     [Test]
-    [Arguments(null)]
-    [Arguments("keycloak")]
-    public async Task A_local_enrolment_does_not_satisfy_the_second_factor_policy_for_a_provider_sign_in(string? providerKey)
+    [Arguments(null, false)]
+    [Arguments("keycloak", false)]
+    [Arguments(null, true)]
+    public async Task A_local_enrolment_does_not_satisfy_the_second_factor_policy_for_a_provider_sign_in(string? providerKey, bool providerSendsAmr)
     {
         using var identityProviderKey = RSA.Create(2048);
         using var localKey = ECDsa.Create(ECCurve.NamedCurves.nistP256);
@@ -351,8 +357,10 @@ public class IdentityProviderTokenHttpTests
         var confirm = await app.Client.PostJson("/auth/2fa/confirm", new { code = Totp.Code(secret, app.Time.Now) }, fresh);
         await Assert.That(confirm.StatusCode).IsEqualTo(HttpStatusCode.OK);
 
-        // A later sign-in at the provider, which says nothing about how it was proved.
-        var later = Mint(app, key, SecurityAlgorithms.RsaSha256, IdentityProvider, "grace-subject");
+        // A later sign-in at the provider, which proved a password and nothing more.
+        var later = providerSendsAmr
+            ? Mint(app, key, SecurityAlgorithms.RsaSha256, IdentityProvider, "grace-subject", new Claim("amr", "pwd"))
+            : Mint(app, key, SecurityAlgorithms.RsaSha256, IdentityProvider, "grace-subject");
 
         var guarded = await app.Client.Get("/test/second-factor", later);
         await Assert.That(guarded.StatusCode).IsEqualTo(HttpStatusCode.Forbidden);
@@ -362,7 +370,10 @@ public class IdentityProviderTokenHttpTests
             .ToList();
 
         await Assert.That(claims).Contains((ToamaisutaaDefaults.TwoFactorEnrolledClaim, "true"));
-        await Assert.That(claims.Any(claim => claim.Type == ToamaisutaaDefaults.AuthenticationMethodClaim)).IsFalse();
+
+        // Whatever the provider said, and nothing this package made up.
+        await Assert.That(claims.Where(claim => claim.Type == ToamaisutaaDefaults.AuthenticationMethodClaim).Select(claim => claim.Value))
+            .IsEquivalentTo(providerSendsAmr ? ["pwd"] : Array.Empty<string?>());
     }
 
     /// <summary>
