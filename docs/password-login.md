@@ -292,6 +292,12 @@ refresh tokens, reset tokens, invitation tokens, email verification tokens, magi
 challenge and trusted-device rows when those are configured. Without it, plan to call `DeleteExpiredAsync` on each of those
 stores from your own scheduler.
 
+Refresh rows are the exception to "once expired". A rotated row is what reuse detection works from,
+so the sweep keeps it until its family is past `RefreshTokenAbsoluteLifetime`, not merely past its own
+expiry. If you schedule the refresh sweep yourself, pass
+`now - (RefreshTokenAbsoluteLifetime - RefreshTokenLifetime)` rather than `now`, or a stolen token
+replayed after two weeks is answered as unknown instead of revoking the session it was stolen from.
+
 ## Refresh tokens
 
 Stored hashed, never in the clear, and rotated on every use. Presenting a token that has already
