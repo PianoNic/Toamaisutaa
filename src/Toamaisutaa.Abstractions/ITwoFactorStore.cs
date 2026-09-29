@@ -9,7 +9,16 @@ public interface ITwoFactorStore
     Task DeleteAsync(Guid userId, CancellationToken cancellationToken = default);
 
     /// <summary>Records the accepted time step, which is what makes a replay fail.</summary>
-    Task RecordUsedStepAsync(Guid userId, long step, CancellationToken cancellationToken = default);
+    /// <returns>
+    /// True only when this call moved the recorded step forward, in one write conditional on the
+    /// stored step being null or lower. False when another request recorded this step, or a later
+    /// one, first - which is a replay, and the code is refused.
+    /// </returns>
+    /// <remarks>
+    /// An unconditional write let two requests with the same code both pass, and let a late write
+    /// move the step backwards and open a used code again.
+    /// </remarks>
+    Task<bool> RecordUsedStepAsync(Guid userId, long step, CancellationToken cancellationToken = default);
 }
 
 public interface IRecoveryCodeStore

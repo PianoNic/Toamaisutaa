@@ -62,6 +62,31 @@ public class ConcurrentRedemptionHttpTests
         await Assert.That(attempts.Count(response => response.StatusCode == HttpStatusCode.OK)).IsLessThanOrEqualTo(1);
     }
 
+    /// <summary>
+    /// One TOTP code, typed into several sign-ins at once. The challenges are separate, so the only
+    /// thing that makes a code single-use is the recorded step - and that was read, compared, then
+    /// written, with every request in between let through.
+    /// </summary>
+    [Test]
+    public async Task A_totp_code_used_in_parallel_signs_in_at_most_once()
+    {
+        await using var app = await TestApp.StartAsync();
+        var account = await Account.RegisterAsync(app);
+        await account.EnrolAsync();
+
+        var challenges = new List<string>();
+        for (var i = 0; i < Parallel; i++)
+            challenges.Add((await (await account.LoginAsync()).Json()).String("challenge")!);
+
+        app.Time.AdvanceToNextTotpStep();
+        var code = Totp.Code(account.Secret!, app.Time.Now);
+
+        var attempts = await Task.WhenAll(challenges.Select(challenge =>
+            app.Client.PostJson("/auth/2fa/verify", new { challenge, code })));
+
+        await Assert.That(attempts.Count(response => response.StatusCode == HttpStatusCode.OK)).IsLessThanOrEqualTo(1);
+    }
+
     [Test]
     public async Task A_verification_link_redeemed_in_parallel_is_accepted_at_most_once()
     {

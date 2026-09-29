@@ -52,12 +52,12 @@ internal sealed class EntityFrameworkTwoFactorStore<TContext>(TContext context)
             .ExecuteDeleteAsync(cancellationToken);
     }
 
-    public async Task RecordUsedStepAsync(Guid userId, long step, CancellationToken cancellationToken = default) =>
+    public async Task<bool> RecordUsedStepAsync(Guid userId, long step, CancellationToken cancellationToken = default) =>
         await context.Set<ToamaisutaaUserTwoFactor>()
-            .Where(enrolment => enrolment.UserId == userId)
+            .Where(enrolment => enrolment.UserId == userId && (enrolment.LastUsedStep == null || enrolment.LastUsedStep < step))
             .ExecuteUpdateAsync(
                 setters => setters.SetProperty(enrolment => enrolment.LastUsedStep, step),
-                cancellationToken);
+                cancellationToken) == 1;
 
     // ── Recovery codes ──
 
