@@ -1,5 +1,8 @@
+using System.Net;
+using System.Net.Sockets;
 using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Toamaisutaa.Abstractions;
 using Toamaisutaa.Core;
@@ -30,7 +33,9 @@ internal sealed class PasswordRateLimiter : IDisposable
 {
     private readonly PartitionedRateLimiter<HttpContext> _limiter;
 
-    public PasswordRateLimiter(IOptions<ToamaisutaaLocalLoginOptions> options)
+    private int _warnedAboutProxy;
+
+    public PasswordRateLimiter(IOptions<ToamaisutaaLocalLoginOptions> options, ILogger<PasswordRateLimiter> logger)
     {
         _limiter = PartitionedRateLimiter.Create<HttpContext, string>(context =>
         {
@@ -40,8 +45,25 @@ internal sealed class PasswordRateLimiter : IDisposable
                 return RateLimitPartition.GetNoLimiter("disabled");
 
             // Behind a proxy this is the proxy unless the application has configured forwarded
-            // headers, which is its call to make rather than ours to guess.
-            var partition = context.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+            // headers, which is its call to make rather than ours to guess - but it can be noticed.
+            // The forwarded-headers middleware consumes X-Forwarded-For as it rewrites the address,
+            // so the header still being here, on a connection from a private or loopback address,
+            // means nobody configured it and every caller is sharing one budget.
+            var remote = context.Connection.RemoteIpAddress;
+
+            if (remote is not null
+                && context.Request.Headers.ContainsKey("X-Forwarded-For")
+                && IsPrivateOrLoopback(remote)
+                && Interlocked.Exchange(ref _warnedAboutProxy, 1) == 0)
+            {
+                logger.LogWarning(
+                    "Rate limiting is keyed on the caller's address, but requests arrive from {ProxyAddress} with an "
+                    + "unprocessed X-Forwarded-For header: every client behind that proxy shares one limit. Configure "
+                    + "ForwardedHeadersOptions and call UseForwardedHeaders() before the endpoints.",
+                    remote);
+            }
+
+            var partition = PartitionKey(remote);
 
             return RateLimitPartition.GetFixedWindowLimiter(
                 partition,
@@ -55,6 +77,45 @@ internal sealed class PasswordRateLimiter : IDisposable
     }
 
     public ValueTask<RateLimitLease> AcquireAsync(HttpContext context) => _limiter.AcquireAsync(context);
+
+    /// <summary>
+    /// One budget per caller. An IPv6 caller is its /64, because that is what one customer is
+    /// handed: keyed on the full address, every one of the 2^64 addresses in it was a fresh budget.
+    /// </summary>
+    internal static string PartitionKey(IPAddress? address)
+    {
+        if (address is null)
+            return "unknown";
+
+        if (address.IsIPv4MappedToIPv6)
+            address = address.MapToIPv4();
+
+        if (address.AddressFamily != AddressFamily.InterNetworkV6)
+            return address.ToString();
+
+        var bytes = address.GetAddressBytes();
+        Array.Clear(bytes, 8, 8);
+
+        return $"{new IPAddress(bytes)}/64";
+    }
+
+    private static bool IsPrivateOrLoopback(IPAddress address)
+    {
+        if (IPAddress.IsLoopback(address))
+            return true;
+
+        if (address.IsIPv4MappedToIPv6)
+            address = address.MapToIPv4();
+
+        if (address.AddressFamily == AddressFamily.InterNetworkV6)
+            return address.IsIPv6UniqueLocal || address.IsIPv6LinkLocal;
+
+        var bytes = address.GetAddressBytes();
+
+        return bytes[0] == 10
+            || (bytes[0] == 172 && bytes[1] is >= 16 and <= 31)
+            || (bytes[0] == 192 && bytes[1] == 168);
+    }
 
     public void Dispose() => _limiter.Dispose();
 }
