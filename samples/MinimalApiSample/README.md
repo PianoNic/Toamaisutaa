@@ -2,6 +2,11 @@
 
 A bearer-protected minimal API using Toamaisutaa, with provisioning on SQLite.
 
+The signing key, the pepper and the two-factor encryption key are in `appsettings.Development.json`,
+which loads only in Development. They are public - they are in this repository - so do not copy that
+file into anything real: tokens signed with them can be forged by anyone. Outside Development the
+sample refuses to start until real ones come from the environment, which is the point.
+
 ## Run it
 
 Start an issuer. This uses [mock-oauth2-server](https://github.com/navikt/mock-oauth2-server), which
