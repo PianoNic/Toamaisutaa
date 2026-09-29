@@ -30,14 +30,15 @@ internal sealed class FakeTwoFactorStore : ITwoFactorStore, IRecoveryCodeStore, 
         return Task.CompletedTask;
     }
 
-    public Task RecordUsedStepAsync(Guid userId, long step, CancellationToken cancellationToken = default)
+    public Task<bool> RecordUsedStepAsync(Guid userId, long step, CancellationToken cancellationToken = default)
     {
         var enrolment = Enrolments.FirstOrDefault(entry => entry.UserId == userId);
 
-        if (enrolment is not null)
-            enrolment.LastUsedStep = step;
+        if (enrolment is null || enrolment.LastUsedStep >= step)
+            return Task.FromResult(false);
 
-        return Task.CompletedTask;
+        enrolment.LastUsedStep = step;
+        return Task.FromResult(true);
     }
 
     // ── Recovery codes ──

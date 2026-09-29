@@ -110,6 +110,10 @@ codes, two-factor and passkey challenges - follows the same rule: one write cond
 `ConsumedAt IS NULL`, returning whether it spent the row. The flows act on nothing until it says
 true, which is what makes single use hold when the same link or code arrives twice at once.
 
+`ITwoFactorStore.RecordUsedStepAsync` is the TOTP version of the same thing: write the step only
+where the stored one is null or lower, and return whether a row changed. That makes one code good
+for one request, and stops a late write moving the step backwards.
+
 Register whichever the features you use require - the startup checks name the missing one rather
 than failing at the first request:
 

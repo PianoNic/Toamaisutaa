@@ -59,9 +59,16 @@ internal sealed class TwoFactorVerifier(
                 return TwoFactorVerification.Failed;
             }
 
-            metrics.TwoFactorVerified(TwoFactorSource.Otp, succeeded: true);
+            // The step read above can be stale by now. Whoever records it first owns the code; for
+            // everyone else this is a replay, and refused the same way.
+            if (!await enrolments.RecordUsedStepAsync(userId, matchedStep, cancellationToken))
+            {
+                logger.LogWarning("Second factor refused for user {UserId}: the code was used by another request first.", userId);
+                metrics.TwoFactorVerified(TwoFactorSource.Otp, succeeded: false);
+                return TwoFactorVerification.Failed;
+            }
 
-            await enrolments.RecordUsedStepAsync(userId, matchedStep, cancellationToken);
+            metrics.TwoFactorVerified(TwoFactorSource.Otp, succeeded: true);
 
             // Kept in sync on the tracked object too, or the rewrap below writes the whole row back
             // with the step it had before this code was accepted and undoes the replay protection.
