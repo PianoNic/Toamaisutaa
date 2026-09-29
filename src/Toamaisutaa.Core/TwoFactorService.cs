@@ -239,30 +239,35 @@ internal sealed class TwoFactorService(
         var passwords = provider.GetService<IPasswordCredentialStore>();
         var credential = passwords is null ? null : await passwords.FindByUserIdAsync(userId, cancellationToken);
 
-        // An account with no password keeps its count on the enrolment instead - an identity
-        // provider's account, or a passkey-only one - so a stolen token cannot guess it unthrottled.
-        var enrolment = credential is null ? await enrolments.FindAsync(userId, cancellationToken) : null;
+        // The same thresholds a password counts under; defaults when password login is not registered.
+        var localLogin = provider.GetService<IOptions<ToamaisutaaLocalLoginOptions>>()?.Value ?? new ToamaisutaaLocalLoginOptions();
 
-        var lockedUntil = credential is not null
-            ? (LockoutPolicy.IsLockedOut(credential, now) ? credential.LockedOutUntil : null)
-            : enrolment is not null && LockoutPolicy.IsLockedOut(LockoutState.Of(enrolment), now) ? enrolment.LockedOutUntil : null;
+        // Counted before the code is looked at, so a locked account neither spends a recovery code nor
+        // learns whether a guess was right, and parallel guesses cannot each find it open. An account
+        // with no password keeps its count on the enrolment instead - an identity provider's account,
+        // or a passkey-only one - so a stolen token cannot guess it unthrottled either.
+        bool allowed;
+        bool lockedByThisAttempt;
 
-        // Before the code is looked at, so a locked account neither spends a recovery code nor learns
-        // whether a guess was right.
-        if (lockedUntil is not null)
+        if (credential is not null)
         {
-            logger.LogWarning(
-                "Two-factor proof refused for user {UserId}: locked out until {LockedOutUntil}.",
-                userId,
-                lockedUntil);
+            var reservation = await passwords!.ReserveAttemptAsync(credential, localLogin, now, cancellationToken);
+            (credential, allowed, lockedByThisAttempt) = (reservation.Credential, reservation.Allowed, reservation.LockedByThisAttempt);
+        }
+        else
+        {
+            (allowed, lockedByThisAttempt) = await enrolments.ReserveAttemptAsync(userId, localLogin, now, cancellationToken);
+        }
+
+        if (!allowed)
+        {
+            logger.LogWarning("Two-factor proof refused for user {UserId}: locked out.", userId);
 
             await PublishWrongProofAsync(userId, SignInOutcome.LockedOut, now, cancellationToken);
             return (default, "Too many wrong codes. Try again later.");
         }
 
         var verification = await verifier.VerifyAsync(userId, proof, requireConfirmed: true, cancellationToken);
-        // The same thresholds a password counts under; defaults when password login is not registered.
-        var localLogin = provider.GetService<IOptions<ToamaisutaaLocalLoginOptions>>()?.Value ?? new ToamaisutaaLocalLoginOptions();
 
         if (verification.Succeeded)
         {
@@ -276,14 +281,10 @@ internal sealed class TwoFactorService(
 
         if (credential is null)
         {
-            var locked = await enrolments.RegisterFailureAsync(userId, localLogin, now, cancellationToken);
-
-            logger.LogWarning("Two-factor proof refused for user {UserId}: wrong code{Locked}.", userId, locked ? "; now locked out" : string.Empty);
+            logger.LogWarning("Two-factor proof refused for user {UserId}: wrong code{Locked}.", userId, lockedByThisAttempt ? "; now locked out" : string.Empty);
         }
         else
         {
-            (credential, var lockedByThisAttempt) = await passwords!.RegisterFailureAsync(credential, localLogin, now, cancellationToken);
-
             logger.LogWarning(
                 "Two-factor proof refused for user {UserId}: wrong code. {FailedAttempts} failed attempt(s) in the current window{Locked}.",
                 userId,

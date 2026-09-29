@@ -117,6 +117,18 @@ internal sealed class InstrumentProbe : IDisposable
             }
         });
 
+        // Histograms record a double per event; each one is an occurrence, whatever it measured.
+        _listener.SetMeasurementEventCallback<double>((_, _, tags, _) =>
+        {
+            Interlocked.Increment(ref _total);
+
+            foreach (var tag in tags)
+            {
+                if (tag.Key == "result")
+                    Results.Enqueue(tag.Value?.ToString());
+            }
+        });
+
         _listener.Start();
     }
 
