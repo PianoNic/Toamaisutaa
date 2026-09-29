@@ -86,15 +86,28 @@ internal sealed class EntityFrameworkStore<TContext>(TContext context, TimeProvi
     {
         ArgumentNullException.ThrowIfNull(user);
 
+        var now = timeProvider.GetUtcNow();
+
+        // Only the profile columns. The row was read at the start of the request, and writing it back
+        // whole put its security stamp back too - so a sync that read before a password change and
+        // saved after it undid the stamp bump, and a stolen token revived until it expired.
+        await context.Set<ToamaisutaaUser>()
+            .Where(stored => stored.Id == user.Id)
+            .ExecuteUpdateAsync(
+                setters => setters
+                    .SetProperty(stored => stored.UserName, profile.UserName)
+                    .SetProperty(stored => stored.Email, profile.Email)
+                    .SetProperty(stored => stored.DisplayName, profile.DisplayName)
+                    .SetProperty(stored => stored.PictureUrl, profile.PictureUrl)
+                    .SetProperty(stored => stored.UpdatedAt, now),
+                cancellationToken);
+
+        // Kept in step with what was written, for the caller still holding this instance.
         user.UserName = profile.UserName;
         user.Email = profile.Email;
         user.DisplayName = profile.DisplayName;
         user.PictureUrl = profile.PictureUrl;
-        user.UpdatedAt = timeProvider.GetUtcNow();
-
-        // Covers the case where the caller handed back a detached instance.
-        context.Set<ToamaisutaaUser>().Update(user);
-        await context.SaveChangesAsync(cancellationToken);
+        user.UpdatedAt = now;
     }
 
     public async Task UpdateSecurityStampAsync(Guid userId, string securityStamp, CancellationToken cancellationToken = default)
