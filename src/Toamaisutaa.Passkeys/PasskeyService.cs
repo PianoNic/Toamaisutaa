@@ -370,12 +370,31 @@ internal sealed class PasskeyService(
     public async Task<IReadOnlyList<PasskeySummary>> ListAsync(Guid userId, CancellationToken cancellationToken = default) =>
         [.. (await credentials.ListAsync(userId, cancellationToken)).Select(Summarise)];
 
-    public async Task<bool> DeleteAsync(Guid userId, Guid passkeyId, CancellationToken cancellationToken = default)
+    public async Task<bool> DeleteAsync(
+        Guid userId,
+        Guid passkeyId,
+        PasskeyRegistrationProof proof,
+        CancellationToken cancellationToken = default)
     {
+        ArgumentNullException.ThrowIfNull(proof);
+
+        var now = timeProvider.GetUtcNow();
+
+        // The same proof registration asks for, and asked first so it answers the same whether or not
+        // the id is this account's.
+        await RequireLiveCredentialAsync(userId, proof, now, cancellationToken);
+
         if (!await credentials.DeleteAsync(userId, passkeyId, cancellationToken))
             return false;
 
-        var now = timeProvider.GetUtcNow();
+        // Nothing records which session this key opened, so all of them end: a key being removed is
+        // the moment somebody suspects it is not only in their own hands.
+        await users.UpdateSecurityStampAsync(userId, SecureTokens.Create(), cancellationToken);
+        await provider.GetRequiredService<IRefreshTokenStore>().RevokeAllForUserAsync(userId, "passkey-removed", now, cancellationToken);
+
+        await events.PublishAsync(
+            new SessionRevoked { OccurredAt = now, UserId = userId, Reason = "passkey-removed" },
+            cancellationToken);
 
         await events.PublishAsync(
             new PasskeyRemoved { OccurredAt = now, UserId = userId, PasskeyId = passkeyId },

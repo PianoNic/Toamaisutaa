@@ -54,7 +54,13 @@ public interface IPasskeyService
 
     /// <summary>False when the credential does not exist or belongs to someone else - the same
     /// answer, so this cannot be used to discover another account's credential ids.</summary>
-    Task<bool> DeleteAsync(Guid userId, Guid passkeyId, CancellationToken cancellationToken = default);
+    /// <remarks>
+    /// Takes the same proof registering does, and throws <see cref="PasskeyRegistrationException"/>
+    /// without it: a bearer token alone let whoever held one delete every passkey on an account that
+    /// has no password, which is the owner locked out. Deleting one also moves the security stamp and
+    /// ends every session, since nothing records which of them the deleted key opened.
+    /// </remarks>
+    Task<bool> DeleteAsync(Guid userId, Guid passkeyId, PasskeyRegistrationProof proof, CancellationToken cancellationToken = default);
 }
 
 /// <summary>
