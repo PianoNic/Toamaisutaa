@@ -169,8 +169,13 @@ internal sealed class TwoFactorGate(
             return ChallengeRedemption.Failed(SignInOutcome.InvalidTwoFactorCode, stored.UserId);
 
         // Spent the moment it works, and only when it works: consuming it on a wrong code would
-        // mean one mistyped digit sends the person back to the login form.
-        await challenges.MarkConsumedAsync(stored.Id, now, cancellationToken);
+        // mean one mistyped digit sends the person back to the login form. And only by whoever wins
+        // the write - every request holding the same right code used to get a session each.
+        if (!await challenges.MarkConsumedAsync(stored.Id, now, cancellationToken))
+        {
+            logger.LogWarning("Two-factor challenge for user {UserId} was spent by another request first.", stored.UserId);
+            return ChallengeRedemption.Failed(SignInOutcome.ChallengeAlreadyUsed, stored.UserId);
+        }
 
         return new ChallengeRedemption
         {

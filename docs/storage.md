@@ -105,6 +105,11 @@ live to rotated. Make it a single conditional write - `WHERE Id = @id AND Rotate
 RevokedAt IS NULL` - and return whether a row changed. Returning true unconditionally lets two
 requests exchange one refresh token at once, forking the session with no reuse ever detected.
 
+Every `MarkConsumedAsync` - reset, magic-link, invitation and email-verification tokens, recovery
+codes, two-factor and passkey challenges - follows the same rule: one write conditional on
+`ConsumedAt IS NULL`, returning whether it spent the row. The flows act on nothing until it says
+true, which is what makes single use hold when the same link or code arrives twice at once.
+
 Register whichever the features you use require - the startup checks name the missing one rather
 than failing at the first request:
 

@@ -141,11 +141,20 @@ internal sealed class FakePasswordStore
     Task<ToamaisutaaPasswordResetToken?> IPasswordResetTokenStore.FindByHashAsync(string tokenHash, CancellationToken cancellationToken) =>
         Task.FromResult(ResetTokens.FirstOrDefault(token => token.TokenHash == tokenHash));
 
-    public Task MarkConsumedAsync(Guid tokenId, DateTimeOffset consumedAt, CancellationToken cancellationToken = default)
+    public Task<bool> MarkConsumedAsync(Guid tokenId, DateTimeOffset consumedAt, CancellationToken cancellationToken = default)
     {
         var token = ResetTokens.First(entry => entry.Id == tokenId);
-        token.ConsumedAt ??= consumedAt;
-        return Task.CompletedTask;
+        return Task.FromResult(Spend(() => token.ConsumedAt, value => token.ConsumedAt = value, consumedAt));
+    }
+
+    /// <summary>What the real stores do in one conditional write: spend it only if nobody has.</summary>
+    internal static bool Spend(Func<DateTimeOffset?> read, Action<DateTimeOffset> write, DateTimeOffset consumedAt)
+    {
+        if (read() is not null)
+            return false;
+
+        write(consumedAt);
+        return true;
     }
 
     public Task InvalidateAllForUserAsync(Guid userId, DateTimeOffset consumedAt, CancellationToken cancellationToken = default)
@@ -170,11 +179,10 @@ internal sealed class FakePasswordStore
     Task<ToamaisutaaInvitationToken?> IInvitationTokenStore.FindByHashAsync(string tokenHash, CancellationToken cancellationToken) =>
         Task.FromResult(InvitationTokens.FirstOrDefault(token => token.TokenHash == tokenHash));
 
-    Task IInvitationTokenStore.MarkConsumedAsync(Guid tokenId, DateTimeOffset consumedAt, CancellationToken cancellationToken)
+    Task<bool> IInvitationTokenStore.MarkConsumedAsync(Guid tokenId, DateTimeOffset consumedAt, CancellationToken cancellationToken)
     {
         var token = InvitationTokens.First(entry => entry.Id == tokenId);
-        token.ConsumedAt ??= consumedAt;
-        return Task.CompletedTask;
+        return Task.FromResult(Spend(() => token.ConsumedAt, value => token.ConsumedAt = value, consumedAt));
     }
 
     Task<int> IInvitationTokenStore.DeleteExpiredAsync(DateTimeOffset expiredBefore, CancellationToken cancellationToken) =>
@@ -191,11 +199,10 @@ internal sealed class FakePasswordStore
     Task<ToamaisutaaEmailVerificationToken?> IEmailVerificationTokenStore.FindByHashAsync(string tokenHash, CancellationToken cancellationToken) =>
         Task.FromResult(EmailVerificationTokens.FirstOrDefault(token => token.TokenHash == tokenHash));
 
-    Task IEmailVerificationTokenStore.MarkConsumedAsync(Guid tokenId, DateTimeOffset consumedAt, CancellationToken cancellationToken)
+    Task<bool> IEmailVerificationTokenStore.MarkConsumedAsync(Guid tokenId, DateTimeOffset consumedAt, CancellationToken cancellationToken)
     {
         var token = EmailVerificationTokens.First(entry => entry.Id == tokenId);
-        token.ConsumedAt ??= consumedAt;
-        return Task.CompletedTask;
+        return Task.FromResult(Spend(() => token.ConsumedAt, value => token.ConsumedAt = value, consumedAt));
     }
 
     Task IEmailVerificationTokenStore.InvalidateAllForUserAsync(Guid userId, DateTimeOffset consumedAt, CancellationToken cancellationToken)
@@ -220,11 +227,10 @@ internal sealed class FakePasswordStore
     Task<ToamaisutaaMagicLinkToken?> IMagicLinkTokenStore.FindByHashAsync(string tokenHash, CancellationToken cancellationToken) =>
         Task.FromResult(MagicLinkTokens.FirstOrDefault(token => token.TokenHash == tokenHash));
 
-    Task IMagicLinkTokenStore.MarkConsumedAsync(Guid tokenId, DateTimeOffset consumedAt, CancellationToken cancellationToken)
+    Task<bool> IMagicLinkTokenStore.MarkConsumedAsync(Guid tokenId, DateTimeOffset consumedAt, CancellationToken cancellationToken)
     {
         var token = MagicLinkTokens.First(entry => entry.Id == tokenId);
-        token.ConsumedAt ??= consumedAt;
-        return Task.CompletedTask;
+        return Task.FromResult(Spend(() => token.ConsumedAt, value => token.ConsumedAt = value, consumedAt));
     }
 
     Task IMagicLinkTokenStore.InvalidateAllForUserAsync(Guid userId, DateTimeOffset consumedAt, CancellationToken cancellationToken)

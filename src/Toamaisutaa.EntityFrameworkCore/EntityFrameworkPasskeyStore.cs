@@ -70,10 +70,10 @@ internal sealed class EntityFrameworkPasskeyStore<TContext>(TContext context)
         await context.Set<ToamaisutaaPasskeyChallenge>()
             .FirstOrDefaultAsync(challenge => challenge.TokenHash == tokenHash, cancellationToken);
 
-    public async Task MarkConsumedAsync(Guid challengeId, DateTimeOffset consumedAt, CancellationToken cancellationToken = default) =>
+    public async Task<bool> MarkConsumedAsync(Guid challengeId, DateTimeOffset consumedAt, CancellationToken cancellationToken = default) =>
         await context.Set<ToamaisutaaPasskeyChallenge>()
             .Where(challenge => challenge.Id == challengeId && challenge.ConsumedAt == null)
-            .ExecuteUpdateAsync(setters => setters.SetProperty(challenge => challenge.ConsumedAt, consumedAt), cancellationToken);
+            .ExecuteUpdateAsync(setters => setters.SetProperty(challenge => challenge.ConsumedAt, consumedAt), cancellationToken) == 1;
 
     public async Task<int> DeleteExpiredAsync(DateTimeOffset expiredBefore, CancellationToken cancellationToken = default) =>
         await context.Set<ToamaisutaaPasskeyChallenge>()

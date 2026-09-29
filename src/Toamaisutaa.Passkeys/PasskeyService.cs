@@ -549,7 +549,13 @@ internal sealed class PasskeyService(
         if (stored.ExpiresAt <= now)
             return null;
 
-        await challenges.MarkConsumedAsync(stored.Id, now, cancellationToken);
+        // Only whoever wins the write gets the ceremony. A synced passkey reports a counter of zero,
+        // so clone detection could not tell two assertions over one challenge apart either.
+        if (!await challenges.MarkConsumedAsync(stored.Id, now, cancellationToken))
+        {
+            logger.LogWarning("Passkey challenge was spent by another request first.");
+            return null;
+        }
 
         return stored;
     }

@@ -423,6 +423,28 @@ public class PasskeyHttpTests
     }
 
     /// <summary>
+    /// The same, raced. The challenge was checked unspent and then marked spent in a second step,
+    /// so every assertion that landed between the two got a session.
+    /// </summary>
+    [Test]
+    public async Task A_challenge_raced_by_several_assertions_signs_in_at_most_once()
+    {
+        await using var app = await TestApp.StartAsync();
+        var account = await Account.RegisterAsync(app);
+        using var authenticator = new SoftwareAuthenticator();
+
+        await Passkeys.RegisterAsync(app, account.AccessToken, authenticator);
+
+        var begin = await (await app.Client.PostJson("/auth/passkeys/assertion/begin", new { })).Json();
+        var assertions = Enumerable.Range(0, 8).Select(_ => authenticator.Get(begin, TestApp.Origin)).ToList();
+
+        var responses = await Task.WhenAll(assertions.Select(assertion =>
+            app.Client.PostJson("/auth/passkeys/assertion/complete", assertion)));
+
+        await Assert.That(responses.Count(response => response.StatusCode == HttpStatusCode.OK)).IsLessThanOrEqualTo(1);
+    }
+
+    /// <summary>
     /// The relying party id is what stops a phishing site using a credential, and the origin is what
     /// the server checks it against. A ceremony claiming to have happened somewhere else is the
     /// exact shape of that attack.
