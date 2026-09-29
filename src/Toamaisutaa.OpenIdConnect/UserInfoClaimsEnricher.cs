@@ -43,12 +43,11 @@ internal sealed class UserInfoClaimsEnricher(
 
         // A token this package signed is not the identity provider's to read. Sending it there
         // handed a local credential to a third party as a bearer token, on every request by any
-        // user whose token carries no role - and it only ever came back 401.
-        if (context.SecurityToken is JsonWebToken token
-            && string.Equals(token.Issuer, localLogin.Value.Issuer, StringComparison.Ordinal))
-        {
+        // user whose token carries no role - and it only ever came back 401. Read off the base type:
+        // under UseSecurityTokenValidators the token is a JwtSecurityToken, and a check on
+        // JsonWebToken alone let every one of them through.
+        if (string.Equals(context.SecurityToken?.Issuer, localLogin.Value.Issuer, StringComparison.Ordinal))
             return;
-        }
 
         if (!UserInfoDecision.ShouldFetch(settings.FetchClaimsFromUserInfo, context.Principal, settings.RoleClaim))
             return;
