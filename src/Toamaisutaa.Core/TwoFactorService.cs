@@ -303,7 +303,7 @@ internal sealed class TwoFactorService(
             {
                 Id = Guid.CreateVersion7(now),
                 UserId = userId,
-                CodeHash = SecureTokens.HashToken(RecoveryCodeProvider.Normalize(code)),
+                CodeHash = RecoveryCodeHashes.Hash(options.Value, RecoveryCodeProvider.Normalize(code)),
                 CreatedAt = now,
             })],
             cancellationToken);
