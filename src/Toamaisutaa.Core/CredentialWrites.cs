@@ -41,38 +41,78 @@ internal static class CredentialWrites
         }
     }
 
-    /// <summary>Counts one failed attempt - a wrong password or a wrong second factor.</summary>
-    /// <returns>
-    /// The credential as written, and whether this attempt is the one that locked it. A racing
-    /// attempt that got there first owns the lock and its event; this one is refused all the same
-    /// and counts for nothing further, so the lock is not stretched by the requests queued behind it.
-    /// </returns>
-    internal static async Task<(ToamaisutaaPasswordCredential Credential, bool LockedByThisAttempt)> RegisterFailureAsync(
+    /// <summary>
+    /// Counts an attempt before it is checked - a password or a second factor - and says whether it
+    /// may be checked at all.
+    /// </summary>
+    /// <remarks>
+    /// Counting after the check left every guess already in flight free: the lock was read before
+    /// verifying, so parallel requests each saw the account open, each was checked, and only then did
+    /// the count catch up. Reserved first, with the same conditional write, no more than
+    /// <c>MaxFailedAttempts</c> guesses are ever checked in a window, however many arrive at once.
+    /// A guess that turns out right gives its reservation back by clearing the count once a sign-in
+    /// has finished, or with <see cref="RefundAsync"/> when it has not.
+    /// </remarks>
+    internal static async Task<AttemptReservation> ReserveAttemptAsync(
         this IPasswordCredentialStore store,
         ToamaisutaaPasswordCredential credential,
         ToamaisutaaLocalLoginOptions options,
         DateTimeOffset now,
         CancellationToken cancellationToken)
     {
-        var lockedByThisAttempt = false;
+        var allowed = false;
+        var before = LockoutState.Clear;
+        var after = LockoutState.Clear;
 
         credential = await store.UpdateAsync(
             credential,
             current =>
             {
-                lockedByThisAttempt = false;
+                before = LockoutState.Of(current);
+                after = before;
+                allowed = !LockoutPolicy.IsLockedOut(before, now);
 
-                if (LockoutPolicy.IsLockedOut(current, now))
+                if (!allowed)
                     return;
 
                 LockoutPolicy.RegisterFailure(current, options, now);
                 current.UpdatedAt = now;
-                lockedByThisAttempt = LockoutPolicy.IsLockedOut(current, now);
+                after = LockoutState.Of(current);
             },
             cancellationToken);
 
-        return (credential, lockedByThisAttempt);
+        return new AttemptReservation(credential, allowed, before, after, LockoutPolicy.IsLockedOut(after, now) && allowed);
     }
+
+    /// <summary>
+    /// Gives back one reservation whose attempt was right but did not finish anything - a password
+    /// that still owes a second factor. Everything else counted stays: clearing the whole count there
+    /// would let whoever holds the password sign in again every few wrong codes and start over.
+    /// </summary>
+    internal static Task<ToamaisutaaPasswordCredential> RefundAsync(
+        this IPasswordCredentialStore store,
+        AttemptReservation reservation,
+        DateTimeOffset now,
+        CancellationToken cancellationToken) =>
+        store.UpdateAsync(
+            reservation.Credential,
+            current =>
+            {
+                var state = LockoutState.Of(current);
+
+                // The lock this attempt set, still standing: undone back to what it replaced.
+                if (reservation.LockedByThisAttempt && state == reservation.After)
+                {
+                    reservation.Before.ApplyTo(current);
+                    current.UpdatedAt = now;
+                }
+                else if (!LockoutPolicy.IsLockedOut(state, now) && state.FailedAttemptCount > 0)
+                {
+                    current.FailedAttemptCount--;
+                    current.UpdatedAt = now;
+                }
+            },
+            cancellationToken);
 
     /// <summary>
     /// The current password a signed-in caller answers, counted against the account exactly as a
@@ -92,7 +132,10 @@ internal static class CredentialWrites
         DateTimeOffset now,
         CancellationToken cancellationToken)
     {
-        if (LockoutPolicy.IsLockedOut(credential, now))
+        var reservation = await store.ReserveAttemptAsync(credential, options, now, cancellationToken);
+        credential = reservation.Credential;
+
+        if (!reservation.Allowed)
         {
             logger.LogWarning(
                 "{Action} refused for user {UserId}: locked out until {LockedOutUntil}.",
@@ -104,9 +147,14 @@ internal static class CredentialWrites
         }
 
         if (hasher.Verify(currentPassword, credential.PasswordHash) != PasswordVerificationResult.Failed)
+        {
+            // Right, so the attempt gives its reservation back - and only its own: a correct current
+            // password is not a sign-in, and does not wipe out what anyone else has guessed.
+            await store.RefundAsync(reservation, now, cancellationToken);
             return null;
+        }
 
-        (credential, var lockedByThisAttempt) = await store.RegisterFailureAsync(credential, options, now, cancellationToken);
+        var lockedByThisAttempt = reservation.LockedByThisAttempt;
 
         logger.LogWarning(
             "{Action} refused for user {UserId}: the current password is wrong. {FailedAttempts} failed attempt(s) in the current window{Locked}.",
@@ -169,24 +217,25 @@ internal static class CredentialWrites
     /// to count it on - passkey-only, or owned by an identity provider. Without it, the only limit
     /// on guessing that account's code was the per-address rate limiter.
     /// </summary>
-    /// <returns>Whether this attempt is the one that locked it, for the event that says so.</returns>
-    internal static async Task<bool> RegisterFailureAsync(
+    /// <remarks>Reserved before the code is checked, for the reason the credential version gives.</remarks>
+    /// <returns>Whether the code may be checked, and whether this attempt is the one that locked it.</returns>
+    internal static async Task<(bool Allowed, bool LockedByThisAttempt)> ReserveAttemptAsync(
         this ITwoFactorStore store,
         Guid userId,
         ToamaisutaaLocalLoginOptions options,
         DateTimeOffset now,
         CancellationToken cancellationToken)
     {
-        for (var attempt = 1; ; attempt++)
+        for (var attempt = 1; attempt <= MaxAttempts; attempt++)
         {
+            // Nothing to count on: the code is checked and fails on its own, since there is no secret.
             if (await store.FindAsync(userId, cancellationToken) is not { } enrolment)
-                return false;
+                return (true, false);
 
             var current = LockoutState.Of(enrolment);
 
-            // Already locked by a racing attempt: refused all the same, counted for nothing more.
             if (LockoutPolicy.IsLockedOut(current, now))
-                return false;
+                return (false, false);
 
             var next = LockoutPolicy.RegisterFailure(current, options, now);
 
@@ -200,12 +249,13 @@ internal static class CredentialWrites
                     next.LockedOutUntil,
                     cancellationToken))
             {
-                return LockoutPolicy.IsLockedOut(next, now);
+                return (true, LockoutPolicy.IsLockedOut(next, now));
             }
-
-            if (attempt >= MaxAttempts)
-                throw new InvalidOperationException($"The two-factor failure count for user {userId} kept changing underneath this write.");
         }
+
+        // The count kept moving under every try, which only a flood of attempts does. Refused rather
+        // than checked uncounted.
+        return (false, false);
     }
 
     /// <summary>Clears the enrolment's count once a code has been accepted.</summary>
@@ -241,3 +291,12 @@ internal static class CredentialWrites
             },
             cancellationToken);
 }
+
+/// <summary>What reserving an attempt did: the credential as written, whether the attempt may be
+/// checked, the count before and after, and whether this reservation is the one that locked it.</summary>
+internal readonly record struct AttemptReservation(
+    ToamaisutaaPasswordCredential Credential,
+    bool Allowed,
+    LockoutState Before,
+    LockoutState After,
+    bool LockedByThisAttempt);

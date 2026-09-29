@@ -95,9 +95,11 @@ internal sealed class TwoFactorGate(
     /// The session presenting it, for <see cref="TwoFactorChallengePurpose.StepUp"/>. A challenge
     /// bound to a different family belongs to another of this user's sessions and is refused.
     /// </param>
-    /// <param name="isLockedOut">
-    /// Asked once the challenge names its user and before the code is checked, so a locked account
-    /// neither spends a recovery code nor learns whether a guess was right.
+    /// <param name="refuseAttempt">
+    /// Called once the challenge names its user and before the code is checked. It counts the attempt
+    /// and answers true to refuse it, so a locked account neither spends a recovery code nor learns
+    /// whether a guess was right - and parallel guesses cannot each be checked against an account that
+    /// only locks once they have all been answered.
     /// </param>
     internal async Task<ChallengeRedemption> RedeemChallengeAsync(
         string challengeToken,
@@ -106,7 +108,7 @@ internal sealed class TwoFactorGate(
         CancellationToken cancellationToken,
         TwoFactorChallengePurpose purpose = TwoFactorChallengePurpose.SignIn,
         Guid? familyId = null,
-        Func<Guid, Task<bool>>? isLockedOut = null)
+        Func<Guid, Task<bool>>? refuseAttempt = null)
     {
         var challenges = Required<ITwoFactorChallengeStore>();
         var stored = await challenges.FindByHashAsync(SecureTokens.HashToken(challengeToken), cancellationToken);
@@ -176,7 +178,7 @@ internal sealed class TwoFactorGate(
             return ChallengeRedemption.Failed(SignInOutcome.InvalidChallenge, stored.UserId);
         }
 
-        if (isLockedOut is not null && await isLockedOut(stored.UserId))
+        if (refuseAttempt is not null && await refuseAttempt(stored.UserId))
             return ChallengeRedemption.Failed(SignInOutcome.LockedOut, stored.UserId);
 
         var verifier = Required<TwoFactorVerifier>();
@@ -206,16 +208,12 @@ internal sealed class TwoFactorGate(
 
     /// <summary>For an account with no password credential, whose wrong-code count lives on the
     /// enrolment rather than on a credential it does not have.</summary>
-    internal async Task<bool> IsEnrolmentLockedOutAsync(Guid userId, DateTimeOffset now, CancellationToken cancellationToken) =>
-        await Required<ITwoFactorStore>().FindAsync(userId, cancellationToken) is { } enrolment
-        && LockoutPolicy.IsLockedOut(LockoutState.Of(enrolment), now);
-
-    internal Task<bool> RegisterEnrolmentFailureAsync(
+    internal Task<(bool Allowed, bool LockedByThisAttempt)> ReserveEnrolmentAttemptAsync(
         Guid userId,
         ToamaisutaaLocalLoginOptions localLogin,
         DateTimeOffset now,
         CancellationToken cancellationToken) =>
-        Required<ITwoFactorStore>().RegisterFailureAsync(userId, localLogin, now, cancellationToken);
+        Required<ITwoFactorStore>().ReserveAttemptAsync(userId, localLogin, now, cancellationToken);
 
     internal Task RegisterEnrolmentSuccessAsync(Guid userId, CancellationToken cancellationToken) =>
         Required<ITwoFactorStore>().RegisterSuccessAsync(userId, cancellationToken);

@@ -175,6 +175,46 @@ public class TwoFactorLockoutHttpTests
         await Assert.That(finished.StatusCode).IsEqualTo(HttpStatusCode.Unauthorized);
     }
 
+    /// <summary>
+    /// The lock was read before each code was checked and counted after, so every guess already in
+    /// flight was checked against an account that had not locked yet. Counted by the package's own
+    /// verification metric: however many arrive together, no more than the limit are ever checked.
+    /// </summary>
+    [Test]
+    public async Task Parallel_codes_are_checked_no_more_often_than_the_lockout_allows()
+    {
+        await using var app = await TestApp.StartAsync();
+        var account = await Account.RegisterAsync(app);
+        await account.EnrolAsync();
+
+        var challenge = await ChallengeAsync(account);
+        app.Time.AdvanceToNextTotpStep();
+        var wrong = Wrong(account, app);
+
+        using var probe = new InstrumentProbe(app, "toamaisutaa.two_factor.verifications");
+
+        await Task.WhenAll(Enumerable.Range(0, 20).Select(_ =>
+            app.Client.PostJson("/auth/2fa/verify", new { challenge, code = wrong })));
+
+        await Assert.That(probe.Total).IsLessThanOrEqualTo(Threshold);
+    }
+
+    [Test]
+    public async Task Parallel_passwords_are_checked_no_more_often_than_the_lockout_allows()
+    {
+        await using var app = await TestApp.StartAsync();
+        var account = await Account.RegisterAsync(app);
+
+        using var probe = new InstrumentProbe(app, "toamaisutaa.password.verification.duration");
+
+        await Task.WhenAll(Enumerable.Range(0, 20).Select(_ =>
+            app.Client.PostJson("/auth/login", new { identifier = account.UserName, password = "not the password" })));
+
+        // A refusal of a locked account runs the dummy derivation too, for the clock, and is tagged
+        // no_credential. Only the checks against the real hash are counted.
+        await Assert.That(probe.Results.Count(result => result == "failed")).IsLessThanOrEqualTo(Threshold);
+    }
+
     private static async Task<string> ChallengeAsync(Account account)
     {
         var body = await (await account.LoginAsync()).Json();

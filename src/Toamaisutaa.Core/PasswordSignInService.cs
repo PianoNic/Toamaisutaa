@@ -48,7 +48,11 @@ internal sealed class PasswordSignInService(
             return Refused(SignInOutcome.UnknownUser);
         }
 
-        if (LockoutPolicy.IsLockedOut(credential, now))
+        // Counted before the hash is checked, so parallel guesses cannot each find the account open.
+        var reservation = await credentials.ReserveAttemptAsync(credential, options.Value, now, cancellationToken);
+        credential = reservation.Credential;
+
+        if (!reservation.Allowed)
         {
             VerifyDummy(password);
             logger.LogWarning(
@@ -69,12 +73,9 @@ internal sealed class PasswordSignInService(
 
         if (verification == PasswordVerificationResult.Failed)
         {
-            (credential, var lockedByThisAttempt) = await credentials.RegisterFailureAsync(credential, options.Value, now, cancellationToken);
-
-            // Asked after the fact rather than inferred from the count, because the policy owns the
-            // threshold and the window reset. The event says the same thing to an audit table, once,
-            // as the lock goes on: a parallel attempt that lost the race to lock it does not repeat it.
-            if (lockedByThisAttempt && credential.LockedOutUntil is { } lockedOutUntil)
+            // Already counted by the reservation. The event says the lock went on, once, and only for
+            // the attempt whose reservation set it - a parallel one that lost the race does not repeat it.
+            if (reservation.LockedByThisAttempt && credential.LockedOutUntil is { } lockedOutUntil)
             {
                 metrics.LockedOut();
 
@@ -126,9 +127,11 @@ internal sealed class PasswordSignInService(
 
             if (!trust.Trusted)
             {
-                // The failure count is left standing. A right password is half a sign-in, and
-                // clearing the count here would let anyone who has it guess codes indefinitely by
-                // signing in again every few attempts.
+                // The failure count is left standing apart from this attempt's own reservation. A
+                // right password is half a sign-in, and clearing the count here would let anyone who
+                // has it guess codes indefinitely by signing in again every few attempts.
+                credential = await credentials.RefundAsync(reservation, now, cancellationToken);
+
                 if (rehashed)
                 {
                     var rehash = credential.PasswordHash;
@@ -219,29 +222,33 @@ internal sealed class PasswordSignInService(
         // Found through the challenge, which is the only thing here that names the account. Null for
         // an account with no password - a passkey-only one - whose count lives on the enrolment.
         ToamaisutaaPasswordCredential? credential = null;
+        AttemptReservation? reservation = null;
 
         var redemption = await twoFactor.RedeemChallengeAsync(
             request.ChallengeToken,
             request.Code,
             now,
             cancellationToken,
-            isLockedOut: async userId =>
+            refuseAttempt: async userId =>
             {
                 credential = await credentials.FindByUserIdAsync(userId, cancellationToken);
 
-                return credential is not null
-                    ? LockoutPolicy.IsLockedOut(credential, now)
-                    : await twoFactor.IsEnrolmentLockedOutAsync(userId, now, cancellationToken);
+                // Counted exactly as a code at step-up is, and before it is checked. Without it one
+                // challenge takes unlimited guesses and the per-address limiter is all that is left.
+                if (credential is not null)
+                {
+                    reservation = await credentials.ReserveAttemptAsync(credential, options.Value, now, cancellationToken);
+                    credential = reservation.Value.Credential;
+                    return !reservation.Value.Allowed;
+                }
+
+                return !(await twoFactor.ReserveEnrolmentAttemptAsync(userId, options.Value, now, cancellationToken)).Allowed;
             });
 
         if (redemption.Outcome != SignInOutcome.Succeeded)
         {
-            // Counted exactly as a wrong code at step-up is. Without it one challenge takes
-            // unlimited guesses and the per-address limiter is the only thing in the way.
-            if (redemption.Outcome == SignInOutcome.InvalidTwoFactorCode && credential is not null)
-                await RegisterWrongCodeAsync(credential, "Sign-in", now, cancellationToken);
-            else if (redemption.Outcome == SignInOutcome.InvalidTwoFactorCode && redemption.UserId is { } userId)
-                await twoFactor.RegisterEnrolmentFailureAsync(userId, options.Value, now, cancellationToken);
+            if (redemption.Outcome == SignInOutcome.InvalidTwoFactorCode && reservation is { } reserved)
+                await ReportWrongCodeAsync(reserved, "Sign-in", now, cancellationToken);
 
             await events.PublishAsync(
                 new TwoFactorFailed { OccurredAt = now, UserId = redemption.UserId, Reason = redemption.Outcome },
@@ -417,6 +424,7 @@ internal sealed class PasswordSignInService(
 
         var live = guard.Live!;
         var credential = guard.Credential!;
+        AttemptReservation? reservation = null;
 
         var redemption = await twoFactor.RedeemChallengeAsync(
             request.ChallengeToken,
@@ -424,15 +432,22 @@ internal sealed class PasswordSignInService(
             now,
             cancellationToken,
             TwoFactorChallengePurpose.StepUp,
-            request.SessionId);
+            request.SessionId,
+            refuseAttempt: async _ =>
+            {
+                // A code here counts exactly as a password does, reserved before it is checked. It
+                // means somebody holding a stolen access token can lock the owner out of step-up, and
+                // that is the right trade: the alternative is an unthrottled six-digit oracle handed
+                // to that same person.
+                reservation = await credentials.ReserveAttemptAsync(credential, options.Value, now, cancellationToken);
+                credential = reservation.Value.Credential;
+                return !reservation.Value.Allowed;
+            });
 
         if (redemption.Outcome != SignInOutcome.Succeeded)
         {
-            // A wrong code here counts exactly as a wrong password does. It means somebody holding
-            // a stolen access token can lock the owner out of step-up, and that is the right trade:
-            // the alternative is an unthrottled six-digit oracle handed to that same person.
-            if (redemption.Outcome == SignInOutcome.InvalidTwoFactorCode)
-                await RegisterWrongCodeAsync(credential, "Step-up", now, cancellationToken);
+            if (redemption.Outcome == SignInOutcome.InvalidTwoFactorCode && reservation is { } reserved)
+                await ReportWrongCodeAsync(reserved, "Step-up", now, cancellationToken);
 
             await events.PublishAsync(
                 new TwoFactorFailed { OccurredAt = now, UserId = request.UserId, Reason = redemption.Outcome },
@@ -846,15 +861,16 @@ internal sealed class PasswordSignInService(
     private Task RegisterSuccessAsync(ToamaisutaaPasswordCredential credential, DateTimeOffset now, CancellationToken cancellationToken) =>
         credentials.RegisterSuccessAsync(credential, now, cancellationToken);
 
-    /// <summary>A wrong second factor counts against the account exactly as a wrong password does,
-    /// wherever it was typed.</summary>
-    private async Task RegisterWrongCodeAsync(
-        ToamaisutaaPasswordCredential credential,
+    /// <summary>A wrong second factor, already counted by its reservation exactly as a wrong password
+    /// is, wherever it was typed. What is left is to say so, and to say once if it set the lock.</summary>
+    private async Task ReportWrongCodeAsync(
+        AttemptReservation reservation,
         string ceremony,
         DateTimeOffset now,
         CancellationToken cancellationToken)
     {
-        (credential, var lockedByThisAttempt) = await credentials.RegisterFailureAsync(credential, options.Value, now, cancellationToken);
+        var credential = reservation.Credential;
+        var lockedByThisAttempt = reservation.LockedByThisAttempt;
 
         logger.LogWarning(
             "{Ceremony} refused for user {UserId}: wrong code. {FailedAttempts} failed attempt(s) in the current window{Locked}.",
