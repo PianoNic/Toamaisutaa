@@ -549,7 +549,7 @@ internal sealed class PasswordAccountService(
         // links, so only the newest one works. Each invitation used to reserve a fresh row with a
         // fresh week-long token, and a link that leaked the first time stayed redeemable however
         // many times the address was invited since.
-        var existing = await FindReservationAsync(email, cancellationToken);
+        var existing = await FindReservationAsync(email, now, cancellationToken);
 
         // No user name and no credential - the row exists to be completed, not signed into. It is
         // deliberately not a match for RegisterAsync's shape: nothing here is a finished account yet.
@@ -575,6 +575,8 @@ internal sealed class PasswordAccountService(
                 TokenHash = SecureTokens.HashToken(raw),
                 CreatedAt = now,
                 ExpiresAt = now + options.Value.InvitationTokenLifetime,
+                Email = email.Trim(),
+                NormalizedEmail = Normalizer.Normalize(email),
             },
             cancellationToken);
 
@@ -597,15 +599,18 @@ internal sealed class PasswordAccountService(
 
             logger.LogError(
                 ex,
-                "Invitation notifier failed for user {UserId}. Nothing was sent, and the reserved account and its "
-                + "token were rolled back.",
+                existing is null
+                    ? "Invitation notifier failed for user {UserId}. Nothing was sent, and the reserved account and its token were rolled back."
+                    : "Invitation notifier failed for user {UserId}. Nothing was sent; the reservation stays and its earlier links are retired.",
                 user.Id);
 
             return new AccountResult
             {
                 Succeeded = false,
                 NotificationFailed = true,
-                Errors = ["The invitation could not be sent, so no account was reserved."],
+                Errors = [existing is null
+                    ? "The invitation could not be sent, so no account was reserved."
+                    : "The invitation could not be sent. Earlier links to this address no longer work; send it again once delivery works."],
             };
         }
 
@@ -618,28 +623,40 @@ internal sealed class PasswordAccountService(
     {
         ArgumentNullException.ThrowIfNull(email);
 
-        var reservation = await FindReservationAsync(email, cancellationToken);
+        var now = timeProvider.GetUtcNow();
+        var reservation = await FindReservationAsync(email, now, cancellationToken);
         if (reservation is null)
             return false;
 
         // Tokens first, so a store that does not cascade the delete still leaves nothing redeemable.
-        await invitationTokens.InvalidateAllForUserAsync(reservation.Id, timeProvider.GetUtcNow(), cancellationToken);
+        await invitationTokens.InvalidateAllForUserAsync(reservation.Id, now, cancellationToken);
         await users.DeleteAsync(reservation.Id, cancellationToken);
 
         logger.LogInformation("Invitation for user {UserId} revoked, and the reserved account removed.", reservation.Id);
         return true;
     }
 
-    /// <summary>An invitation not yet completed: a user row carrying the address, with no user name
-    /// and no credential. Anything more than that is somebody's account, and is never reused.</summary>
-    private async Task<ToamaisutaaUser?> FindReservationAsync(string email, CancellationToken cancellationToken)
+    /// <summary>
+    /// The account an open invitation to this address reserved, found through the invitation token
+    /// itself. Never inferred from a user row's shape: an identity provider's account with no user
+    /// name and no password looks exactly like a reservation, and that inference let an invitation
+    /// adopt such an account and a revocation delete it.
+    /// </summary>
+    private async Task<ToamaisutaaUser?> FindReservationAsync(string email, DateTimeOffset now, CancellationToken cancellationToken)
     {
-        var user = await users.FindByEmailAsync(email.Trim(), cancellationToken);
-
-        if (user is null || user.UserName is not null)
+        if (Normalizer.NormalizeOptional(email) is not { } normalized)
             return null;
 
-        return await credentials.FindByUserIdAsync(user.Id, cancellationToken) is null ? user : null;
+        if (await invitationTokens.FindOpenByEmailAsync(normalized, now, cancellationToken) is not { } open)
+            return null;
+
+        var user = await users.FindByIdAsync(open.UserId, cancellationToken);
+
+        // Completed since: somebody's account now, and never reused or removed.
+        if (user is null || user.UserName is not null || await credentials.FindByUserIdAsync(user.Id, cancellationToken) is not null)
+            return null;
+
+        return user;
     }
 
     public async Task<AccountResult> CompleteInvitationAsync(
@@ -674,10 +691,32 @@ internal sealed class PasswordAccountService(
 
         var trimmedUserName = userName.Trim();
 
+        // The address the invitation was sent to, off the token. The user row's profile email is
+        // what an identity provider's sync writes, and could have been pointed somewhere else between
+        // the invitation and now.
+        var invited = stored.Email ?? user.Email;
+
         // The invitation went to this address and came back, which proves the mailbox. So it is
         // verified from the start, and an unproven hold on it - a registration that got there
         // first - gives way instead of turning every name the invitee tries into a 409.
-        var credential = BuildCredential(user.Id, trimmedUserName, user.Email, password, now);
+        var credential = BuildCredential(user.Id, trimmedUserName, invited, password, now);
+
+        // Checked before the token is spent, so a taken name costs the invitee nothing: they pick
+        // another and the same link still works.
+        if (await credentials.IsTakenByAnotherAsync(user.Id, credential.NormalizedUserName, cancellationToken)
+            || (credential.NormalizedEmail is { } address && await IsHeldFirmlyByAnotherAsync(address, user.Id, cancellationToken)))
+        {
+            logger.LogInformation("Invitation completion refused: the user name or the invited address is already in use.");
+            return AccountResult.Taken("That user name or email address is already in use.");
+        }
+
+        // Spent before the account is created, and only by whoever wins the write. Two completions
+        // of one link at once used to both reach the insert, and the second answered 500.
+        if (!await invitationTokens.MarkConsumedAsync(stored.Id, now, cancellationToken))
+        {
+            logger.LogWarning("Invitation completion refused for user {UserId}: the link was spent by another request.", user.Id);
+            return AccountResult.Failure("That invitation link is no longer valid.");
+        }
 
         if (credential.NormalizedEmail is { } invitedAddress)
         {
@@ -691,14 +730,12 @@ internal sealed class PasswordAccountService(
         }
         catch (PasswordIdentifierConflictException)
         {
-            // The reservation survives a conflict untouched: the token is still unconsumed and
-            // nothing was written to the user row, so the same person can simply try again.
-            logger.LogInformation("Invitation completion refused: the user name or the invited address is already in use.");
-            return AccountResult.Taken("That user name or email address is already in use.");
+            // Taken in the moment since the check above. The link is spent by now, so say so.
+            logger.LogInformation("Invitation completion for user {UserId} lost its user name to another account at the last moment.", user.Id);
+            return AccountResult.Taken("That user name or email address was taken a moment ago. Ask for a new invitation.");
         }
 
         await users.SetUserNameAsync(user.Id, trimmedUserName, cancellationToken);
-        await invitationTokens.MarkConsumedAsync(stored.Id, now, cancellationToken);
 
         logger.LogInformation("Invitation completed for user {UserId}.", user.Id);
 

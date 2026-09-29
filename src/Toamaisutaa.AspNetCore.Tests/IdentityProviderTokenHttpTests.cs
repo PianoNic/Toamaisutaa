@@ -473,6 +473,73 @@ public class IdentityProviderTokenHttpTests
         await Assert.That(right.StatusCode).IsEqualTo(HttpStatusCode.BadRequest);
     }
 
+    /// <summary>A provider token with an email and no <c>preferred_username</c> - Google's shape - which
+    /// provisions a row with no user name and no password: exactly what a reservation used to look like.</summary>
+    private static string MintWithoutUserName(TestApp app, SecurityKey key, string subject, string email) =>
+        new JsonWebTokenHandler().CreateToken(new SecurityTokenDescriptor
+        {
+            Issuer = IdentityProvider,
+            Audience = "toamaisutaa-tests",
+            Subject = new ClaimsIdentity([new Claim("sub", subject), new Claim("email", email)]),
+            IssuedAt = app.Time.Now.UtcDateTime,
+            NotBefore = app.Time.Now.UtcDateTime,
+            Expires = app.Time.Now.AddMinutes(15).UtcDateTime,
+            SigningCredentials = new SigningCredentials(key, SecurityAlgorithms.RsaSha256),
+        });
+
+    /// <summary>
+    /// Revoking read "no user name, no password" as "an open invitation", so it deleted an identity
+    /// provider's account that happened to have that shape - along with its logins and sessions.
+    /// </summary>
+    [Test]
+    public async Task Revoking_an_invitation_never_deletes_an_identity_provider_account()
+    {
+        using var identityProviderKey = RSA.Create(2048);
+        using var localKey = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+
+        await using var app = await StartAsync(identityProviderKey, localKey);
+        var key = new RsaSecurityKey(identityProviderKey) { KeyId = IdentityProviderKeyId };
+        var admin = await Account.RegisterAsync(app, TestApp.AdminUserName);
+
+        var google = MintWithoutUserName(app, key, "google-subject", "alice@example.org");
+        var before = await (await app.Client.Get("/test/me", google)).Json();
+
+        var revoked = await app.Client.PostJson("/auth/invitations/revoke", new { email = "alice@example.org" }, admin.AccessToken);
+        var after = await app.Client.Get("/test/me", google);
+
+        await Assert.That(revoked.StatusCode).IsEqualTo(HttpStatusCode.NotFound);
+        await Assert.That((await after.Json()).String("id")).IsEqualTo(before.String("id"));
+    }
+
+    /// <summary>
+    /// Inviting the address of such an account reused its row, so the invitee's new password was
+    /// attached to an account somebody else's provider login still opened.
+    /// </summary>
+    [Test]
+    public async Task An_invitation_never_adopts_an_identity_provider_account()
+    {
+        using var identityProviderKey = RSA.Create(2048);
+        using var localKey = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+
+        await using var app = await StartAsync(identityProviderKey, localKey);
+        var key = new RsaSecurityKey(identityProviderKey) { KeyId = IdentityProviderKeyId };
+        var admin = await Account.RegisterAsync(app, TestApp.AdminUserName);
+
+        var google = MintWithoutUserName(app, key, "google-subject", "newhire@example.org");
+        var providerAccount = (await (await app.Client.Get("/test/me", google)).Json()).String("id");
+
+        await app.Client.PostJson("/auth/invitations", new { email = "newhire@example.org" }, admin.AccessToken);
+
+        var completed = await app.Client.PostJson(
+            "/auth/invitations/complete",
+            new { token = app.IssuedInvitations.Single().Token, userName = "newhire", password = Account.DefaultPassword });
+
+        var invitedAccount = Account.DecodeClaims((await completed.Json()).String("access_token")!).String("sub");
+
+        await Assert.That(completed.StatusCode).IsEqualTo(HttpStatusCode.Created);
+        await Assert.That(invitedAccount).IsNotEqualTo(providerAccount);
+    }
+
     private sealed class UserInfoRecorder : HttpMessageHandler
     {
         public System.Collections.Concurrent.ConcurrentQueue<string> BearerTokens { get; } = new();

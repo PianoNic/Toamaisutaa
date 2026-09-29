@@ -21,8 +21,12 @@ public sealed class ToamaisutaaInvitationTokenConfiguration : IEntityTypeConfigu
         builder.Property(token => token.ExpiresAt).HasConversion(InstantConverters.Instant);
         builder.Property(token => token.ConsumedAt).HasConversion(InstantConverters.NullableInstant);
 
+        builder.Property(token => token.Email).HasMaxLength(256);
+        builder.Property(token => token.NormalizedEmail).HasMaxLength(256);
+
         builder.HasIndex(token => token.TokenHash).IsUnique();
         builder.HasIndex(token => token.UserId);
+        builder.HasIndex(token => token.NormalizedEmail);
 
         builder.HasOne<ToamaisutaaUser>()
             .WithMany()

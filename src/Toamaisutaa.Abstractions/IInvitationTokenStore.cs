@@ -15,4 +15,11 @@ public interface IInvitationTokenStore
     /// <summary>Spends every unused invitation for the user. Called when the same address is invited
     /// again, so only the newest link works, and when an invitation is revoked.</summary>
     Task InvalidateAllForUserAsync(Guid userId, DateTimeOffset consumedAt, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// The newest invitation to <paramref name="normalizedEmail"/> that is neither spent nor expired,
+    /// or null. This is what identifies an open invitation: a user row is never assumed to be a
+    /// reservation from its shape, because an account an identity provider owns has the same shape.
+    /// </summary>
+    Task<ToamaisutaaInvitationToken?> FindOpenByEmailAsync(string normalizedEmail, DateTimeOffset now, CancellationToken cancellationToken = default);
 }

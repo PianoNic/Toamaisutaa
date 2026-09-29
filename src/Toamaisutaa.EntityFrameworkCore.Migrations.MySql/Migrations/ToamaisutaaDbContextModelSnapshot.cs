@@ -105,8 +105,16 @@ namespace Toamaisutaa.EntityFrameworkCore.Migrations.MySql.Migrations
                     b.Property<long>("CreatedAt")
                         .HasColumnType("bigint");
 
+                    b.Property<string>("Email")
+                        .HasMaxLength(256)
+                        .HasColumnType("varchar(256)");
+
                     b.Property<long>("ExpiresAt")
                         .HasColumnType("bigint");
+
+                    b.Property<string>("NormalizedEmail")
+                        .HasMaxLength(256)
+                        .HasColumnType("varchar(256)");
 
                     b.Property<string>("TokenHash")
                         .IsRequired()
@@ -117,6 +125,8 @@ namespace Toamaisutaa.EntityFrameworkCore.Migrations.MySql.Migrations
                         .HasColumnType("char(36)");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("NormalizedEmail");
 
                     b.HasIndex("TokenHash")
                         .IsUnique();

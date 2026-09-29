@@ -21,4 +21,15 @@ public class ToamaisutaaInvitationToken
 
     /// <summary>Set the moment it is spent. A second attempt with the same token fails.</summary>
     public DateTimeOffset? ConsumedAt { get; set; }
+
+    /// <summary>
+    /// The address the invitation was sent to, which is the address completing it proves. Read from
+    /// here rather than from the reserved user row, whose profile email an identity provider's sync can
+    /// rewrite between the invitation and its completion. Null on rows written before the column
+    /// existed, which fall back to the user row.
+    /// </summary>
+    public string? Email { get; set; }
+
+    /// <summary>What an open invitation is found by when the same address is invited again or revoked.</summary>
+    public string? NormalizedEmail { get; set; }
 }
