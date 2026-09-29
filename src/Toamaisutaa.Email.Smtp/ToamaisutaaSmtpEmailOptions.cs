@@ -16,7 +16,9 @@ public sealed class ToamaisutaaSmtpEmailOptions
     public string? Password { get; set; }
 
     /// <summary>How the connection is secured. <see cref="SmtpSecurityMode.Auto"/> picks TLS for
-    /// port 465 and STARTTLS for everything else, which is right for almost every provider.</summary>
+    /// port 465 and required STARTTLS for everything else, which is right for almost every provider.
+    /// A server that does not offer STARTTLS fails the send rather than getting the password in the
+    /// clear.</summary>
     public SmtpSecurityMode Security { get; set; } = SmtpSecurityMode.Auto;
 
     /// <summary>
@@ -74,10 +76,11 @@ public sealed class ToamaisutaaSmtpEmailOptions
 /// <summary>How <see cref="ToamaisutaaSmtpEmailOptions.Security"/> secures the connection.</summary>
 public enum SmtpSecurityMode
 {
-    /// <summary>TLS on connect for port 465, STARTTLS otherwise - MailKit's own default behaviour.</summary>
+    /// <summary>TLS on connect for port 465, required STARTTLS otherwise. Unlike MailKit's own Auto,
+    /// a server that does not offer STARTTLS is refused rather than spoken to in the clear.</summary>
     Auto,
 
-    /// <summary>No transport security. For a local relay only.</summary>
+    /// <summary>No transport security. For a local relay only, and startup logs a warning.</summary>
     None,
 
     /// <summary>Connects in the clear and upgrades with STARTTLS before authenticating.</summary>

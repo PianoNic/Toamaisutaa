@@ -47,6 +47,13 @@ internal sealed class SmtpEmailStartupCheck(
         if (settings.SkipCertificateVerification)
             logger.LogWarning("Email:Smtp:SkipCertificateVerification is on - the SMTP server's TLS certificate is not being checked.");
 
+        if (settings.Security == SmtpSecurityMode.None)
+        {
+            logger.LogWarning(
+                "Email:Smtp:Security is None - the SMTP login and every message, reset and magic links included, "
+                + "travel unencrypted. Use it only for a relay on the same host.");
+        }
+
         return Task.CompletedTask;
     }
 

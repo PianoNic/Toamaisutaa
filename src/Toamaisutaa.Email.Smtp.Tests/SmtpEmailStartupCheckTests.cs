@@ -93,4 +93,25 @@ public class SmtpEmailStartupCheckTests
 
         await Assert.That(logger.Entries.Any(entry => entry.Level == LogLevel.Warning)).IsTrue();
     }
+
+    [Test]
+    public async Task WarnsWhenTheConnectionIsUnencrypted()
+    {
+        var options = Valid();
+        options.Security = SmtpSecurityMode.None;
+
+        var check = Check(options, out var logger);
+        await check.StartAsync(CancellationToken.None);
+
+        await Assert.That(logger.Entries.Any(entry => entry.Level == LogLevel.Warning)).IsTrue();
+    }
+
+    [Test]
+    public async Task DoesNotWarnForTheDefaultSecurity()
+    {
+        var check = Check(Valid(), out var logger);
+        await check.StartAsync(CancellationToken.None);
+
+        await Assert.That(logger.Entries.Any(entry => entry.Level == LogLevel.Warning)).IsFalse();
+    }
 }
