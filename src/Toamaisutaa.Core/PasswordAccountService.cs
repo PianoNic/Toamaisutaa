@@ -147,14 +147,9 @@ internal sealed class PasswordAccountService(
         await RevokeAllSessionsAsync(userId, "password-changed", now, cancellationToken);
         await trustedDevices.RevokeAllAsync(userId, "password-changed", now, cancellationToken);
         await RevokeAllPasskeysAsync(userId, "password-changed", cancellationToken);
-        await resetTokens.InvalidateAllForUserAsync(userId, now, cancellationToken);
+        await RetireOutstandingLinksAsync(userId, now, cancellationToken);
 
         await events.PublishAsync(new PasswordChanged { OccurredAt = now, UserId = userId }, cancellationToken);
-
-        // An outstanding change of address is a credential in flight too: whoever was in this
-        // account a moment ago may have pointed it at a mailbox of their own, and the link is still
-        // sitting there.
-        await emailVerificationTokens.InvalidateAllForUserAsync(userId, now, cancellationToken);
 
         return new AccountResult { Succeeded = true, UserId = userId };
     }
@@ -256,8 +251,7 @@ internal sealed class PasswordAccountService(
         await RevokeAllSessionsAsync(userId, "admin-password-set", now, cancellationToken);
         await trustedDevices.RevokeAllAsync(userId, "admin-password-set", now, cancellationToken);
         await RevokeAllPasskeysAsync(userId, "admin-password-set", cancellationToken);
-        await resetTokens.InvalidateAllForUserAsync(userId, now, cancellationToken);
-        await emailVerificationTokens.InvalidateAllForUserAsync(userId, now, cancellationToken);
+        await RetireOutstandingLinksAsync(userId, now, cancellationToken);
 
         await events.PublishAsync(
             new PasswordChanged { OccurredAt = now, UserId = userId, SetByAdministrator = true },
@@ -408,7 +402,10 @@ internal sealed class PasswordAccountService(
                 current.UpdatedAt = now;
             },
             cancellationToken);
-        await emailVerificationTokens.InvalidateAllForUserAsync(stored.UserId, now, cancellationToken);
+
+        // The address moved, so every link mailed to the old one is retired: a reset or magic link
+        // sitting in a mailbox the owner just walked away from is still a way in.
+        await RetireOutstandingLinksAsync(stored.UserId, now, cancellationToken);
 
         // The profile field follows the login identifier, so the reset and invitation notifiers stop
         // addressing mail to where this account used to be. Nothing else moves: sessions stay alive,
@@ -772,8 +769,7 @@ internal sealed class PasswordAccountService(
 
         await ApplyNewPasswordAsync(credential, newPassword, now, cancellationToken);
 
-        await resetTokens.InvalidateAllForUserAsync(stored.UserId, now, cancellationToken);
-        await emailVerificationTokens.InvalidateAllForUserAsync(stored.UserId, now, cancellationToken);
+        await RetireOutstandingLinksAsync(stored.UserId, now, cancellationToken);
 
         // Nothing on the external side is touched: the external logins stay linked, and a token the
         // identity provider issued keeps working until it expires, because we cannot revoke it.
@@ -842,6 +838,19 @@ internal sealed class PasswordAccountService(
             CreatedAt = now,
             UpdatedAt = now,
         };
+
+    /// <summary>
+    /// Every link mailed out and not yet used: reset, magic and email verification. Called on each
+    /// change that is somebody reacting to another person having had access - a password set, reset
+    /// or changed, or the account moved to a new address. A magic link was left out of that list,
+    /// and one still sitting in a mailbox signed in after the account had been secured.
+    /// </summary>
+    private async Task RetireOutstandingLinksAsync(Guid userId, DateTimeOffset now, CancellationToken cancellationToken)
+    {
+        await resetTokens.InvalidateAllForUserAsync(userId, now, cancellationToken);
+        await magicLinkTokens.InvalidateAllForUserAsync(userId, now, cancellationToken);
+        await emailVerificationTokens.InvalidateAllForUserAsync(userId, now, cancellationToken);
+    }
 
     /// <summary>
     /// A proven claim to an address outranks an unproven hold on it. Registration takes whatever
