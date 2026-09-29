@@ -72,17 +72,24 @@ internal sealed class ConfigureToamaisutaaJwtBearerOptions(
     /// With no explicit audience configured, the accepted audience falls back to the client id - and
     /// the client id is the audience of every ID token the provider issues to that client. ID tokens
     /// travel further than access tokens (logout URLs carry them as <c>id_token_hint</c>, and SPAs
-    /// hand them to other components), so one that leaked authenticated as its subject. These are the
-    /// markers an ID token carries and an access token does not: <c>nonce</c> and <c>at_hash</c>
-    /// from the OpenID Connect core spec, and the <c>typ</c> claim Keycloak writes into every token.
+    /// hand them to other components), so one that leaked authenticated as its subject.
+    /// <para>
+    /// A token that says what it is decides: Keycloak writes a <c>typ</c> claim into every token,
+    /// <c>ID</c> or <c>Bearer</c>, and before version 25 it also put <c>nonce</c> into access tokens -
+    /// so reading <c>nonce</c> first refused every access token those servers issued. Only a token with
+    /// no such label is judged by the markers the OpenID Connect core spec gives an ID token and not an
+    /// access token: <c>nonce</c> and <c>at_hash</c>. An ID token carrying neither still passes an
+    /// audience of the client id, which is why the startup log asks for an API audience.
+    /// </para>
     /// </remarks>
     internal static bool RefuseIdTokens(TokenValidatedContext context)
     {
         var principal = context.Principal;
+        var label = principal?.FindFirst("typ")?.Value;
 
-        var looksLikeIdToken = principal is not null
-            && (principal.HasClaim(claim => claim.Type is "nonce" or "at_hash")
-                || principal.HasClaim(claim => claim.Type == "typ" && string.Equals(claim.Value, "ID", StringComparison.OrdinalIgnoreCase)));
+        var looksLikeIdToken = label is not null
+            ? string.Equals(label, "ID", StringComparison.OrdinalIgnoreCase)
+            : principal is not null && principal.HasClaim(claim => claim.Type is "nonce" or "at_hash");
 
         if (!looksLikeIdToken)
             return false;
