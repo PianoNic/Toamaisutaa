@@ -62,6 +62,8 @@ public class RateLimitPartitionHttpTests
     [Test]
     [Arguments("2001:db8:64::/96", "2001:db8:64::cb00:7101", "2001:db8:64::cb00:7102")]
     [Arguments("2001:db8:100::/40", "2001:db8:1cb:71:1::", "2001:db8:1cb:71:2::")]
+    // Inside the well-known /48, which used to match first and read zeros for every client.
+    [Arguments("64:ff9b:1::/96", "64:ff9b:1::c000:201", "64:ff9b:1::c633:6407")]
     public async Task Ipv4_clients_behind_a_configured_nat64_prefix_keep_separate_budgets(string prefix, string first, string second)
     {
         await using var app = await StartLimitedAsync(
