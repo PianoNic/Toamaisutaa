@@ -65,6 +65,75 @@ public class PasswordlessTwoFactorLockoutTests
     /// A lock on the enrolment was set and said nothing: no <c>AccountLockedOut</c> for an audit sink,
     /// and the lockout counter stood still, so a passkey-only account being guessed at was invisible.
     /// </summary>
+    /// <summary>
+    /// A right code that another request used first is a race lost, not a wrong code. On a
+    /// credential its reservation is given back; on an enrolment it stayed counted, so a
+    /// double-click left a passkey-only account one failure closer to a lockout.
+    /// </summary>
+    [Test]
+    public async Task A_right_code_that_loses_a_race_leaves_no_failure_on_an_account_with_no_password()
+    {
+        var harness = PasswordHarness.Create(withTwoFactor: true);
+        var user = harness.ProvisionExternalUser();
+        var (secret, _) = await harness.EnrolAsync(user.Id);
+
+        var challenge = await harness.Gate.IssueChallengeAsync(user.Id, harness.Clock.GetUtcNow(), CancellationToken.None);
+        harness.Clock.Now += TimeSpan.FromSeconds(30);
+        harness.TwoFactorStore.LoseNextStep = true;
+
+        var lost = await harness.SignIn.VerifyTwoFactorAsync(
+            new TwoFactorSignInRequest { ChallengeToken = challenge.Token, Code = harness.CurrentCode(secret) });
+
+        await Assert.That(lost.Outcome).IsEqualTo(SignInOutcome.ChallengeAlreadyUsed);
+        await Assert.That((await harness.TwoFactorStore.FindAsync(user.Id))!.FailedAttemptCount).IsEqualTo(0);
+    }
+
+    /// <summary>The attempt that loses can be the one whose reservation locked the enrolment. Given
+    /// back, that lock goes with it - it was set by a right code, not a guess.</summary>
+    [Test]
+    public async Task A_right_code_that_loses_a_race_undoes_the_lock_it_set()
+    {
+        var harness = PasswordHarness.Create(withTwoFactor: true);
+        var user = harness.ProvisionExternalUser();
+        var (secret, _) = await harness.EnrolAsync(user.Id);
+
+        var challenge = await harness.Gate.IssueChallengeAsync(user.Id, harness.Clock.GetUtcNow(), CancellationToken.None);
+
+        for (var i = 0; i < harness.Options.MaxFailedAttempts - 1; i++)
+        {
+            harness.Clock.Now += TimeSpan.FromSeconds(30);
+            await harness.SignIn.VerifyTwoFactorAsync(new TwoFactorSignInRequest { ChallengeToken = challenge.Token, Code = "000000" });
+        }
+
+        // The last allowed attempt: its reservation is the one that locks.
+        harness.Clock.Now += TimeSpan.FromSeconds(30);
+        harness.TwoFactorStore.LoseNextStep = true;
+        await harness.SignIn.VerifyTwoFactorAsync(new TwoFactorSignInRequest { ChallengeToken = challenge.Token, Code = harness.CurrentCode(secret) });
+
+        var next = await harness.Gate.IssueChallengeAsync(user.Id, harness.Clock.GetUtcNow(), CancellationToken.None);
+        harness.Clock.Now += TimeSpan.FromSeconds(30);
+        var right = await harness.SignIn.VerifyTwoFactorAsync(
+            new TwoFactorSignInRequest { ChallengeToken = next.Token, Code = harness.CurrentCode(secret) });
+
+        await Assert.That(right.Outcome).IsEqualTo(SignInOutcome.Succeeded);
+    }
+
+    [Test]
+    public async Task A_right_proof_that_loses_a_race_leaves_no_failure_on_an_account_with_no_password()
+    {
+        var harness = PasswordHarness.Create(withTwoFactor: true);
+        var user = harness.ProvisionExternalUser();
+        var (secret, _) = await harness.EnrolAsync(user.Id);
+
+        harness.Clock.Now += TimeSpan.FromSeconds(30);
+        harness.TwoFactorStore.LoseNextStep = true;
+
+        var lost = await harness.TwoFactor.DisableAsync(user.Id, harness.CurrentCode(secret));
+
+        await Assert.That(lost.Succeeded).IsFalse();
+        await Assert.That((await harness.TwoFactorStore.FindAsync(user.Id))!.FailedAttemptCount).IsEqualTo(0);
+    }
+
     [Test]
     public async Task Locking_an_account_with_no_password_at_sign_in_is_reported_once()
     {

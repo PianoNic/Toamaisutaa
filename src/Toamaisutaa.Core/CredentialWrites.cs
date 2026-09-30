@@ -245,7 +245,7 @@ internal static class CredentialWrites
     /// </summary>
     /// <remarks>Reserved before the code is checked, for the reason the credential version gives.</remarks>
     /// <returns>Whether the code may be checked, and when this attempt is the one that locked it, until when.</returns>
-    internal static async Task<(bool Allowed, DateTimeOffset? LockedUntil)> ReserveAttemptAsync(
+    internal static async Task<EnrolmentReservation> ReserveAttemptAsync(
         this ITwoFactorStore store,
         Guid userId,
         ToamaisutaaLocalLoginOptions options,
@@ -256,12 +256,12 @@ internal static class CredentialWrites
         {
             // Nothing to count on: the code is checked and fails on its own, since there is no secret.
             if (await store.FindAsync(userId, cancellationToken) is not { } enrolment)
-                return (true, null);
+                return EnrolmentReservation.Uncounted(allowed: true);
 
             var current = LockoutState.Of(enrolment);
 
             if (LockoutPolicy.IsLockedOut(current, now))
-                return (false, null);
+                return EnrolmentReservation.Uncounted(allowed: false);
 
             var next = LockoutPolicy.RegisterFailure(current, options, now);
 
@@ -275,13 +275,64 @@ internal static class CredentialWrites
                     next.LockedOutUntil,
                     cancellationToken))
             {
-                return (true, LockoutPolicy.IsLockedOut(next, now) ? next.LockedOutUntil : null);
+                return new EnrolmentReservation(
+                    Allowed: true,
+                    LockedUntil: LockoutPolicy.IsLockedOut(next, now) ? next.LockedOutUntil : null,
+                    Before: current,
+                    After: next,
+                    Counted: true);
             }
         }
 
         // The count kept moving under every try, which only a flood of attempts does. Refused rather
         // than checked uncounted.
-        return (false, null);
+        return EnrolmentReservation.Uncounted(allowed: false);
+    }
+
+    /// <summary>
+    /// Gives back one reservation on an enrolment whose attempt was right but lost a race, the same
+    /// as <see cref="TryRefundAsync"/> does on a credential: the lock it set, if it still stands
+    /// untouched, undone to what it replaced; otherwise one failure taken off an unlocked count. A
+    /// courtesy, so one that cannot land is left.
+    /// </summary>
+    internal static async Task TryRefundAttemptAsync(
+        this ITwoFactorStore store,
+        Guid userId,
+        EnrolmentReservation reservation,
+        DateTimeOffset now,
+        CancellationToken cancellationToken)
+    {
+        if (!reservation.Counted)
+            return;
+
+        for (var attempt = 1; attempt <= MaxAttempts; attempt++)
+        {
+            if (await store.FindAsync(userId, cancellationToken) is not { } enrolment)
+                return;
+
+            var state = LockoutState.Of(enrolment);
+            LockoutState next;
+
+            if (reservation.LockedUntil is not null && state == reservation.After)
+                next = reservation.Before;
+            else if (!LockoutPolicy.IsLockedOut(state, now) && state.FailedAttemptCount > 0)
+                next = state with { FailedAttemptCount = state.FailedAttemptCount - 1 };
+            else
+                return;
+
+            if (await store.UpdateFailedAttemptsAsync(
+                    userId,
+                    state.FailedAttemptCount,
+                    state.FirstFailedAttemptAt,
+                    state.LockedOutUntil,
+                    next.FailedAttemptCount,
+                    next.FirstFailedAttemptAt,
+                    next.LockedOutUntil,
+                    cancellationToken))
+            {
+                return;
+            }
+        }
     }
 
     /// <summary>Clears the enrolment's count once a code has been accepted.</summary>
@@ -364,6 +415,19 @@ internal static class CredentialWrites
                 current.UpdatedAt = now;
             },
             cancellationToken);
+}
+
+/// <summary>What reserving an attempt on an enrolment did: whether it may be checked, until when it
+/// locked the enrolment if it did, and the count before and after, for giving it back.</summary>
+internal readonly record struct EnrolmentReservation(
+    bool Allowed,
+    DateTimeOffset? LockedUntil,
+    LockoutState Before,
+    LockoutState After,
+    bool Counted)
+{
+    internal static EnrolmentReservation Uncounted(bool allowed) =>
+        new(allowed, null, LockoutState.Clear, LockoutState.Clear, Counted: false);
 }
 
 /// <summary>A stored password rehashed under current parameters, waiting to be written.</summary>
