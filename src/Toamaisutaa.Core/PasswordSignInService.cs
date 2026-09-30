@@ -257,6 +257,22 @@ internal sealed class PasswordSignInService(
         var user = await users.FindByIdAsync(redemption.UserId!.Value, cancellationToken)
             ?? throw new InvalidOperationException($"Challenge points at user {redemption.UserId}, which does not exist.");
 
+        // Read again here, the stamp can be a reset's that landed after the challenge was checked, and
+        // minting with it would hand the session the owner just locked out a stamp that matches.
+        if (redemption.SecurityStamp is not null
+            && !string.Equals(user.SecurityStamp, redemption.SecurityStamp, StringComparison.Ordinal))
+        {
+            logger.LogWarning(
+                "Two-factor sign-in for user {UserId} refused: the account's credentials changed while it was being verified.",
+                user.Id);
+
+            await events.PublishAsync(
+                new TwoFactorFailed { OccurredAt = now, UserId = user.Id, Reason = SignInOutcome.InvalidChallenge },
+                cancellationToken);
+
+            return Refused(SignInOutcome.InvalidChallenge);
+        }
+
         // A recovery code means the authenticator is gone, so devices are revoked explicitly; bumping
         // the stamp would revoke the session being established.
         if (redemption.UsedRecoveryCode)
@@ -340,7 +356,8 @@ internal sealed class PasswordSignInService(
                 user.Id,
                 now,
                 cancellationToken,
-                authenticationMethods: ToamaisutaaDefaults.MagicLinkMethod);
+                authenticationMethods: ToamaisutaaDefaults.MagicLinkMethod,
+                securityStamp: user.SecurityStamp);
 
             logger.LogInformation("Magic link accepted for user {UserId}; a second factor is required.", user.Id);
 
