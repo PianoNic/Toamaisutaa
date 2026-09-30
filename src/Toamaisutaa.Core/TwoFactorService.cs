@@ -65,20 +65,21 @@ internal sealed class TwoFactorService(
             // The second call replaces the first, so a page reload does not leave a trail of live
             // unconfirmed secrets. It also means a user who scanned the earlier QR code is now
             // holding a dead one, which is what ConfirmEnrolmentAsync's hint is for.
-            await enrolments.UpsertAsync(
-                new ToamaisutaaUserTwoFactor
-                {
-                    UserId = userId,
-                    SecretCiphertext = wrapped.Ciphertext,
-                    SecretNonce = wrapped.Nonce,
-                    SecretTag = wrapped.Tag,
-                    EncryptionKeyVersion = wrapped.KeyVersion,
-                    ConfirmedAt = null,
-                    LastUsedStep = null,
-                    CreatedAt = existing?.CreatedAt ?? now,
-                    UpdatedAt = now,
-                },
-                cancellationToken);
+            //
+            // Written onto the row already read, not a new instance of it: the store may be tracking
+            // that one, and a second instance with the same key answered every repeat with a 500.
+            // Its wrong-code count carries over too, so starting again cannot wipe it.
+            var enrolment = existing ?? new ToamaisutaaUserTwoFactor { UserId = userId, CreatedAt = now };
+
+            enrolment.SecretCiphertext = wrapped.Ciphertext;
+            enrolment.SecretNonce = wrapped.Nonce;
+            enrolment.SecretTag = wrapped.Tag;
+            enrolment.EncryptionKeyVersion = wrapped.KeyVersion;
+            enrolment.ConfirmedAt = null;
+            enrolment.LastUsedStep = null;
+            enrolment.UpdatedAt = now;
+
+            await enrolments.UpsertAsync(enrolment, cancellationToken);
 
             // Deliberately says nothing about what was handed out. This response carries the secret
             // in plaintext, and a log line that quoted any part of it would outlive every rotation.
