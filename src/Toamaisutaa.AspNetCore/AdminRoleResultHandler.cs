@@ -19,7 +19,6 @@ internal sealed class AdminRoleResultHandler(
         var settings = options.Value;
 
         if (authorizeResult.Succeeded
-            && settings.RequireAuthenticatedUser
             && settings.RequireAdminRoleGlobally
             && settings.AdminRole is { Length: > 0 } adminRole
             && context.GetEndpoint()?.Metadata.GetMetadata<IAllowAnonymous>() is null
