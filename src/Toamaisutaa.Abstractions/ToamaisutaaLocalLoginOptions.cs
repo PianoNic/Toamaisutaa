@@ -250,4 +250,15 @@ public sealed class ToamaisutaaRateLimitOptions
     public int PermitLimit { get; set; } = 10;
 
     public TimeSpan Window { get; set; } = TimeSpan.FromMinutes(1);
+
+    /// <summary>
+    /// Network-specific NAT64 prefixes in front of this deployment, such as <c>2001:db8:64::/96</c>,
+    /// with a length of 32, 40, 48, 56, 64 or 96. A client behind one is keyed on the IPv4 address
+    /// inside it, as it already is for the well-known <c>64:ff9b::/96</c> and <c>64:ff9b:1::/48</c>.
+    /// </summary>
+    /// <remarks>
+    /// Without it, the gateway's /64 is one caller, and one IPv4 client sending a few wrong
+    /// passwords spends the budget of every other one behind it.
+    /// </remarks>
+    public IList<string> Nat64Prefixes { get; set; } = [];
 }

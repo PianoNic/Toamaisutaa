@@ -63,7 +63,7 @@ internal sealed class PasswordRateLimiter : IDisposable
                     remote);
             }
 
-            var partition = PartitionKey(remote);
+            var partition = PartitionKey(remote, settings.Nat64Prefixes);
 
             return RateLimitPartition.GetFixedWindowLimiter(
                 partition,
@@ -82,7 +82,7 @@ internal sealed class PasswordRateLimiter : IDisposable
     /// One budget per caller. An IPv6 caller is its /64, because that is what one customer is
     /// handed: keyed on the full address, every one of the 2^64 addresses in it was a fresh budget.
     /// </summary>
-    internal static string PartitionKey(IPAddress? address)
+    internal static string PartitionKey(IPAddress? address, IEnumerable<string>? nat64Prefixes = null)
     {
         if (address is null)
             return "unknown";
@@ -97,17 +97,47 @@ internal sealed class PasswordRateLimiter : IDisposable
 
         // A NAT64 gateway puts every IPv4 client it translates in one /64, so one of them sending a
         // few wrong passwords used to cost all the others their budget. The IPv4 address is inside,
-        // where RFC 6052 puts it for these two prefixes.
-        // ponytail: well-known prefixes only - a setting for network-specific ones when someone runs one.
-        if (bytes is [0x00, 0x64, 0xff, 0x9b, 0, 0, 0, 0, 0, 0, 0, 0, ..])
-            return new IPAddress(bytes[12..16]).ToString();
-
-        if (bytes is [0x00, 0x64, 0xff, 0x9b, 0x00, 0x01, ..])
-            return new IPAddress([bytes[6], bytes[7], bytes[9], bytes[10]]).ToString();
+        // where RFC 6052 puts it for the prefix's length.
+        foreach (var prefix in WellKnownNat64.Concat(ParseNat64Prefixes(nat64Prefixes)))
+        {
+            if (prefix.Contains(address))
+                return new IPAddress(EmbeddedIpv4(bytes, prefix.PrefixLength)).ToString();
+        }
 
         Array.Clear(bytes, 8, 8);
 
         return $"{new IPAddress(bytes)}/64";
+    }
+
+    private static readonly IPNetwork[] WellKnownNat64 = [IPNetwork.Parse("64:ff9b::/96"), IPNetwork.Parse("64:ff9b:1::/48")];
+
+    // One that does not parse is skipped here; the startup check refuses it, so it is never skipped
+    // silently.
+    private static IEnumerable<IPNetwork> ParseNat64Prefixes(IEnumerable<string>? values)
+    {
+        foreach (var value in values ?? [])
+        {
+            if (Nat64Prefix.TryParse(value, out var prefix))
+                yield return prefix;
+        }
+    }
+
+    /// <summary>RFC 6052 section 2.2: the four octets follow the prefix, skipping octet 8, which is
+    /// reserved and always zero.</summary>
+    private static byte[] EmbeddedIpv4(byte[] address, int prefixLength)
+    {
+        var ipv4 = new byte[4];
+        var at = prefixLength / 8;
+
+        for (var i = 0; i < 4; i++, at++)
+        {
+            if (at == 8)
+                at++;
+
+            ipv4[i] = address[at];
+        }
+
+        return ipv4;
     }
 
     private static bool IsPrivateOrLoopback(IPAddress address)

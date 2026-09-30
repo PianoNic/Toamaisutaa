@@ -30,6 +30,7 @@ internal sealed class PasswordLoginStartupCheck(
         CheckPeppers(settings, problems);
         CheckHashingParameters(settings, problems);
         CheckLengths(settings, problems);
+        CheckNat64Prefixes(settings, problems);
 
         if (problems.Count > 0)
         {
@@ -47,6 +48,18 @@ internal sealed class PasswordLoginStartupCheck(
     }
 
     public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+
+    private static void CheckNat64Prefixes(ToamaisutaaLocalLoginOptions settings, List<string> problems)
+    {
+        foreach (var value in settings.RateLimit.Nat64Prefixes)
+        {
+            if (!Nat64Prefix.TryParse(value, out _))
+            {
+                problems.Add(
+                    $"LocalLogin:RateLimit:Nat64Prefixes has '{value}', which is not an IPv6 prefix of length 32, 40, 48, 56, 64 or 96.");
+            }
+        }
+    }
 
     private void CheckRegistrations(List<string> problems)
     {

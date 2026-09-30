@@ -63,6 +63,46 @@ public class RateLimitPartitionHttpTests
     }
 
     /// <summary>
+    /// A gateway on a prefix of the network's own, which only configuration can name. The /40 puts
+    /// the address across the reserved octet, which is skipped, so this is the embedding worked out
+    /// rather than a fixed offset.
+    /// </summary>
+    [Test]
+    [Arguments("2001:db8:64::/96", "2001:db8:64::cb00:7101", "2001:db8:64::cb00:7102")]
+    [Arguments("2001:db8:100::/40", "2001:db8:1cb:71:1::", "2001:db8:1cb:71:2::")]
+    public async Task Ipv4_clients_behind_a_configured_nat64_prefix_keep_separate_budgets(string prefix, string first, string second)
+    {
+        await using var app = await StartLimitedAsync(
+            permitLimit: 1,
+            configure: settings => settings["LocalLogin:RateLimit:Nat64Prefixes:0"] = prefix);
+
+        var one = await LoginFromAsync(app, first);
+        var other = await LoginFromAsync(app, second);
+        var again = await LoginFromAsync(app, first);
+
+        await Assert.That(one.StatusCode).IsNotEqualTo(HttpStatusCode.TooManyRequests);
+        await Assert.That(other.StatusCode).IsNotEqualTo(HttpStatusCode.TooManyRequests);
+        await Assert.That(again.StatusCode).IsEqualTo(HttpStatusCode.TooManyRequests);
+    }
+
+    /// <summary>A prefix that cannot be read would be skipped, and its clients would share one
+    /// budget with nothing saying why. Refused at startup instead.</summary>
+    [Test]
+    [Arguments("2001:db8:64::/72")]
+    [Arguments("192.0.2.0/24")]
+    [Arguments("not a prefix")]
+    public async Task A_nat64_prefix_that_cannot_be_read_refuses_to_start(string prefix)
+    {
+        var started = async () => await (await StartLimitedAsync(
+            permitLimit: 1,
+            configure: settings => settings["LocalLogin:RateLimit:Nat64Prefixes:0"] = prefix)).DisposeAsync();
+
+        var refused = await Assert.That(started).Throws<InvalidOperationException>();
+
+        await Assert.That(refused!.Message).Contains("Nat64Prefixes");
+    }
+
+    /// <summary>
     /// Behind a proxy with forwarded headers left unconfigured, every caller is the proxy and shares
     /// one limit - ten junk logins a minute and the whole site answers 429. Nothing at startup can
     /// see that, so the first request that shows it says so.
@@ -97,13 +137,17 @@ public class RateLimitPartitionHttpTests
         await Assert.That(warnings.Count(message => message.Contains("X-Forwarded-For"))).IsEqualTo(0);
     }
 
-    private static Task<TestApp> StartLimitedAsync(int permitLimit, Action<IServiceCollection>? configureServices = null) =>
+    private static Task<TestApp> StartLimitedAsync(
+        int permitLimit,
+        Action<IServiceCollection>? configureServices = null,
+        Action<Dictionary<string, string?>>? configure = null) =>
         TestApp.StartAsync(
             configure: settings =>
             {
                 settings["LocalLogin:RateLimit:Enabled"] = "true";
                 settings["LocalLogin:RateLimit:PermitLimit"] = permitLimit.ToString(System.Globalization.CultureInfo.InvariantCulture);
                 settings["LocalLogin:RateLimit:Window"] = "01:00:00";
+                configure?.Invoke(settings);
             },
             configureServices: configureServices);
 
