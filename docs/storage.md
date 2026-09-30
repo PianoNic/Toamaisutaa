@@ -100,10 +100,11 @@ with concurrency tokens. The flows catch it, read the row again and reapply thei
 that writes the whole row blindly still works, but parallel wrong passwords then all write the same
 count and the lockout never arrives.
 
-`IRefreshTokenStore.MarkRotatedAsync` returns whether this call is the one that moved the row from
-live to rotated. Make it a single conditional write - `WHERE Id = @id AND RotatedAt IS NULL AND
-RevokedAt IS NULL` - and return whether a row changed. Returning true unconditionally lets two
-requests exchange one refresh token at once, forking the session with no reuse ever detected.
+`IRefreshTokenStore.MarkRotatedAsync` and `ITrustedDeviceStore.MarkRotatedAsync` return whether
+this call is the one that moved the row from live to rotated. Make it a single conditional write -
+`WHERE Id = @id AND RotatedAt IS NULL AND RevokedAt IS NULL` - and return whether a row changed.
+Returning true unconditionally lets two requests exchange one token at once, forking the session or
+the device trust with no reuse ever detected.
 
 Every `MarkConsumedAsync` - reset, magic-link, invitation and email-verification tokens, recovery
 codes, two-factor and passkey challenges - follows the same rule: one write conditional on

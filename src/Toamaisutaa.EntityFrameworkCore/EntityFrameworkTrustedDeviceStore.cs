@@ -25,14 +25,14 @@ internal sealed class EntityFrameworkTrustedDeviceStore<TContext>(TContext conte
         await context.SaveChangesAsync(cancellationToken);
     }
 
-    public async Task MarkRotatedAsync(Guid deviceId, DateTimeOffset rotatedAt, CancellationToken cancellationToken = default) =>
+    public async Task<bool> MarkRotatedAsync(Guid deviceId, DateTimeOffset rotatedAt, CancellationToken cancellationToken = default) =>
         await context.Set<ToamaisutaaTrustedDevice>()
-            .Where(device => device.Id == deviceId)
+            .Where(device => device.Id == deviceId && device.RotatedAt == null && device.RevokedAt == null)
             .ExecuteUpdateAsync(
                 setters => setters
                     .SetProperty(device => device.RotatedAt, rotatedAt)
                     .SetProperty(device => device.LastUsedAt, rotatedAt),
-                cancellationToken);
+                cancellationToken) == 1;
 
     public async Task RevokeFamilyAsync(Guid familyId, string reason, DateTimeOffset revokedAt, CancellationToken cancellationToken = default) =>
         await context.Set<ToamaisutaaTrustedDevice>()

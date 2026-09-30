@@ -10,7 +10,12 @@ public interface ITrustedDeviceStore
 
     Task CreateAsync(ToamaisutaaTrustedDevice device, CancellationToken cancellationToken = default);
 
-    Task MarkRotatedAsync(Guid deviceId, DateTimeOffset rotatedAt, CancellationToken cancellationToken = default);
+    /// <summary>
+    /// Marks the row rotated only if it is still live - not rotated, not revoked - and says whether
+    /// it did. A write that landed regardless let parallel redemptions of one token each mint a live
+    /// successor, and none of them ever looked like reuse.
+    /// </summary>
+    Task<bool> MarkRotatedAsync(Guid deviceId, DateTimeOffset rotatedAt, CancellationToken cancellationToken = default);
 
     Task RevokeFamilyAsync(Guid familyId, string reason, DateTimeOffset revokedAt, CancellationToken cancellationToken = default);
 

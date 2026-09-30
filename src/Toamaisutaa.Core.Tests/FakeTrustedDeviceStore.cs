@@ -19,17 +19,16 @@ internal sealed class FakeTrustedDeviceStore : ITrustedDeviceStore
         return Task.CompletedTask;
     }
 
-    public Task MarkRotatedAsync(Guid deviceId, DateTimeOffset rotatedAt, CancellationToken cancellationToken = default)
+    public Task<bool> MarkRotatedAsync(Guid deviceId, DateTimeOffset rotatedAt, CancellationToken cancellationToken = default)
     {
         var device = Devices.FirstOrDefault(entry => entry.Id == deviceId);
 
-        if (device is not null)
-        {
-            device.RotatedAt = rotatedAt;
-            device.LastUsedAt = rotatedAt;
-        }
+        if (device is not { RotatedAt: null, RevokedAt: null })
+            return Task.FromResult(false);
 
-        return Task.CompletedTask;
+        device.RotatedAt = rotatedAt;
+        device.LastUsedAt = rotatedAt;
+        return Task.FromResult(true);
     }
 
     public Task RevokeFamilyAsync(Guid familyId, string reason, DateTimeOffset revokedAt, CancellationToken cancellationToken = default)
