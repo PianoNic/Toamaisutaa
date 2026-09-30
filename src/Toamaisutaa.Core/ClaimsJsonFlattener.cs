@@ -2,17 +2,11 @@ using System.Text.Json;
 
 namespace Toamaisutaa.Core;
 
-/// <summary>
-/// Turns a userinfo response into claims. Lives here rather than next to the HTTP call because it
-/// is pure text in, claims out, and that is the part worth testing.
-/// </summary>
 internal static class ClaimsJsonFlattener
 {
     /// <summary>
-    /// Scalars become one claim. Arrays become one claim per entry, which is the only shape a
-    /// groups array can arrive in if a role check is to match any single group inside it. Nested
-    /// objects, and objects inside arrays, are skipped: a claim value is a string, and flattening
-    /// an object into one would invent a format nothing agrees on.
+    /// Arrays become one claim per entry so a role check can match any single group; nested objects
+    /// are skipped because flattening one into a string would invent a format nothing agrees on.
     /// </summary>
     internal static IReadOnlyList<(string Type, string Value)> Parse(string json)
     {

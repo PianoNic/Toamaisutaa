@@ -42,8 +42,8 @@ internal sealed class SessionService(
     {
         var now = timeProvider.GetUtcNow();
 
-        // Scoped to this user's own list, so a family id belonging to someone else is
-        // indistinguishable from one that never existed.
+        // Scoped to this user's own list, so another user's family id is indistinguishable from one
+        // that never existed.
         if (!(await LiveAsync(userId, now, cancellationToken)).Any(session => session.Token.FamilyId == sessionId))
             return false;
 
@@ -58,8 +58,7 @@ internal sealed class SessionService(
         var now = timeProvider.GetUtcNow();
         var revoked = 0;
 
-        // One family at a time rather than one statement over the user, because the caller's own
-        // session has to survive and RevokeAllForUserAsync has no way to spare it.
+        // One family at a time because RevokeAllForUserAsync cannot spare the caller's own session.
         foreach (var session in await LiveAsync(userId, now, cancellationToken))
         {
             if (session.Token.FamilyId == currentSessionId)
@@ -74,10 +73,6 @@ internal sealed class SessionService(
         return revoked;
     }
 
-    /// <summary>
-    /// Revokes one family and publishes it, so an audit sink hears about a session the user ended
-    /// themselves as well as the ones a credential change ended for them.
-    /// </summary>
     private async Task RevokeAsync(Guid userId, Guid sessionId, DateTimeOffset now, CancellationToken cancellationToken)
     {
         await refreshTokens.RevokeFamilyAsync(sessionId, "revoked-by-user", now, cancellationToken);
@@ -94,14 +89,9 @@ internal sealed class SessionService(
     }
 
     /// <summary>
-    /// The live row of each family, minus the ones a refresh would already refuse.
+    /// Filters out families a refresh would already refuse, since expired rows stay unrevoked in
+    /// the table until presented.
     /// </summary>
-    /// <remarks>
-    /// A family whose token has expired, or which has reached its absolute lifetime, is still
-    /// unrotated and unrevoked in the table until somebody presents it - the refusal happens on the
-    /// refresh path, not on a timer. Listing those would offer the user sessions that are already
-    /// over, and revoking one would be a 204 that changed nothing anybody could observe.
-    /// </remarks>
     private async Task<IReadOnlyList<(ToamaisutaaRefreshToken Token, DateTimeOffset EndsAt)>> LiveAsync(
         Guid userId,
         DateTimeOffset now,

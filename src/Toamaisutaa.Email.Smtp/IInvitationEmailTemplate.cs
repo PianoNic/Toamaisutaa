@@ -3,9 +3,8 @@ using Toamaisutaa.Abstractions;
 namespace Toamaisutaa.Email.Smtp;
 
 /// <summary>
-/// Turns an invitation token into the email that gets sent. Register your own and it replaces the
-/// default outright - the same seam <see cref="IPasswordResetEmailTemplate"/> offers for the reset
-/// email.
+/// Turns an invitation token into the email that gets sent. Register your own to replace the
+/// default.
 /// </summary>
 public interface IInvitationEmailTemplate
 {

@@ -17,10 +17,9 @@ public static class ToamaisutaaTwoFactorExtensions
     /// a local sign-in stops at once a user is enrolled.
     /// </summary>
     /// <remarks>
-    /// Needs a store registration and <c>TwoFactor:EncryptionKey</c>, both checked at startup. It
-    /// also needs somewhere for the second factor to actually apply, which means either
-    /// <c>AddToamaisutaaPasswordLogin</c> or <c>AddToamaisutaaTwoFactorClaims</c> - registering
-    /// neither leaves a feature that can be enrolled in and never enforced.
+    /// Needs a store registration and <c>TwoFactor:EncryptionKey</c>, both checked at startup, and
+    /// either <c>AddToamaisutaaPasswordLogin</c> or <c>AddToamaisutaaTwoFactorClaims</c>, without which
+    /// enrolment is possible but never enforced.
     /// </remarks>
     public static IServiceCollection AddToamaisutaaTwoFactor(
         this IServiceCollection services,
@@ -54,11 +53,9 @@ public static class ToamaisutaaTwoFactorExtensions
     /// when they have not enrolled - to the token the provider issued.
     /// </summary>
     /// <remarks>
-    /// Opt-in and off by default because it costs a database read on every authenticated request.
-    /// It never adds <c>amr</c>: being enrolled is not having presented a second factor, and the
-    /// provider owns that sign-in, so Toamaisutaa cannot say what was proved there. A policy that
-    /// needs <c>amr=mfa</c> from a provider's user needs the provider to assert it, or a local
-    /// step-up.
+    /// Costs a database read on every authenticated request. It never adds <c>amr</c>, because being
+    /// enrolled is not having presented a second factor; <c>amr=mfa</c> for a provider's user needs the
+    /// provider to assert it, or a local step-up.
     /// </remarks>
     public static IServiceCollection AddToamaisutaaTwoFactorClaims(this IServiceCollection services)
     {
@@ -67,10 +64,8 @@ public static class ToamaisutaaTwoFactorExtensions
         services.AddOptions<ToamaisutaaTwoFactorOptions>();
         services.AddOptions<ToamaisutaaProvisioningOptions>();
 
-        // AddAuthentication registers a do-nothing transformation, and AddToamaisutaaBearer - which
-        // has to come first - calls it. A plain TryAdd therefore never registered this at all, and
-        // the transformation silently never ran. Only the framework's placeholder is replaced: an
-        // application's own transformation still wins, as it did.
+        // AddAuthentication registers a no-op transformation that would make TryAdd skip this; only that
+        // placeholder is replaced, so an application's own transformation still wins.
         var placeholder = services.FirstOrDefault(descriptor =>
             descriptor.ServiceType == typeof(IClaimsTransformation)
             && descriptor.ImplementationType == typeof(NoopClaimsTransformation));
@@ -91,15 +86,12 @@ public static class ToamaisutaaTwoFactorExtensions
         services.TryAddSingleton<IRecoveryCodeProvider, RecoveryCodeProvider>();
         services.TryAddSingleton<ISecretProtector, AesGcmSecretProtector>();
 
-        // Registered here as well as by password login, because the enrolment endpoints verify
-        // second factors whether or not this deployment has local sign-in.
         services.TryAddSingleton<ToamaisutaaMetrics>();
 
         services.TryAddScoped<TwoFactorVerifier>();
         services.TryAddScoped<TwoFactorGate>();
 
-        // Registered here too: enabling or disabling a second factor takes the trusted devices with
-        // it, and the gate answers harmlessly when no device store exists.
+        // Enabling or disabling a second factor revokes trusted devices, so the gate is needed even without them.
         services.AddOptions<ToamaisutaaTrustedDeviceOptions>();
         services.TryAddScoped<TrustedDeviceGate>();
         services.TryAddScoped<AuthenticationEventPublisher>();
@@ -120,10 +112,6 @@ public static class ToamaisutaaTwoFactorExtensions
     }
 }
 
-/// <summary>
-/// Registers the policy named by <c>TwoFactor:EnrolledPolicyName</c>, which requires <c>amr</c> to
-/// contain <c>mfa</c> - the RFC 8176 value for "a second factor was actually presented".
-/// </summary>
 internal sealed class ConfigureToamaisutaaTwoFactorPolicy(IOptions<ToamaisutaaTwoFactorOptions> options)
     : IConfigureOptions<AuthorizationOptions>
 {

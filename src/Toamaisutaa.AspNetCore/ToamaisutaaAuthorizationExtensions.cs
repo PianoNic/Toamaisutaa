@@ -11,9 +11,7 @@ namespace Microsoft.Extensions.DependencyInjection;
 public static class ToamaisutaaAuthorizationExtensions
 {
     /// <summary>
-    /// Authenticated by default, with an optional admin role. Independent of
-    /// <c>AddToamaisutaaBearer</c>: an application can authenticate however it likes and still use
-    /// this, or use the bearer layer and write its own policies.
+    /// Authenticated by default, with an optional admin role. Independent of <c>AddToamaisutaaBearer</c>.
     /// </summary>
     public static IServiceCollection AddToamaisutaaAuthorization(
         this IServiceCollection services,
@@ -43,8 +41,7 @@ public static class ToamaisutaaAuthorizationExtensions
     }
 
     /// <summary>
-    /// Registers <see cref="ICurrentUser"/>. Separate call, because provisioning is opt-in and
-    /// because an application with no local user table still wants the subject and actor name.
+    /// Registers <see cref="ICurrentUser"/>, which works without a local user table for the subject and name.
     /// </summary>
     public static IServiceCollection AddToamaisutaaCurrentUser(this IServiceCollection services)
     {
@@ -53,12 +50,8 @@ public static class ToamaisutaaAuthorizationExtensions
         services.AddHttpContextAccessor();
         services.AddOptions<ToamaisutaaProvisioningOptions>();
 
-        // Named so ICurrentUser.Roles reads the claim the role checks read. Left unbound here on
-        // purpose: the IConfiguration overload of AddToamaisutaaAuthorization binds it, and an
-        // application that hands this package no configuration at all still gets the default rather
-        // than a missing-options failure. That application is not left reading the wrong claim
-        // either, because Roles also reads each identity's own role claim type - the one
-        // RequireRole reads, whoever configured it.
+        // Left unbound on purpose: AddToamaisutaaAuthorization binds it, and without configuration the
+        // default still avoids a missing-options failure.
         services.AddOptions<ToamaisutaaOidcOptions>();
         services.TryAddScoped<ICurrentUser, HttpContextCurrentUser>();
 
@@ -66,9 +59,8 @@ public static class ToamaisutaaAuthorizationExtensions
     }
 
     /// <summary>
-    /// Registers <see cref="IToamaisutaaClientConfigurationProvider"/> on its own, for an
-    /// application that composes the SPA configuration into an endpoint of its own rather than
-    /// using <c>MapToamaisutaaConfiguration</c>. Already done by
+    /// Registers <see cref="IToamaisutaaClientConfigurationProvider"/> on its own, for an application
+    /// serving the SPA configuration from its own endpoint. Already done by
     /// <see cref="AddToamaisutaaAuthorization(IServiceCollection, IConfiguration, string)"/>.
     /// </summary>
     public static IServiceCollection AddToamaisutaaClientConfiguration(this IServiceCollection services)
@@ -89,9 +81,7 @@ public static class ToamaisutaaAuthorizationExtensions
         services.TryAddEnumerable(
             ServiceDescriptor.Singleton<IConfigureOptions<AuthorizationOptions>, ConfigureToamaisutaaAuthorizationOptions>());
 
-        // The fallback and default policies cannot reach an endpoint that names a policy or roles of
-        // its own, so RequireAdminRoleGlobally is enforced on the result instead, which every
-        // authorized endpoint passes through. Wraps whatever handler is registered by now.
+        // Wraps whatever result handler is registered by now, so a consumer's own handler still runs.
         if (!services.Any(descriptor => descriptor.ServiceType == typeof(AdminRoleResultHandler)))
         {
             var existing = services.LastOrDefault(descriptor => descriptor.ServiceType == typeof(IAuthorizationMiddlewareResultHandler));
@@ -132,8 +122,7 @@ internal sealed class ConfigureToamaisutaaAuthorizationOptions(IOptions<Toamaisu
 
         var fallback = new AuthorizationPolicyBuilder().RequireAuthenticatedUser();
 
-        // The whole application behind one role, rather than per endpoint. Ignored when no admin
-        // role is configured, so turning the flag on alone cannot lock everyone out.
+        // Ignored when no admin role is configured, so the flag alone cannot lock everyone out.
         var adminOnly = settings.RequireAdminRoleGlobally && !string.IsNullOrWhiteSpace(settings.AdminRole);
 
         if (adminOnly)
@@ -142,9 +131,7 @@ internal sealed class ConfigureToamaisutaaAuthorizationOptions(IOptions<Toamaisu
         var policy = fallback.Build();
         authorization.FallbackPolicy = policy;
 
-        // The fallback only covers endpoints that say nothing. One marked with a bare [Authorize] or
-        // RequireAuthorization() uses the default policy instead - "signed in" - so "admin-only"
-        // quietly meant "admin-only, except wherever anyone asked for authorization".
+        // A bare [Authorize] uses the default policy, not the fallback, so it must require the role too.
         if (adminOnly)
             authorization.DefaultPolicy = policy;
     }

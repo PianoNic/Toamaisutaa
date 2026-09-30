@@ -1,8 +1,7 @@
 namespace Toamaisutaa.Core;
 
 /// <summary>
-/// RFC 4648 base32, without padding. The encoding every authenticator app expects a manually typed
-/// TOTP secret to be in, and the only reason this file exists - nothing else in the package uses it.
+/// RFC 4648 base32, without padding, as authenticator apps expect a manually typed TOTP secret.
 /// </summary>
 internal static class Base32
 {
@@ -30,8 +29,6 @@ internal static class Base32
             }
         }
 
-        // The trailing partial group is left-aligned and zero-filled, which is what "no padding"
-        // means here: the decoder drops whatever bits do not make a whole byte.
         if (bits > 0)
             output[written++] = Alphabet[(buffer << (5 - bits)) & 0x1F];
 

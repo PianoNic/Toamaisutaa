@@ -10,8 +10,7 @@ public interface IExternalLoginStore
 
     /// <summary>
     /// Links a subject to a user. Throws <see cref="ExternalLoginConflictException"/> when the pair
-    /// already exists, which is how a concurrent first sign-in is reported without the caller
-    /// knowing anything about the storage engine.
+    /// already exists, which is how a concurrent first sign-in is reported.
     /// </summary>
     Task<ToamaisutaaExternalLogin> LinkAsync(
         Guid userId,

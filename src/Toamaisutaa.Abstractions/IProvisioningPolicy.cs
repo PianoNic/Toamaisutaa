@@ -1,9 +1,7 @@
 namespace Toamaisutaa.Abstractions;
 
 /// <summary>
-/// Decides what provisioning should do with a mapped profile. Pure: it reads the context and
-/// returns a decision, touching no storage. This is where email-based linking lands when it is
-/// specified, which is why the decision is a type and not a boolean.
+/// Decides what provisioning should do with a mapped profile. Pure: it touches no storage.
 /// </summary>
 public interface IProvisioningPolicy
 {
@@ -26,8 +24,7 @@ public sealed record ProvisioningContext
     public ToamaisutaaUser? LinkedUser { get; init; }
 
     /// <summary>An existing local user this subject should attach to instead of getting a new row.
-    /// Always null today: linking is by subject only, so there is nothing to match on. Present so
-    /// that adding email-based linking later is a new policy rather than a new signature.</summary>
+    /// Currently always null, since linking is by subject only.</summary>
     public ToamaisutaaUser? LinkCandidate { get; init; }
 }
 
@@ -47,8 +44,7 @@ public sealed record ProvisioningDecision
 {
     public required ProvisioningAction Action { get; init; }
 
-    /// <summary>The user the action targets. Null for <see cref="ProvisioningAction.CreateNew"/>,
-    /// which has nothing to target yet.</summary>
+    /// <summary>The user the action targets. Null for <see cref="ProvisioningAction.CreateNew"/>.</summary>
     public Guid? UserId { get; init; }
 
     public Guid? ExternalLoginId { get; init; }

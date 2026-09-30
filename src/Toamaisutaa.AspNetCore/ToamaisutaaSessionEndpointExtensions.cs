@@ -11,12 +11,10 @@ public static class ToamaisutaaSessionEndpointExtensions
 {
     /// <summary>
     /// Maps the session list and the two revoke endpoints under <c>LocalLogin:EndpointPrefix</c> +
-    /// <c>LocalLogin:SessionEndpointPrefix</c>. A session a user cannot see or end is the same
-    /// liability a trusted device they cannot revoke is.
+    /// <c>LocalLogin:SessionEndpointPrefix</c>.
     /// </summary>
     /// <remarks>
-    /// A session here is a refresh family - what <c>toa_sid</c> names - so it survives rotation and
-    /// one entry is one sign-in rather than one access token.
+    /// A session is a refresh family, what <c>toa_sid</c> names, so one entry is one sign-in.
     /// </remarks>
     /// <param name="endpoints">The builder to map into. A <c>RouteGroupBuilder</c> is one.</param>
     /// <param name="endpointNamePrefix">
@@ -117,14 +115,9 @@ public static class ToamaisutaaSessionEndpointExtensions
     }
 
     /// <summary>
-    /// Reads <c>toa_sid</c>. Absent means the caller holds a token this package did not issue - an
-    /// identity provider's, most likely - so there is no session of theirs to mark or to spare.
+    /// Null for an identity-provider token, which is not the 400 step-up answers, because listing and
+    /// ending local sessions is still meaningful for such a caller.
     /// </summary>
-    /// <remarks>
-    /// Not the 400 that step-up answers: elevating a session that does not exist is meaningless,
-    /// whereas listing and ending the local sessions of a user signed in through a provider is a
-    /// perfectly ordinary thing to want.
-    /// </remarks>
     private static Guid? CurrentSession(HttpContext context) =>
         Guid.TryParse(context.User.FindFirst(ToamaisutaaDefaults.SessionIdClaim)?.Value, out var sessionId)
             ? sessionId

@@ -12,8 +12,7 @@ public interface ITrustedDeviceStore
 
     /// <summary>
     /// Marks the row rotated only if it is still live - not rotated, not revoked - and says whether
-    /// it did. A write that landed regardless let parallel redemptions of one token each mint a live
-    /// successor, and none of them ever looked like reuse.
+    /// it did. An unconditional write lets parallel redemptions each mint a live successor undetected.
     /// </summary>
     Task<bool> MarkRotatedAsync(Guid deviceId, DateTimeOffset rotatedAt, CancellationToken cancellationToken = default);
 

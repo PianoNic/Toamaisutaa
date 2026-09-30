@@ -8,33 +8,15 @@ using Toamaisutaa.Core;
 namespace Toamaisutaa.PasswordHashing.Argon2;
 
 /// <summary>
-/// Refuses to start rather than hashing a real password with parameters that were never strong
-/// enough, the same reasoning <c>PasswordLoginStartupCheck</c> uses for local login.
+/// Refuses to start on parameters too weak to protect a password or above the bounds the hasher
+/// reads back, since either failure is invisible once rows have been written with them.
 /// </summary>
-/// <remarks>
-/// <para>
-/// Weak parameters are worse than a missing dependency here, because nothing about them is visible
-/// afterwards: sign-in works, the rows look right, and the only symptom is how fast somebody else
-/// cracks them. They also cannot be repaired in place - every password hashed under them stays that
-/// way until its owner next signs in.
-/// </para>
-/// <para>
-/// The ceilings are the same argument from the other end. <see cref="Argon2idPasswordHasher"/>
-/// bounds what a stored row may ask this process for, so parameters above those bounds write rows
-/// the same hasher then refuses: the account is registered, and the correct password is answered
-/// with a failure that reads exactly like a wrong one.
-/// </para>
-/// </remarks>
 internal sealed class Argon2HashingStartupCheck(
     IServiceCollection services,
     IOptions<ToamaisutaaArgon2Options> options,
     ILogger<Argon2HashingStartupCheck> logger) : IHostedService
 {
-    /// <summary>
-    /// The configurations OWASP publishes as equivalent, weakest memory first. Any one of them, or
-    /// anything stronger than one of them, passes; the point of the table is that trading memory
-    /// for passes is allowed and going below all five is not.
-    /// </summary>
+    /// <summary>The configurations OWASP publishes as equivalent; meeting any one of them passes.</summary>
     private static readonly (int MemoryKib, int Iterations)[] OwaspConfigurations =
     [
         (47_104, 1),
@@ -71,18 +53,16 @@ internal sealed class Argon2HashingStartupCheck(
     public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
 
     /// <summary>
-    /// The failure this catches is silent: another <see cref="IPasswordHasher"/> registered after
-    /// this package leaves it installed, configured, and hashing nothing.
+    /// Another <see cref="IPasswordHasher"/> registered after this package silently leaves it
+    /// hashing nothing.
     /// </summary>
     private void CheckRegistration(List<string> problems)
     {
-        // The last registration is the one a single-service resolve gets.
         var hasher = services.LastOrDefault(descriptor => descriptor.ServiceType == typeof(IPasswordHasher));
 
         var implementation = hasher?.ImplementationType ?? hasher?.ImplementationInstance?.GetType();
 
-        // Null means a factory registration, whose type nothing can read here. Say nothing rather
-        // than accuse it.
+        // Null means a factory registration, whose type cannot be read here, so it is not accused.
         if (implementation is null || implementation == typeof(Argon2idPasswordHasher))
             return;
 

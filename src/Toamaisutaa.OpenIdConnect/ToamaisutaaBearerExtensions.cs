@@ -17,8 +17,7 @@ public static class ToamaisutaaBearerExtensions
     /// itself belongs to the client; this is the resource-server half.
     /// </summary>
     /// <remarks>
-    /// Returns the <see cref="AuthenticationBuilder"/> so an application can chain its own schemes
-    /// onto it, which is how a machine-to-machine token scheme sits beside the human one.
+    /// Returns the <see cref="AuthenticationBuilder"/> so an application can chain its own schemes.
     /// </remarks>
     public static AuthenticationBuilder AddToamaisutaaBearer(
         this IServiceCollection services,
@@ -52,10 +51,8 @@ public static class ToamaisutaaBearerExtensions
 
     private static AuthenticationBuilder AddBearerCore(IServiceCollection services)
     {
-        // Userinfo claims live here, for the stampede protection: a cold start fires a dozen
-        // requests carrying one token before any of them has answered. A registered
-        // IDistributedCache is used as a second level only when Oidc:ShareUserInfoCacheAcrossInstances
-        // says so, because these entries decide authorization.
+        // HybridCache for its stampede protection on userinfo; the distributed level stays off unless
+        // Oidc:ShareUserInfoCacheAcrossInstances says so, because these entries decide authorization.
         services.AddHybridCache();
         services.AddHttpClient(ToamaisutaaDefaults.UserInfoHttpClientName);
 
@@ -64,18 +61,13 @@ public static class ToamaisutaaBearerExtensions
         services.AddOptions<ToamaisutaaLocalLoginOptions>();
         services.AddOptions<ToamaisutaaProvisioningOptions>();
 
-        // Singletons because importing key material allocates a key handle and both the signing and
-        // the validating path run per request. TryAdd, and AddToamaisutaaPasswordLogin adds the ring
-        // too, because either call may come first - and a resource server that never issues a token
-        // still has to validate the ones another instance issued.
+        // Also added by AddToamaisutaaPasswordLogin, since either may come first and a resource server
+        // that never issues a token still validates ones another instance issued.
         services.TryAddSingleton<LocalSigningKeyRing>();
         services.TryAddSingleton<LocalTokenKeys>();
 
-        // The ring never throws on a bad entry - it collects one into Problems, and in a process
-        // that registered password login PasswordLoginStartupCheck is what prints them. In the
-        // resource server above, nothing did: the entry was dropped, the host started clean, and
-        // every token it was meant to accept came back 401. This check stands down when the other
-        // one is present, so the same line is never printed twice.
+        // The ring silently drops a bad entry, so a resource server without password login needs its
+        // own check or it starts clean and answers 401. It stands down when PasswordLoginStartupCheck is present.
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IHostedService, LocalSigningKeyStartupCheck>(provider =>
             new LocalSigningKeyStartupCheck(services, provider.GetRequiredService<LocalSigningKeyRing>())));
 
@@ -83,8 +75,7 @@ public static class ToamaisutaaBearerExtensions
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IHostedService, PublishedSecretsStartupCheck>());
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IHostedService, Toamaisutaa.OpenIdConnect.PublishedSecretsLoopbackCheck>());
 
-        // Registered here because signing a token needs a JWT library and Core carries none. It
-        // does nothing until password login configures a signing key.
+        // Here rather than in Core, which carries no JWT library.
         services.TryAddSingleton<IAccessTokenIssuer, LocalAccessTokenIssuer>();
         services.TryAddEnumerable(
             ServiceDescriptor.Singleton<IConfigureOptions<JwtBearerOptions>, ConfigureToamaisutaaJwtBearerOptions>());

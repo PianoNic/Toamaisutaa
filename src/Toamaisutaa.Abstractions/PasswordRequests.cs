@@ -13,8 +13,7 @@ public sealed record LogoutRequest(string RefreshToken);
 public sealed record RegisterRequest(string UserName, string? Email, string Password);
 
 /// <summary><see cref="CurrentPassword"/> is required when the account already has one, and must be
-/// absent when it does not - which is the case for an account that arrived through an identity
-/// provider and is adding a password for the first time.</summary>
+/// absent when it does not.</summary>
 public sealed record ChangePasswordRequest(string? CurrentPassword, string NewPassword);
 
 public sealed record ForgotPasswordRequest(string Email);
@@ -29,15 +28,14 @@ public sealed record CreateUserRequest(string UserName, string? Email, string? P
 /// <see cref="IAdminPasswordIssuedNotifier"/> rather than returned from the endpoint.</summary>
 public sealed record SetUserPasswordRequest(string? Password);
 
-/// <summary><see cref="CurrentPassword"/> is always required, including when
-/// <see cref="NewEmail"/> is the address the account already has - which is how a verification link
-/// is asked for again.</summary>
+/// <summary><see cref="CurrentPassword"/> is always required. Send the current address as
+/// <see cref="NewEmail"/> to resend a verification link.</summary>
 public sealed record ChangeEmailRequest(string NewEmail, string CurrentPassword);
 
 public sealed record VerifyEmailRequest(string Token);
 
 /// <summary>The address a magic link is asked for. Answered identically whether or not it belongs to
-/// anybody, so nothing here is validated back to the caller.</summary>
+/// anybody.</summary>
 public sealed record MagicLinkRequest(string Email);
 
 public sealed record VerifyMagicLinkRequest(string Token);

@@ -1,17 +1,10 @@
 namespace Toamaisutaa.Core;
 
 /// <summary>
-/// The PHC string format: <c>$algorithm[$v=version]$param=value,param=value$salt$hash</c>, base64
-/// without padding. Storing the algorithm and its parameters in the row is what turns an
-/// iteration-count increase, or a move to a different algorithm entirely, into a rehash on next
-/// login rather than a migration.
+/// The version is its own segment rather than a parameter because Argon2's canonical encoding
+/// (<c>$argon2id$v=19$m=19456,t=2,p=1$...</c>) puts it there, and other Argon2 implementations
+/// must be able to read our rows.
 /// </summary>
-/// <remarks>
-/// The version field is its own segment rather than another parameter because Argon2's canonical
-/// encoding puts it there - <c>$argon2id$v=19$m=19456,t=2,p=1$...</c> - and a row every other
-/// Argon2 implementation can read is the entire reason for using this format instead of our own.
-/// Nothing writes it but the Argon2 hasher; PBKDF2 rows have four segments and always did.
-/// </remarks>
 internal sealed record PhcString(
     string Algorithm,
     IReadOnlyDictionary<string, string> Parameters,
@@ -19,8 +12,8 @@ internal sealed record PhcString(
     byte[] Hash,
     int? Version = null)
 {
-    /// <summary>Refuses anything it does not fully understand, so a malformed or truncated row
-    /// fails closed rather than throwing out of a login.</summary>
+    /// <summary>Refuses anything it does not fully understand, so a malformed row fails closed
+    /// rather than throwing out of a login.</summary>
     internal static bool TryParse(string? value, out PhcString result)
     {
         result = null!;

@@ -5,9 +5,8 @@ using Toamaisutaa.Abstractions;
 namespace Toamaisutaa.Core;
 
 /// <summary>
-/// AES-256-GCM over the TOTP secret. Encrypted rather than hashed because the secret has to be
-/// readable to generate the codes it is checked against - it is the one value in this package that
-/// cannot be a one-way function.
+/// Encrypted rather than hashed because the TOTP secret has to be readable to generate the codes it
+/// is checked against.
 /// </summary>
 internal sealed class AesGcmSecretProtector : ISecretProtector
 {
@@ -69,9 +68,8 @@ internal sealed class AesGcmSecretProtector : ISecretProtector
         _activeKey.Length > 0 && !string.Equals(keyVersion, _activeVersion, StringComparison.Ordinal);
 
     /// <summary>
-    /// The active version names nothing when there is no active key, so it is only consulted once
-    /// one is configured. The pepper had the same shadowing bug: a retired entry that matches the
-    /// active version silently wins, and every stored value stops verifying.
+    /// The active version is only consulted once an active key is configured; otherwise a retired
+    /// entry matching the active version name is shadowed and every stored value stops decrypting.
     /// </summary>
     private byte[]? Resolve(string version)
     {

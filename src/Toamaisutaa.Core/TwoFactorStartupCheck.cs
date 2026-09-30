@@ -5,10 +5,6 @@ using Toamaisutaa.Abstractions;
 
 namespace Toamaisutaa.Core;
 
-/// <summary>
-/// Refuses to start rather than failing at enrolment. Everything checked here is invisible until
-/// somebody tries to turn two-factor on, which is the worst moment to find out.
-/// </summary>
 internal sealed class TwoFactorStartupCheck(
     IServiceCollection services,
     IOptions<ToamaisutaaTwoFactorOptions> options) : IHostedService
@@ -35,9 +31,7 @@ internal sealed class TwoFactorStartupCheck(
     public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
 
     /// <summary>
-    /// A second factor needs somewhere to apply. Local sign-in gives it the challenge step; the
-    /// claims transformation gives it a policy over identity-provider tokens. With neither, users
-    /// can enrol into something that will never be asked for, and nothing else will ever say so.
+    /// The claims transformation is matched by name because Core cannot reference ASP.NET.
     /// </summary>
     private void CheckEnforcementPath(List<string> problems)
     {

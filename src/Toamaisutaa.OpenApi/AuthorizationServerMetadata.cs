@@ -6,19 +6,12 @@ using Toamaisutaa.Abstractions;
 namespace Toamaisutaa.OpenApi;
 
 /// <summary>
-/// Where the browser sends the user, and where the code is exchanged, read from the issuer's
-/// discovery document.
+/// Endpoints are read from discovery, never derived: Keycloak's paths are wrong for every other
+/// issuer, and a wrong one fails silently as a dead Authorize button.
 /// </summary>
-/// <remarks>
-/// Read, never derived. Appending <c>/protocol/openid-connect/auth</c> to the authority is right
-/// for Keycloak and wrong for every other issuer, and it fails silently: the document generates,
-/// the Authorize button appears, and it points at a URL that has never existed. Discovery is the
-/// one answer that is correct for Keycloak, Authentik, Pocket ID, Okta and Entra alike.
-/// </remarks>
 internal static class AuthorizationServerMetadata
 {
-    /// <summary>An unreachable issuer must not hang the document. Long enough for a slow issuer on
-    /// the same network, short enough that nobody wonders whether the page is loading.</summary>
+    /// <summary>An unreachable issuer must not hang the document.</summary>
     private static readonly TimeSpan DiscoveryTimeout = TimeSpan.FromSeconds(5);
 
     public static async Task<(Uri AuthorizationUrl, Uri TokenUrl)?> DiscoverAsync(
@@ -26,15 +19,12 @@ internal static class AuthorizationServerMetadata
         IServiceProvider services,
         CancellationToken cancellationToken)
     {
-        // Nothing configured means a deployment that only issues its own tokens. There is no
-        // authorization server to describe, and the bearer scheme already covers what it has.
         if (MetadataAddress(settings) is not { } address)
             return null;
 
         var logger = services.GetRequiredService<ILoggerFactory>().CreateLogger("Toamaisutaa.OpenApi");
 
-        // The bearer handler's rule, applied to the same fetch rather than restated as a second
-        // policy: metadata over plaintext is refused unless the deployment has said otherwise.
+        // Mirrors the bearer handler: metadata over plaintext is refused unless configured otherwise.
         if (settings.RequireHttpsMetadata && address.Scheme != Uri.UriSchemeHttps)
         {
             logger.LogWarning(
@@ -55,7 +45,6 @@ internal static class AuthorizationServerMetadata
             return null;
         }
 
-        // The request this is serving may outlive the issuer's willingness to answer.
         using var attempt = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         attempt.CancelAfter(DiscoveryTimeout);
 
@@ -96,26 +85,12 @@ internal static class AuthorizationServerMetadata
     }
 
     /// <summary>
-    /// Moves an endpoint the issuer answered with under <c>Oidc:InternalAuthority</c> back onto
-    /// <c>Oidc:Authority</c>, keeping the path the discovery document gave it.
+    /// Moves an endpoint under <c>Oidc:InternalAuthority</c> back onto <c>Oidc:Authority</c>, because
+    /// an issuer that builds URLs from the Host header (Keycloak without <c>KC_HOSTNAME</c>) answers
+    /// the internal hop with a host no browser can resolve.
     /// </summary>
     /// <remarks>
-    /// <para>
-    /// The fetch goes over the internal address because that is how a container reaches its issuer,
-    /// and what comes back is usually the public URLs. Usually is not always: an issuer that builds
-    /// its endpoint URLs from the request's Host header - Keycloak with no <c>KC_HOSTNAME</c> - hands
-    /// the internal hop the internal host, and that host is written into the document as a button a
-    /// browser is asked to follow. It cannot resolve it. That is the same dead Authorize button this
-    /// package exists to remove, reached from the other side.
-    /// </para>
-    /// <para>
-    /// So an endpoint that is provably under the internal authority is moved, and nothing else is.
-    /// <c>Oidc:Authority</c> is the right destination rather than a guess: it is what the
-    /// configuration endpoint already hands the SPA, so the Authorize button and the SPA end up
-    /// pointing at the same issuer. An endpoint on some third host is left exactly as discovered -
-    /// an issuer whose authorization endpoint lives on a separate login domain is ordinary, and
-    /// rewriting or dropping that would break a deployment that works today.
-    /// </para>
+    /// An endpoint on any other host is left alone: a separate login domain is ordinary.
     /// </remarks>
     private static Uri PublicFacing(Uri endpoint, ToamaisutaaOidcOptions settings, ILogger logger)
     {
@@ -151,8 +126,7 @@ internal static class AuthorizationServerMetadata
 
         var basePath = internalBase.AbsolutePath.TrimEnd('/');
 
-        // A shared host is not enough. Where the internal authority carries a path - one realm of
-        // several - an endpoint outside it belongs to something this setting says nothing about.
+        // A shared host is not enough: outside the internal authority's path (another realm) is not ours to move.
         if (basePath.Length > 0
             && endpoint.AbsolutePath != basePath
             && !endpoint.AbsolutePath.StartsWith($"{basePath}/", StringComparison.Ordinal))
@@ -170,16 +144,9 @@ internal static class AuthorizationServerMetadata
     }
 
     /// <summary>
-    /// The same address the bearer handler discovers against: <c>Oidc:InternalAuthority</c> where
-    /// one is set, because a container reaches its issuer at an address the browser never sees.
-    /// What comes back is put in front of a browser, so see <see cref="PublicFacing"/> for the half
-    /// of that the bearer handler does not need.
+    /// Duplicates <c>DiscoveryAddress</c> in <c>Toamaisutaa.OpenIdConnect</c> rather than referencing
+    /// it, which would pull JwtBearer into a documentation package.
     /// </summary>
-    /// <remarks>
-    /// <c>Toamaisutaa.OpenIdConnect</c> has the same three lines in <c>DiscoveryAddress</c>.
-    /// Referencing that package from here to share them would put JwtBearer in the dependency graph
-    /// of a documentation package, which costs more than the duplication does.
-    /// </remarks>
     private static Uri? MetadataAddress(ToamaisutaaOidcOptions settings)
     {
         var authority = NullIfBlank(settings.InternalAuthority) ?? NullIfBlank(settings.Authority);

@@ -18,8 +18,8 @@ public interface IInvitationTokenStore
 
     /// <summary>
     /// The newest invitation to <paramref name="normalizedEmail"/> that is neither spent nor expired,
-    /// or null. This is what identifies an open invitation: a user row is never assumed to be a
-    /// reservation from its shape, because an account an identity provider owns has the same shape.
+    /// or null. A user row is never assumed to be a reservation from its shape, because an account an
+    /// identity provider owns has the same shape.
     /// </summary>
     Task<ToamaisutaaInvitationToken?> FindOpenByEmailAsync(string normalizedEmail, DateTimeOffset now, CancellationToken cancellationToken = default);
 }

@@ -5,17 +5,11 @@ using Toamaisutaa.Abstractions;
 namespace Toamaisutaa.Core;
 
 /// <summary>
-/// Which pepper a stored row was written under, which one new rows get, and how either is folded
-/// into a password before derivation.
+/// Shared by every hasher because a copy of this rule that drifts either accepts a password against
+/// a hash never made from it or locks a fleet out.
 /// </summary>
-/// <remarks>
-/// Shared by every hasher rather than owned by one. "Is this key still held, and is it the current
-/// one" is a single rule whose wrong answer either accepts a password against a hash that was never
-/// made from it or locks a fleet out, and two copies of a rule like that drift into two answers.
-/// </remarks>
 internal static class PasswordPepper
 {
-    /// <summary>The version marker new hashes carry, or <c>null</c> while no pepper is configured.</summary>
     internal static string? ActiveVersion(ToamaisutaaLocalLoginOptions settings) =>
         string.IsNullOrWhiteSpace(settings.Pepper) ? null : settings.PepperVersion;
 
@@ -24,16 +18,12 @@ internal static class PasswordPepper
         if (string.IsNullOrWhiteSpace(settings.Pepper))
             return null;
 
-        // Startup validation has already rejected a malformed value, so anything reaching here is
-        // decodable.
         return Convert.FromBase64String(settings.Pepper);
     }
 
     /// <summary>
-    /// Finds the key a row written under <paramref name="version"/> needs. False means the key is
-    /// not held, and the caller fails closed: the alternative is verifying the row as though it
-    /// were unpeppered, which would accept the bare password against a hash that was never made
-    /// from it.
+    /// False means the key is not held and the caller must fail closed; verifying the row as
+    /// unpeppered would accept the bare password against a hash never made from it.
     /// </summary>
     internal static bool TryResolve(ToamaisutaaLocalLoginOptions settings, string? version, out byte[]? pepper)
     {
@@ -42,10 +32,8 @@ internal static class PasswordPepper
         if (version is null)
             return true;
 
-        // The active version only means anything while there is an active pepper. Without this,
-        // taking the pepper out of the configuration while keeping the old key in RetiredPeppers
-        // leaves the retired entry shadowed by an empty active slot, and every existing row stops
-        // verifying - the one path that is supposed to make removing a pepper survivable.
+        // Without an active pepper, an empty active slot would shadow the same version in
+        // RetiredPeppers and every existing row would stop verifying after the pepper is removed.
         var hasActivePepper = !string.IsNullOrWhiteSpace(settings.Pepper);
 
         var encoded = hasActivePepper && string.Equals(version, settings.PepperVersion, StringComparison.Ordinal)
@@ -66,10 +54,6 @@ internal static class PasswordPepper
         }
     }
 
-    /// <summary>
-    /// Without a pepper the password goes straight into the derivation. With one, it is first
-    /// reduced to a 32-byte HMAC under a key that is not in the database.
-    /// </summary>
     internal static byte[] Preprocess(string password, byte[]? pepper)
     {
         var bytes = Encoding.UTF8.GetBytes(password);

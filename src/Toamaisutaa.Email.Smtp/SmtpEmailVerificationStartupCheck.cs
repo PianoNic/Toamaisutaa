@@ -3,18 +3,13 @@ using Microsoft.Extensions.Options;
 
 namespace Toamaisutaa.Email.Smtp;
 
-/// <summary>Refuses to start rather than failing on the first verification, the same reasoning
-/// <see cref="SmtpEmailStartupCheck"/> uses for the transport. Registered only by
-/// <c>AddToamaisutaaSmtpEmailVerification</c>, so an application that never verifies an address is
-/// never held to a verification link.</summary>
 internal sealed class SmtpEmailVerificationStartupCheck(
     IOptions<ToamaisutaaSmtpEmailOptions> options,
     IEmailVerificationEmailTemplate template) : IHostedService
 {
     public Task StartAsync(CancellationToken cancellationToken)
     {
-        // The link is the default template's business alone. A consumer template that builds its
-        // own, or none at all, has no reason to configure one.
+        // A consumer template may build its own link, or none, so only the default needs the option.
         if (template is not DefaultEmailVerificationEmailTemplate)
             return Task.CompletedTask;
 

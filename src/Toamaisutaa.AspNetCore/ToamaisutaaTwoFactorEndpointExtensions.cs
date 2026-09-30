@@ -13,10 +13,8 @@ public static class ToamaisutaaTwoFactorEndpointExtensions
     /// Maps the two-factor endpoints under <c>LocalLogin:EndpointPrefix</c> + <c>/2fa</c>.
     /// </summary>
     /// <remarks>
-    /// <c>/verify</c> is anonymous because the caller has no token yet - the challenge is the
-    /// credential - and it is throttled by the same limiter as <c>/login</c>. <c>/begin</c> is
-    /// throttled too, for a different reason: every call writes a fresh unconfirmed secret, so an
-    /// unbounded loop is write amplification rather than a guessing attack.
+    /// <c>/verify</c> is anonymous because the challenge is the credential, and is throttled like
+    /// <c>/login</c>. <c>/begin</c> is throttled because every call writes a fresh unconfirmed secret.
     /// </remarks>
     /// <param name="endpoints">The builder to map into. A <c>RouteGroupBuilder</c> is one.</param>
     /// <param name="endpointNamePrefix">
@@ -33,8 +31,7 @@ public static class ToamaisutaaTwoFactorEndpointExtensions
 
         var group = endpoints.MapGroup(options.EndpointPrefix + "/2fa").WithTags("Two-factor authentication");
 
-        // Every endpoint here except /verify resolves the caller, and three of them move the stamp
-        // themselves - so the token that called one is stale for the next request by design.
+        // Three of these move the stamp themselves, so the calling token is stale on the next request by design.
         group.AddEndpointFilter<StaleSecurityStampFilter>();
 
         group.MapGet("/", StatusAsync)
@@ -73,8 +70,7 @@ public static class ToamaisutaaTwoFactorEndpointExtensions
             .Produces<ErrorResponse>(StatusCodes.Status401Unauthorized)
             .Produces(StatusCodes.Status429TooManyRequests);
 
-        // Both take a code as proof, so both are a guessing oracle without the limiter here and the
-        // account-wide count in the service.
+        // Both take a code as proof, so without the limiter they are a guessing oracle.
         group.MapPost("/disable", DisableAsync)
             .RequireAuthorization()
             .AddEndpointFilter<PasswordRateLimitFilter>()
@@ -154,9 +150,7 @@ public static class ToamaisutaaTwoFactorEndpointExtensions
     }
 
     /// <summary>
-    /// The one endpoint in this package that returns a long-lived secret in a response body. It has
-    /// to - an authenticator cannot be enrolled without being given the secret - which is exactly
-    /// why nothing here or downstream ever logs what it returned.
+    /// Returns the TOTP secret, a long-lived credential, so nothing may ever log this response.
     /// </summary>
     private static async Task<IResult> BeginAsync(
         BeginTwoFactorRequest? request,
@@ -263,9 +257,7 @@ public static class ToamaisutaaTwoFactorEndpointExtensions
             },
             cancellationToken);
 
-        // The same shape /auth/login returns, deliberately: these two endpoints both end a sign-in,
-        // and a client that had to parse one casing here and another there would be carrying our
-        // history rather than an API.
+        // Deliberately the same shape /auth/login returns, since both end a sign-in.
         return result.Succeeded
             ? ToamaisutaaPasswordEndpointExtensions.SignInSucceeded(result)
             : Unauthorized();
@@ -330,17 +322,11 @@ public static class ToamaisutaaTwoFactorEndpointExtensions
             : StepUpFailed(result.Outcome);
     }
 
-    /// <summary>
-    /// Reads <c>toa_sid</c>. Absent means the caller holds a token this package did not issue - an
-    /// identity provider's, most likely - and there is no local session to elevate.
-    /// </summary>
     private static bool TryReadSession(HttpContext context, out Guid sessionId) =>
         Guid.TryParse(context.User.FindFirst(ToamaisutaaDefaults.SessionIdClaim)?.Value, out sessionId);
 
     /// <summary>
-    /// 400 rather than 401, deliberately. The token is fine and the caller is authenticated; what is
-    /// missing is a local session, and answering 401 would send them to refresh a token that is not
-    /// the problem.
+    /// 400 rather than 401, because a 401 would send the caller to refresh a token that is not the problem.
     /// </summary>
     private static IResult NotALocalSession() =>
         Results.BadRequest(new ValidationErrorResponse
@@ -357,15 +343,12 @@ public static class ToamaisutaaTwoFactorEndpointExtensions
             Errors = ["There is no confirmed second factor on this account to present."],
         }),
 
-        // Everything else is one answer. Whether the session ended, the account is locked, or the
-        // code was simply wrong is not something to confirm to whoever is holding the token.
+        // One answer, so a token holder cannot learn whether the session ended or the account is locked.
         _ => Unauthorized(),
     };
 
     /// <summary>
-    /// One body for a wrong code, an expired challenge, a spent one and an unknown one. They are the
-    /// same answer to whoever is holding it, and telling them apart would say whether the challenge
-    /// was ever real.
+    /// One body for every failure, since telling them apart would say whether the challenge was ever real.
     /// </summary>
     private static IResult Unauthorized() =>
         Results.Json(

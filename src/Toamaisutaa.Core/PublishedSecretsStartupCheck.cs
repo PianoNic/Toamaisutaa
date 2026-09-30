@@ -7,15 +7,9 @@ using Toamaisutaa.Abstractions;
 namespace Toamaisutaa.Core;
 
 /// <summary>
-/// Refuses to start outside Development on a key the sample publishes.
+/// Refuses to start outside Development on a key the sample publishes, since every other check
+/// passes those values. Stored as SHA-256 fingerprints so this file does not republish them.
 /// </summary>
-/// <remarks>
-/// The sample's signing key, pepper and two-factor key sit in a public repository so that it runs
-/// with nothing configured. A deployment that copied its Development settings, or runs as
-/// Development, signs tokens anyone can forge and encrypts TOTP secrets anyone can read. Every other
-/// check here passes those values: they are the right length and valid base64. Kept as SHA-256
-/// fingerprints so this file does not become a second place they are published.
-/// </remarks>
 internal sealed class PublishedSecretsStartupCheck(IServiceProvider provider, IHostEnvironment environment) : IHostedService
 {
     private static readonly HashSet<string> Published = new(StringComparer.Ordinal)
@@ -32,8 +26,8 @@ internal sealed class PublishedSecretsStartupCheck(IServiceProvider provider, IH
 
     public Task StartAsync(CancellationToken cancellationToken)
     {
-        // In Development they are accepted - that is what they are for - but only on loopback, which
-        // is checked once the server has bound its addresses, where ASP.NET can see them.
+        // Development is restricted to loopback instead, checked once the server has bound its
+        // addresses where ASP.NET can see them.
         if (environment.IsDevelopment())
             return Task.CompletedTask;
 
@@ -50,7 +44,6 @@ internal sealed class PublishedSecretsStartupCheck(IServiceProvider provider, IH
         return Task.CompletedTask;
     }
 
-    /// <summary>One line for each configured value the sample publishes; empty when there are none.</summary>
     internal static List<string> PublishedValuesInUse(IServiceProvider provider)
     {
         var problems = new List<string>();

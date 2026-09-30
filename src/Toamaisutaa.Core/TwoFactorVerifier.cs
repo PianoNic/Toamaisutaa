@@ -5,9 +5,8 @@ using Toamaisutaa.Abstractions;
 namespace Toamaisutaa.Core;
 
 /// <summary>
-/// The one place a second factor is checked. Shared by the sign-in path, which is finishing a
-/// challenge, and by the enrolment endpoints, which demand proof before they will switch anything
-/// off - so a code accepted in one is accepted on identical terms in the other.
+/// The one place a second factor is checked, so sign-in and the enrolment endpoints accept a code
+/// on identical terms.
 /// </summary>
 internal sealed class TwoFactorVerifier(
     ITwoFactorStore enrolments,
@@ -20,9 +19,8 @@ internal sealed class TwoFactorVerifier(
     TimeProvider timeProvider,
     ILogger<TwoFactorVerifier> logger)
 {
-    // beforeSpending is called once the code has checked out and before it is spent, and nothing is
-    // spent when it answers false. The sign-in path spends its challenge there, so a request that
-    // loses the challenge to another one has not already burned a recovery code for nothing.
+    // beforeSpending runs after the code checks out and before it is spent, so a request that loses
+    // its challenge to another has not already burned a recovery code.
     internal async Task<TwoFactorVerification> VerifyAsync(
         Guid userId,
         string code,
@@ -41,8 +39,6 @@ internal sealed class TwoFactorVerifier(
             return TwoFactorVerification.Failed;
         }
 
-        // Recovery codes only exist once the enrolment is confirmed, so an unconfirmed one has
-        // nothing to fall back to and must be proved with the authenticator itself.
         if (enrolment.IsEnabled && recoveryCodeProvider.LooksLikeRecoveryCode(code))
             return await RedeemRecoveryCodeAsync(userId, code, beforeSpending, cancellationToken);
 
@@ -66,8 +62,8 @@ internal sealed class TwoFactorVerifier(
             if (beforeSpending is not null && !await beforeSpending())
                 return TwoFactorVerification.Lost;
 
-            // The step read above can be stale by now. Whoever records it first owns the code; for
-            // everyone else it is refused - as a race lost, not a wrong code, since it was right.
+            // The step read above can be stale, so whoever records it first owns the code; everyone
+            // else lost a race rather than sent a wrong code.
             if (!await enrolments.RecordUsedStepAsync(userId, matchedStep, cancellationToken))
             {
                 logger.LogWarning("Second factor refused for user {UserId}: the code was used by another request first.", userId);
@@ -77,8 +73,8 @@ internal sealed class TwoFactorVerifier(
 
             metrics.TwoFactorVerified(TwoFactorSource.Otp, succeeded: true);
 
-            // Kept in sync on the tracked object too, or the rewrap below writes the whole row back
-            // with the step it had before this code was accepted and undoes the replay protection.
+            // Kept in sync here too, or the rewrap below writes back the old step and undoes the
+            // replay protection.
             enrolment.LastUsedStep = matchedStep;
 
             if (protector.NeedsRewrap(enrolment.EncryptionKeyVersion))
@@ -93,8 +89,6 @@ internal sealed class TwoFactorVerifier(
         }
         finally
         {
-            // The plaintext secret existed in this method and nowhere else. Do not leave it for the
-            // garbage collector to hand to whatever allocates next.
             Array.Clear(secret);
         }
     }
@@ -112,8 +106,7 @@ internal sealed class TwoFactorVerifier(
         {
             stored = await recoveryCodes.FindUnusedAsync(userId, hash, cancellationToken);
 
-            // Only against a row actually stored that way. A keyed row matching the unkeyed hash
-            // would mean the code had been checked as something it never was.
+            // Only against a row actually stored that way, or a code is checked as something it never was.
             if (stored is not null && stored.HashVersion == version)
                 break;
 
@@ -130,7 +123,7 @@ internal sealed class TwoFactorVerifier(
         if (beforeSpending is not null && !await beforeSpending())
             return TwoFactorVerification.Lost;
 
-        // Single use means one request, not one per request that read it before either spent it.
+        // Conditional write: single use means one request, not every request that read it first.
         if (!await recoveryCodes.MarkConsumedAsync(stored.Id, timeProvider.GetUtcNow(), cancellationToken))
         {
             logger.LogWarning("Second factor refused for user {UserId}: that recovery code was spent by another request first.", userId);
@@ -157,10 +150,6 @@ internal sealed class TwoFactorVerifier(
         };
     }
 
-    /// <summary>
-    /// Re-encrypts under the current key while the plaintext is already in hand, which is the only
-    /// moment it is available without a second decryption. Same lazy rotation as the pepper.
-    /// </summary>
     private async Task RewrapAsync(
         ToamaisutaaUserTwoFactor enrolment,
         byte[] secret,
@@ -192,8 +181,8 @@ internal readonly record struct TwoFactorVerification
 
     internal bool RecoveryCodesRunningLow { get; init; }
 
-    /// <summary>The code was right, and another request spent it - or the challenge it came with -
-    /// first. Not a wrong code, and not counted as one.</summary>
+    /// <summary>The code was right but another request spent it or its challenge first; not counted
+    /// as a wrong code.</summary>
     internal bool LostRace { get; init; }
 
     internal static TwoFactorVerification Failed => new() { Succeeded = false };

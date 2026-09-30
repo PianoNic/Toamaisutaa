@@ -8,10 +8,6 @@ using Toamaisutaa.Abstractions;
 
 namespace Toamaisutaa.OpenIdConnect;
 
-/// <summary>
-/// Everything <c>AddToamaisutaaBearer</c> configures on the JwtBearer handler. Written as an
-/// options configurator rather than inline so the enricher and the logger come from DI.
-/// </summary>
 internal sealed class ConfigureToamaisutaaJwtBearerOptions(
     IOptions<ToamaisutaaOidcOptions> oidcOptions,
     IOptions<ToamaisutaaAuthorizationOptions> authorizationOptions,
@@ -36,16 +32,14 @@ internal sealed class ConfigureToamaisutaaJwtBearerOptions(
 
         options.Authority = publicAuthority;
 
-        // Reaching the issuer at a different address than the one it stamps into tokens is normal
-        // inside a container network. Discovery moves; the issuer check does not.
+        // Inside a container network the issuer is reached at another address: discovery moves, the issuer check does not.
         if (internalAuthority is not null && !string.Equals(internalAuthority, publicAuthority, StringComparison.Ordinal))
             options.MetadataAddress = DiscoveryAddress.From(internalAuthority);
 
         options.RequireHttpsMetadata = settings.RequireHttpsMetadata;
 
-        // Not configurable. Remapping claim types to WS-Federation URIs while NameClaim and
-        // RoleClaim below name raw JWT claims means both settings point at claims the principal no
-        // longer has, and a role check silently matches nothing. One set of names, the issuer's.
+        // Not configurable: remapping to WS-Federation URIs would leave NameClaim and RoleClaim naming
+        // claims the principal no longer has, and role checks would silently match nothing.
         options.MapInboundClaims = false;
 
         options.TokenValidationParameters.NameClaimType = settings.NameClaim;
@@ -66,21 +60,12 @@ internal sealed class ConfigureToamaisutaaJwtBearerOptions(
     }
 
     /// <summary>
-    /// Fails an ID token presented as a bearer token, and says true when it did.
+    /// Fails an ID token presented as a bearer token, which the client-id audience fallback would
+    /// otherwise accept, and says true when it did.
     /// </summary>
     /// <remarks>
-    /// With no explicit audience configured, the accepted audience falls back to the client id - and
-    /// the client id is the audience of every ID token the provider issues to that client. ID tokens
-    /// travel further than access tokens (logout URLs carry them as <c>id_token_hint</c>, and SPAs
-    /// hand them to other components), so one that leaked authenticated as its subject.
-    /// <para>
-    /// A token that says what it is decides: Keycloak writes a <c>typ</c> claim into every token,
-    /// <c>ID</c> or <c>Bearer</c>, and before version 25 it also put <c>nonce</c> into access tokens -
-    /// so reading <c>nonce</c> first refused every access token those servers issued. Only a token with
-    /// no such label is judged by the markers the OpenID Connect core spec gives an ID token and not an
-    /// access token: <c>nonce</c> and <c>at_hash</c>. An ID token carrying neither still passes an
-    /// audience of the client id, which is why the startup log asks for an API audience.
-    /// </para>
+    /// A <c>typ</c> label decides first because Keycloak before 25 put <c>nonce</c> into access tokens;
+    /// only an unlabelled token is judged by the OIDC ID-token markers <c>nonce</c> and <c>at_hash</c>.
     /// </remarks>
     internal static bool RefuseIdTokens(TokenValidatedContext context)
     {
@@ -113,9 +98,8 @@ internal sealed class ConfigureToamaisutaaJwtBearerOptions(
     }
 
     /// <summary>
-    /// Teaches the one handler to accept tokens this package issued, alongside the identity
-    /// provider's. The handler keeps its discovery document alongside whatever is set here, so both
-    /// shapes validate in a single pass and nothing downstream can tell them apart.
+    /// The key resolver binds each issuer to its own keys; in one flat collection a token claiming our
+    /// issuer but signed with the identity provider's key would validate as a local user.
     /// </summary>
     /// <remarks>
     /// <para>
@@ -134,25 +118,18 @@ internal sealed class ConfigureToamaisutaaJwtBearerOptions(
     {
         var local = localLoginOptions.Value;
 
-        // No keys means password login was never registered. Leave the handler exactly as it was.
         if (localKeys.ValidationKeys.Count == 0)
             return;
 
         options.TokenValidationParameters.ValidIssuers = [local.Issuer];
         options.TokenValidationParameters.IssuerSigningKeys = localKeys.ValidationKeys;
 
-        // The resolver is only authoritative if an empty answer means no. By default an empty
-        // answer is treated as "did not resolve" and every configured key is tried instead, which
-        // puts the local keys back in front of a token whose kid names none of them - and the
-        // resolver below is the whole defence against one issuer's tokens being validated with the
-        // other's key.
+        // By default an empty resolver answer falls back to trying every key, which would undo the
+        // issuer-to-key binding below.
         options.TokenValidationParameters.TryAllIssuerSigningKeys = false;
 
-        // ...UsingConfiguration, and that is not a detail. When the handler builds a configuration
-        // manager for an Authority it hands the discovery keys to the validator as the
-        // BaseConfiguration below rather than merging them into IssuerSigningKeys, so the resolver
-        // that only sees IssuerSigningKeys has nothing to answer an identity provider's token with.
-        // With the fallback above switched off, that empty answer is a refusal.
+        // Must be the ...UsingConfiguration resolver: discovery keys arrive as the BaseConfiguration, not
+        // in IssuerSigningKeys, so the plain resolver would refuse every identity provider token.
         options.TokenValidationParameters.IssuerSigningKeyResolverUsingConfiguration =
             (_, securityToken, keyId, parameters, configuration) =>
                 string.Equals(securityToken?.Issuer, local.Issuer, StringComparison.Ordinal)
@@ -161,9 +138,7 @@ internal sealed class ConfigureToamaisutaaJwtBearerOptions(
     }
 
     /// <summary>
-    /// Every key the identity provider offers and none of ours: discovery keys arrive as the
-    /// configuration, a key set an application configured by hand arrives as
-    /// <c>IssuerSigningKeys</c>, and both are read so neither shape is silently unsupported.
+    /// Reads both discovery keys and hand-configured <c>IssuerSigningKeys</c>, minus every key we own.
     /// </summary>
     private IEnumerable<SecurityKey> IssuerKeys(TokenValidationParameters parameters, BaseConfiguration? configuration) =>
         (parameters.IssuerSigningKeys ?? [])
@@ -172,8 +147,7 @@ internal sealed class ConfigureToamaisutaaJwtBearerOptions(
 
     /// <summary>
     /// Browsers cannot set an Authorization header on a WebSocket handshake, so SignalR passes the
-    /// token as a query parameter. Honoured only on the configured paths, because a token in a
-    /// query string ends up in access logs.
+    /// token in the query. Honoured only on configured paths, because query strings reach access logs.
     /// </summary>
     private static Func<MessageReceivedContext, Task> ReadQueryToken(ToamaisutaaQueryTokenOptions queryToken)
     {
@@ -204,18 +178,14 @@ internal sealed class ConfigureToamaisutaaJwtBearerOptions(
             .Select(path => new PathString(path.StartsWith('/') ? path.TrimEnd('/') : "/" + path.Trim('/')))];
 
     /// <summary>
-    /// A 403 here means the token was accepted and the role was not found, which is invisible from
-    /// the outside: an empty body, and a valid login. Say which claim was read and what the token
-    /// actually carried, because that pair is the whole answer.
+    /// A 403 is invisible from outside, so log which claim was read and what the token carried there.
     /// </summary>
     private static Func<ForbiddenContext, Task> ExplainForbidden(
         ToamaisutaaOidcOptions settings,
         ToamaisutaaAuthorizationOptions authorization) =>
         context =>
         {
-            // HttpContext.User, not context.Principal: the handler builds ForbiddenContext without a
-            // principal, so reading it reports a token with no claims at all and sends whoever is
-            // debugging looking for the wrong problem.
+            // HttpContext.User, not context.Principal: the handler builds ForbiddenContext without a principal.
             var user = context.HttpContext.User;
 
             var carried = user.Claims

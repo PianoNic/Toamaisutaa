@@ -1,15 +1,14 @@
 namespace Toamaisutaa.Abstractions;
 
 /// <summary>
-/// Listing and revoking the devices a user has trusted. A trust nobody can see or take back is a
-/// liability, so this is not optional alongside the feature.
+/// Listing and revoking the devices a user has trusted.
 /// </summary>
 public interface ITrustedDeviceService
 {
     Task<IReadOnlyList<TrustedDeviceSummary>> ListAsync(Guid userId, CancellationToken cancellationToken = default);
 
-    /// <summary>False when the device does not exist or belongs to someone else - which are the same
-    /// answer, so that this cannot be used to discover another account's device ids.</summary>
+    /// <summary>False when the device does not exist or belongs to someone else - deliberately the
+    /// same answer, so another account's device ids cannot be discovered.</summary>
     Task<bool> RevokeAsync(Guid userId, Guid deviceId, CancellationToken cancellationToken = default);
 
     /// <summary>Returns how many families were revoked.</summary>
@@ -33,7 +32,6 @@ public sealed record TrustedDeviceSummary
 
     public required DateTimeOffset ExpiresAt { get; init; }
 
-    /// <summary>True for the device making the request, so a list can say "this device" rather than
-    /// inviting somebody to revoke the one they are sitting at.</summary>
+    /// <summary>True for the device making the request.</summary>
     public required bool IsCurrent { get; init; }
 }

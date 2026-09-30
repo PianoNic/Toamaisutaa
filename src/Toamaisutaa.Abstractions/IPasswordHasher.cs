@@ -1,10 +1,8 @@
 namespace Toamaisutaa.Abstractions;
 
 /// <summary>
-/// Hashes and verifies passwords. Public so a consumer who is willing to take a third-party
-/// dependency can register an Argon2id implementation instead of the shipped one; because the
-/// stored string names its own algorithm and parameters, both can read each other's rows and the
-/// fleet migrates itself through <see cref="PasswordVerificationResult.SucceededRehashNeeded"/>.
+/// Hashes and verifies passwords. Replaceable (for example with Argon2id); the stored string names
+/// its own algorithm, so rows migrate through <see cref="PasswordVerificationResult.SucceededRehashNeeded"/>.
 /// </summary>
 public interface IPasswordHasher
 {

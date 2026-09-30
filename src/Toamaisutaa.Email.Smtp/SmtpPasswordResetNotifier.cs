@@ -4,14 +4,7 @@ using Toamaisutaa.Abstractions;
 
 namespace Toamaisutaa.Email.Smtp;
 
-/// <summary>
-/// The one implementation of <see cref="IPasswordResetNotifier"/> this repository ships. Builds the
-/// message from <see cref="IPasswordResetEmailTemplate"/> and hands it to <see cref="ISmtpMessageSender"/>.
-/// </summary>
-/// <remarks>
-/// Never logs the token or the link it appears in, the same rule the enrolment response follows
-/// elsewhere in this package: a log line is forever, and this one is a credential.
-/// </remarks>
+/// <summary>Never logs the token or the link: a log line is forever, and this one is a credential.</summary>
 internal sealed class SmtpPasswordResetNotifier(
     IPasswordResetEmailTemplate template,
     ISmtpMessageSender sender,

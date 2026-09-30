@@ -6,47 +6,26 @@ using Toamaisutaa.Abstractions;
 
 namespace Toamaisutaa.Core;
 
-/// <summary>
-/// One entry of <c>LocalLogin:SigningKeys</c> after parsing: the key id a token carries in its
-/// <c>kid</c> header, the JWS algorithm the key implies, and the key itself.
-/// </summary>
 internal sealed class LocalSigningKeyMaterial(string keyId, string algorithm, AsymmetricAlgorithm key, bool canSign) : IDisposable
 {
     public string KeyId { get; } = keyId;
 
     /// <summary>
-    /// <c>RS256</c>, <c>ES256</c>, <c>ES384</c> or <c>ES512</c>. Read off the key rather than
-    /// configured: a curve and an algorithm naming a different one is a contradiction with no
-    /// sensible resolution, and the key is the half that cannot be wrong.
+    /// Read off the key rather than configured, so a curve and algorithm can never contradict.
     /// </summary>
     public string Algorithm { get; } = algorithm;
 
     public AsymmetricAlgorithm Key { get; } = key;
 
-    /// <summary>False for an entry carrying only a public half, which is all a retired key needs in
-    /// order to keep validating the tokens it signed.</summary>
     public bool CanSign { get; } = canSign;
 
     public void Dispose() => Key.Dispose();
 }
 
 /// <summary>
-/// Reads <c>LocalLogin:SigningKeys</c> once, at construction, and owns the resulting keys for the
-/// life of the application.
+/// Never throws: a bad entry becomes a line in <see cref="Problems"/> for the startup checks to
+/// report together, since a first exception would hide the rest.
 /// </summary>
-/// <remarks>
-/// <para>
-/// A singleton because importing a PEM allocates a key handle and the signing path runs on every
-/// sign-in; the alternative was importing the same key again per token.
-/// </para>
-/// <para>
-/// It never throws. A bad entry becomes a line in <see cref="Problems"/>, which
-/// <see cref="PasswordLoginStartupCheck"/> reports next to every other misconfiguration in one
-/// message - a first exception would hide the rest, and a key list is exactly where two mistakes at
-/// once is normal. <see cref="LocalSigningKeyStartupCheck"/> reports the same list in a process that
-/// only validates tokens, where that check is not registered.
-/// </para>
-/// </remarks>
 internal sealed class LocalSigningKeyRing : IDisposable
 {
     private const int MinimumRsaKeySizeBits = 2048;
@@ -79,27 +58,17 @@ internal sealed class LocalSigningKeyRing : IDisposable
         }
     }
 
-    /// <summary>Every configured key, in configuration order, and every one of them validates.</summary>
     public IReadOnlyList<LocalSigningKeyMaterial> Keys => _keys;
 
-    /// <summary>The key that signs, which is the first entry. Null when none is configured, or when
-    /// the first entry cannot sign - in which case <see cref="Problems"/> says so.</summary>
     public LocalSigningKeyMaterial? Active => _keys.Count > 0 && _keys[0].CanSign ? _keys[0] : null;
 
-    /// <summary>What is wrong with the configured list, in the words the startup check prints.</summary>
     public IReadOnlyList<string> Problems => _problems;
 
-    /// <summary>Whether there is anything to publish at all. False for a deployment signing HS256,
-    /// where the JWKS endpoint is not mapped.</summary>
     public bool HasPublicKeys => _keys.Count > 0;
 
     /// <summary>
-    /// The public halves, as the document the JWKS endpoint serves.
+    /// Built from a public-only export, so a private component cannot reach the JWKS document.
     /// </summary>
-    /// <remarks>
-    /// Built from an export that asks for public parameters only, so a private component cannot
-    /// reach the document even if a future edit here is careless about which field it copies.
-    /// </remarks>
     public JsonWebKeySetResponse PublicKeys() => new() { Keys = [.. _keys.Select(PublicKey)] };
 
     public void Dispose()
@@ -172,8 +141,7 @@ internal sealed class LocalSigningKeyRing : IDisposable
 
     private AsymmetricAlgorithm? FromPem(string pem, string label)
     {
-        // Both are tried because a PKCS#8 "PRIVATE KEY" header says nothing about what is inside it,
-        // so the only way to tell an RSA key from an EC one is to import it.
+        // A PKCS#8 "PRIVATE KEY" header does not say whether it holds RSA or EC, so both are tried.
         var rsa = RSA.Create();
 
         if (TryImport(() => rsa.ImportFromPem(pem)))
@@ -216,8 +184,6 @@ internal sealed class LocalSigningKeyRing : IDisposable
                 return null;
             }
 
-            // A JWK carries its own key id, so Kid only has to be configured when the key does not
-            // name itself.
             keyId ??= Text(jwk, "kid");
 
             return Text(jwk, "kty") switch
@@ -260,8 +226,7 @@ internal sealed class LocalSigningKeyRing : IDisposable
             parameters.DQ = Base64UrlBytes(jwk, "dq");
             parameters.InverseQ = Base64UrlBytes(jwk, "qi");
 
-            // .NET builds an RSA private key from the CRT parameters, not from d alone. Every JWK
-            // generator emits them; a key missing them was hand-assembled and is worth saying so.
+            // .NET builds an RSA private key from the CRT parameters, not from d alone.
             if (parameters.P is null || parameters.Q is null || parameters.DP is null
                 || parameters.DQ is null || parameters.InverseQ is null)
             {
@@ -345,10 +310,7 @@ internal sealed class LocalSigningKeyRing : IDisposable
         KeyType = "EC",
         KeyId = material.KeyId,
         Algorithm = material.Algorithm,
-        // Named off the algorithm rather than the exported curve, and the two are one-to-one only
-        // because Algorithm refuses every key that is not on one of these three curves - which it
-        // did not always do. ES512 is P-521, which is why this is a map and not string arithmetic
-        // on the algorithm name.
+        // One-to-one only because Algorithm refuses keys off these three curves. ES512 is P-521.
         Curve = material.Algorithm switch
         {
             "ES256" => "P-256",
@@ -367,15 +329,9 @@ internal sealed class LocalSigningKeyRing : IDisposable
     };
 
     /// <summary>
-    /// The JWS algorithm an EC key implies, read off the curve it is on rather than off its size.
+    /// Read off the curve, not the key size: secp256k1 is also 256 bits and would otherwise be
+    /// published as ES256 under <c>"crv": "P-256"</c>.
     /// </summary>
-    /// <remarks>
-    /// Size is not enough. secp256k1 is 256 bits, imports from a PEM exactly as readily as P-256,
-    /// and is one letter away from the documented <c>prime256v1</c>; naming it ES256 would publish
-    /// its point in the JWKS document under <c>"crv": "P-256"</c>, which is a point on a curve no
-    /// reader of that document is on. The JWK path has always whitelisted the three curves - this is
-    /// the same whitelist for the PEM path.
-    /// </remarks>
     private static string? EcAlgorithm(ECDsa key) => Curve(key)?.Oid?.Value switch
     {
         "1.2.840.10045.3.1.7" => "ES256",
@@ -384,8 +340,6 @@ internal sealed class LocalSigningKeyRing : IDisposable
         _ => null,
     };
 
-    /// <summary>The curve a key is on, or null when it cannot be read - which is itself an answer,
-    /// because a curve nothing can name is a curve no JWS algorithm names either.</summary>
     private static ECCurve? Curve(ECDsa key)
     {
         try
@@ -398,17 +352,13 @@ internal sealed class LocalSigningKeyRing : IDisposable
         }
     }
 
-    /// <summary>How to refer to the curve in the startup message. Whoever reads that line has a key
-    /// file and needs to know which one of them is the wrong one.</summary>
     private static string CurveName(AsymmetricAlgorithm key) =>
         key is ECDsa ecdsa && Curve(ecdsa)?.Oid is { } oid
             ? oid.FriendlyName ?? oid.Value ?? "(unnamed)"
             : "(unreadable)";
 
     /// <summary>
-    /// Whether the entry holds a private half. Asked by exporting it, because there is no other way
-    /// to tell: a key imported from a public PEM and one imported from a private PEM are the same
-    /// type, and the difference only shows when something tries to sign.
+    /// Asked by exporting, because public and private imports are the same type.
     /// </summary>
     private static bool CanSign(AsymmetricAlgorithm key)
     {
@@ -441,7 +391,7 @@ internal sealed class LocalSigningKeyRing : IDisposable
         }
         catch (ArgumentException)
         {
-            // What ImportFromPem throws when the text carries no PEM at all.
+            // ImportFromPem throws this when the text carries no PEM at all.
             return false;
         }
         catch (CryptographicException)

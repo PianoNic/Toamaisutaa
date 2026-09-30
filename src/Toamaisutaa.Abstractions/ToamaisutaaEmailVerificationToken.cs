@@ -1,9 +1,8 @@
 namespace Toamaisutaa.Abstractions;
 
 /// <summary>
-/// Single-use, time-limited, and stored hashed exactly as password reset tokens are. Names the one
-/// address it proves control of, which is not necessarily the address the account currently has -
-/// a change to a new address is written only when the token mailed there comes back.
+/// Single-use, time-limited, stored hashed. Names the address it proves control of, which may not
+/// yet be the account's current address.
 /// </summary>
 public class ToamaisutaaEmailVerificationToken
 {
@@ -12,8 +11,7 @@ public class ToamaisutaaEmailVerificationToken
     public Guid UserId { get; set; }
 
     /// <summary>
-    /// The address this token was mailed to, as it was typed. Redeeming writes it onto the
-    /// credential, so the address and the proof of control are one row and cannot drift apart.
+    /// The address this token was mailed to, as typed. Redeeming writes it onto the credential.
     /// </summary>
     public string Email { get; set; } = default!;
 

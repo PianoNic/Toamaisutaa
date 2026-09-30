@@ -3,9 +3,8 @@ using Toamaisutaa.Abstractions;
 namespace Toamaisutaa.Email.Smtp;
 
 /// <summary>
-/// Turns a password an admin caused to exist into the email that gets sent. Register your own and
-/// it replaces the default outright - the same seam <see cref="IPasswordResetEmailTemplate"/>
-/// offers for the reset email.
+/// Turns a password an admin issued into the email that gets sent. Register your own to replace the
+/// default.
 /// </summary>
 public interface IAdminPasswordIssuedEmailTemplate
 {

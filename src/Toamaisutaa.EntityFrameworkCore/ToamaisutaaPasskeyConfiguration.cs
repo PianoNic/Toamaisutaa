@@ -9,11 +9,9 @@ public sealed class ToamaisutaaPasskeyCredentialConfiguration : IEntityTypeConfi
     public const string TableName = "ToamaisutaaPasskeyCredentials";
 
     /// <summary>
-    /// What the credential id column holds at most. WebAuthn allows up to 1023 bytes, but the
-    /// column is unique and MySQL's InnoDB caps an index key at 3072, so the whole span cannot be
-    /// indexed on every provider. 256 covers every authenticator in circulation - the specification
-    /// itself recommends 64 - and a longer one is refused at registration with a message that says
-    /// so rather than by a truncating insert.
+    /// What the credential id column holds at most. WebAuthn allows up to 1023 bytes, but the column
+    /// is uniquely indexed and MySQL's InnoDB caps an index key at 3072 bytes; longer ids are refused
+    /// at registration.
     /// </summary>
     public const int CredentialIdLength = 256;
 
@@ -26,9 +24,6 @@ public sealed class ToamaisutaaPasskeyCredentialConfiguration : IEntityTypeConfi
 
         builder.Property(credential => credential.CredentialId).HasMaxLength(CredentialIdLength).IsRequired();
 
-        // A COSE key, not a certificate. An RSA-2048 one is about 300 bytes and an EC one under
-        // 100; sized well past both because the column is not indexed and nothing is saved by
-        // sizing it tightly.
         builder.Property(credential => credential.PublicKey).HasMaxLength(1024).IsRequired();
 
         builder.Property(credential => credential.Transports).HasMaxLength(128);
@@ -38,9 +33,8 @@ public sealed class ToamaisutaaPasskeyCredentialConfiguration : IEntityTypeConfi
         builder.Property(credential => credential.CreatedAt).HasConversion(InstantConverters.Instant);
         builder.Property(credential => credential.LastUsedAt).HasConversion(InstantConverters.NullableInstant);
 
-        // Unique across every account, not per user: a passwordless assertion arrives carrying a
-        // credential id and nothing else, so two rows sharing one would make "whose credential is
-        // this" unanswerable rather than merely awkward.
+        // Unique across every account, not per user: a passwordless assertion carries only the
+        // credential id, so it must identify the owner on its own.
         builder.HasIndex(credential => credential.CredentialId).IsUnique();
         builder.HasIndex(credential => credential.UserId);
 
@@ -64,12 +58,10 @@ public sealed class ToamaisutaaPasskeyChallengeConfiguration : IEntityTypeConfig
 
         builder.Property(challenge => challenge.TokenHash).HasMaxLength(64).IsRequired();
 
-        // The WebAuthn options as JSON. Deliberately unbounded: it carries the allowed credential
-        // list, which grows with how many passkeys the account has, and a length that fits ten
-        // would silently corrupt the eleventh.
+        // Deliberately unbounded: the options carry the allowed credential list, which grows with the
+        // account's passkeys.
         builder.Property(challenge => challenge.Options).IsRequired();
 
-        // Stored as the integer the enum already is, matching the two-factor challenge next to it.
         builder.Property(challenge => challenge.Ceremony).IsRequired();
 
         builder.Property(challenge => challenge.CreatedAt).HasConversion(InstantConverters.Instant);
@@ -78,8 +70,7 @@ public sealed class ToamaisutaaPasskeyChallengeConfiguration : IEntityTypeConfig
 
         builder.HasIndex(challenge => challenge.TokenHash).IsUnique();
 
-        // Optional, because an assertion begun without an identifier belongs to nobody yet - the
-        // browser picks the credential and the server learns who it is at the end.
+        // Optional, because an assertion begun without an identifier belongs to nobody yet.
         builder.HasOne<ToamaisutaaUser>()
             .WithMany()
             .HasForeignKey(challenge => challenge.UserId)

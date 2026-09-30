@@ -3,9 +3,7 @@ using Toamaisutaa.Abstractions;
 namespace Toamaisutaa.Email.Smtp;
 
 /// <summary>
-/// Turns a reset token into the email that gets sent. Register your own and it replaces the default
-/// outright - the same seam <c>IPasswordValidator</c> and <c>IPasswordHasher</c> use elsewhere in
-/// this package.
+/// Turns a reset token into the email that gets sent. Register your own to replace the default.
 /// </summary>
 public interface IPasswordResetEmailTemplate
 {

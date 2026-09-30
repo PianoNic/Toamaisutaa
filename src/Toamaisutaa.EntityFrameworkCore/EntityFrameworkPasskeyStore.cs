@@ -3,16 +3,10 @@ using Toamaisutaa.Abstractions;
 
 namespace Toamaisutaa.EntityFrameworkCore;
 
-/// <summary>
-/// Registered credentials and the ceremonies in flight against them. One class for the same reason
-/// the two-factor stores share one: a single <c>DbContext</c>, registered together, two interfaces.
-/// </summary>
 internal sealed class EntityFrameworkPasskeyStore<TContext>(TContext context)
     : IPasskeyCredentialStore, IPasskeyChallengeStore
     where TContext : DbContext
 {
-    // ── Credentials ──
-
     public async Task<ToamaisutaaPasskeyCredential?> FindByCredentialIdAsync(byte[] credentialId, CancellationToken cancellationToken = default) =>
         await context.Set<ToamaisutaaPasskeyCredential>()
             .FirstOrDefaultAsync(credential => credential.CredentialId == credentialId, cancellationToken);
@@ -57,8 +51,6 @@ internal sealed class EntityFrameworkPasskeyStore<TContext>(TContext context)
     public async Task<int> CountAsync(Guid userId, CancellationToken cancellationToken = default) =>
         await context.Set<ToamaisutaaPasskeyCredential>()
             .CountAsync(credential => credential.UserId == userId, cancellationToken);
-
-    // ── Challenges ──
 
     public async Task CreateAsync(ToamaisutaaPasskeyChallenge challenge, CancellationToken cancellationToken = default)
     {

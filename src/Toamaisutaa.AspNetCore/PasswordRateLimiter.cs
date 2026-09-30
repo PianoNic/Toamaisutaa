@@ -10,25 +10,9 @@ using Toamaisutaa.Core;
 namespace Toamaisutaa.AspNetCore;
 
 /// <summary>
-/// A fixed window per caller address, enforced inside the endpoints themselves.
+/// Owned here rather than the framework's <c>RequireRateLimiting</c>, which is silently inert unless the
+/// application also calls <c>UseRateLimiter()</c> and would leave the key-derivation endpoints unthrottled.
 /// </summary>
-/// <remarks>
-/// <para>
-/// Lockout counts against the account, so it does nothing about someone posting a different user
-/// name every time - and every one of those attempts costs a full key derivation, because an unknown
-/// identifier is deliberately made to cost the same as a real one. Without a limit, that pair is an
-/// unauthenticated way to spend the server's CPU.
-/// </para>
-/// <para>
-/// Deliberately not the framework's <c>RequireRateLimiting</c>. That is metadata, inert unless the
-/// application also calls <c>UseRateLimiter()</c>, and <c>UseRateLimiter</c> leaves no marker in
-/// <c>app.Properties</c> to assert on - so a consumer who forgets it gets unthrottled anonymous
-/// endpoints with nothing to warn them. Owning the limiter means this works because it is
-/// registered, not because someone read the documentation. The cost is the framework's configured
-/// rejection handling, and its metrics - which this package publishes itself instead, as
-/// <c>toamaisutaa.rate_limit.rejections</c>.
-/// </para>
-/// </remarks>
 internal sealed class PasswordRateLimiter : IDisposable
 {
     private readonly PartitionedRateLimiter<HttpContext> _limiter;
@@ -44,11 +28,8 @@ internal sealed class PasswordRateLimiter : IDisposable
             if (!settings.Enabled)
                 return RateLimitPartition.GetNoLimiter("disabled");
 
-            // Behind a proxy this is the proxy unless the application has configured forwarded
-            // headers, which is its call to make rather than ours to guess - but it can be noticed.
-            // The forwarded-headers middleware consumes X-Forwarded-For as it rewrites the address,
-            // so the header still being here, on a connection from a private or loopback address,
-            // means nobody configured it and every caller is sharing one budget.
+            // The forwarded-headers middleware consumes X-Forwarded-For, so seeing it from a private
+            // address means nobody configured it and every caller shares the proxy's budget.
             var remote = context.Connection.RemoteIpAddress;
 
             if (remote is not null
@@ -77,8 +58,7 @@ internal sealed class PasswordRateLimiter : IDisposable
     public ValueTask<RateLimitLease> AcquireAsync(HttpContext context) => _limiter.AcquireAsync(context);
 
     /// <summary>
-    /// One budget per caller. An IPv6 caller is its /64, because that is what one customer is
-    /// handed: keyed on the full address, every one of the 2^64 addresses in it was a fresh budget.
+    /// An IPv6 caller is keyed by its /64, since one customer is handed the whole /64.
     /// </summary>
     internal static string PartitionKey(IPAddress? address, IEnumerable<string>? nat64Prefixes = null)
     {
@@ -93,9 +73,7 @@ internal sealed class PasswordRateLimiter : IDisposable
 
         var bytes = address.GetAddressBytes();
 
-        // A NAT64 gateway puts every IPv4 client it translates in one /64, so one of them sending a
-        // few wrong passwords used to cost all the others their budget. The IPv4 address is inside,
-        // where RFC 6052 puts it for the prefix's length.
+        // A NAT64 gateway puts every IPv4 client in one /64, so key on the embedded IPv4 address instead.
         foreach (var prefix in WellKnownNat64.Concat(ParseNat64Prefixes(nat64Prefixes)))
         {
             if (prefix.Contains(address))
@@ -109,8 +87,7 @@ internal sealed class PasswordRateLimiter : IDisposable
 
     private static readonly IPNetwork[] WellKnownNat64 = [IPNetwork.Parse("64:ff9b::/96"), IPNetwork.Parse("64:ff9b:1::/48")];
 
-    // One that does not parse is skipped here; the startup check refuses it, so it is never skipped
-    // silently.
+    // Skipping an unparsable prefix is safe only because the startup check refuses it.
     private static IEnumerable<IPNetwork> ParseNat64Prefixes(IEnumerable<string>? values)
     {
         foreach (var value in values ?? [])
@@ -159,7 +136,6 @@ internal sealed class PasswordRateLimiter : IDisposable
     public void Dispose() => _limiter.Dispose();
 }
 
-/// <summary>Turns a refused lease into 429 without touching any other endpoint's behaviour.</summary>
 internal sealed class PasswordRateLimitFilter(PasswordRateLimiter limiter, ToamaisutaaMetrics metrics) : IEndpointFilter
 {
     public async ValueTask<object?> InvokeAsync(EndpointFilterInvocationContext context, EndpointFilterDelegate next)

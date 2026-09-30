@@ -7,11 +7,6 @@ namespace Toamaisutaa.Passkeys;
 /// What both begin endpoints return: the opaque challenge, how long it lasts, and the WebAuthn
 /// options to hand to the browser.
 /// </summary>
-/// <remarks>
-/// snake_case for <c>expires_in</c>, matching the two-factor challenge bodies next to it - these
-/// sit on the sign-in path, where the rest of the package is OAuth-shaped. <c>options</c> is passed
-/// through exactly as the specification defines it, so a client library reads it unaltered.
-/// </remarks>
 public sealed record PasskeyChallengeResponse
 {
     [JsonPropertyName("challenge")]

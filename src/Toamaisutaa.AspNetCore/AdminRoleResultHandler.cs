@@ -7,14 +7,9 @@ using Toamaisutaa.Abstractions;
 namespace Toamaisutaa.AspNetCore;
 
 /// <summary>
-/// Makes <c>RequireAdminRoleGlobally</c> hold on every endpoint that is not anonymous.
+/// Enforces <c>RequireAdminRoleGlobally</c> here because the fallback and default policies are not
+/// consulted for an endpoint that names a policy of its own, while every authorized request passes here.
 /// </summary>
-/// <remarks>
-/// The option puts the role in the fallback and the default policy, and neither is consulted for
-/// an endpoint that names a policy or roles of its own - so a <c>RequireAuthorization("...")</c>
-/// endpoint answered 200 to anyone that policy admitted, admin or not. Every authorized request
-/// ends here whatever its policy was, which is why the role is checked here as well.
-/// </remarks>
 internal sealed class AdminRoleResultHandler(
     IOptions<ToamaisutaaAuthorizationOptions> options,
     IAuthorizationMiddlewareResultHandler inner) : IAuthorizationMiddlewareResultHandler

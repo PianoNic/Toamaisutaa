@@ -1,14 +1,12 @@
 namespace Toamaisutaa.PasswordHashing.Argon2;
 
 /// <summary>
-/// Everything read from the <c>PasswordHashing:Argon2</c> configuration section. The defaults are
-/// the OWASP baseline, and startup refuses anything weaker than the weakest configuration OWASP
-/// considers equivalent to it.
+/// The <c>PasswordHashing:Argon2</c> configuration section. Defaults are the OWASP baseline, and
+/// startup refuses anything weaker than every OWASP-equivalent configuration.
 /// </summary>
 /// <remarks>
-/// The salt and output lengths are not here: they are <c>LocalLogin:SaltSizeBytes</c> and
-/// <c>LocalLogin:HashSizeBytes</c>, shared with the PBKDF2 hasher, because a deployment that has
-/// decided how long a salt is has decided it for both.
+/// Salt and output lengths are <c>LocalLogin:SaltSizeBytes</c> and <c>LocalLogin:HashSizeBytes</c>,
+/// shared with the PBKDF2 hasher.
 /// </remarks>
 public sealed class ToamaisutaaArgon2Options
 {
@@ -28,10 +26,8 @@ public sealed class ToamaisutaaArgon2Options
     /// Keeps reading Argon2id rows but writes new ones with PBKDF2. Off by default.
     /// </summary>
     /// <remarks>
-    /// The way back off this package. Every correct password stored as Argon2id is answered with a
-    /// rehash, so the rows drain to PBKDF2 as people sign in, and once the last one is gone the
-    /// package can be uninstalled without locking anybody out. Uninstalling it while Argon2id rows
-    /// remain leaves nothing that can read them.
+    /// The way back off this package: rows drain to PBKDF2 as people sign in. Uninstalling it while
+    /// Argon2id rows remain leaves nothing that can read them.
     /// </remarks>
     public bool VerifyOnly { get; set; }
 }

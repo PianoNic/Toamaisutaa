@@ -6,16 +6,9 @@ using Toamaisutaa.Abstractions;
 namespace Toamaisutaa.AspNetCore;
 
 /// <summary>
-/// Adds <c>toa_2fa_enrolled</c> and <c>toa_2fa_required</c> to a token this package did not issue, so
-/// a policy can see the local enrolment of somebody who signed in through an identity provider.
+/// Never writes <c>amr=mfa</c>: being enrolled is not presenting a second factor, and claiming it would
+/// let a phished provider password satisfy the second-factor policy.
 /// </summary>
-/// <remarks>
-/// Toamaisutaa never sees the exchange where an identity provider decides what a user proved, so all
-/// this can report is what the local enrolment says. It used to write that as <c>amr=mfa</c>, which
-/// RFC 8176 and this package both define as a second factor actually presented - so a phished
-/// provider password satisfied the second-factor policy for anyone who had once enrolled here. Being
-/// enrolled is a different fact and now has a claim of its own; <c>amr</c> is left to the provider.
-/// </remarks>
 internal sealed class TwoFactorClaimsTransformation(
     IServiceProvider services,
     IOptions<ToamaisutaaTwoFactorOptions> options,
@@ -29,9 +22,7 @@ internal sealed class TwoFactorClaimsTransformation(
         if (principal.Identity?.IsAuthenticated != true)
             return principal;
 
-        // A locally issued token already says what was presented and whether enrolment is owed.
-        // Recognised by its issuer: this used to be any token carrying amr, and most providers send
-        // one, so their users never got either claim.
+        // Recognised by issuer, not by the presence of amr, which most identity providers also send.
         if (principal.FindFirst("iss")?.Value is { } issuer
             && string.Equals(issuer, localLogin.Value.Issuer, StringComparison.Ordinal))
         {
@@ -50,8 +41,7 @@ internal sealed class TwoFactorClaimsTransformation(
         if (logins is null || enrolments is null)
             return principal;
 
-        // The key provisioning wrote the login under. The default constant matched only while nobody
-        // had changed it, and with any other key no enrolment was ever found.
+        // The configured key, not the default constant, since provisioning wrote the login under it.
         var login = await logins.FindAsync(provisioningOptions.Value.ProviderKey, subject);
         if (login is null)
             return principal;
@@ -59,9 +49,7 @@ internal sealed class TwoFactorClaimsTransformation(
         var enrolment = await enrolments.FindAsync(login.UserId);
         var enrolled = enrolment is { ConfirmedAt: not null };
 
-        // Cloned rather than mutated: the principal handed in belongs to the authentication
-        // handler, and a transformation that edits it in place is run again on every request in
-        // some pipelines and accumulates duplicates.
+        // Cloned because a transformation can run more than once, and mutating in place accumulates duplicates.
         var clone = principal.Clone();
         var identity = clone.Identities.First();
 

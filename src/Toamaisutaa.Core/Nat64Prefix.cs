@@ -3,7 +3,6 @@ using System.Net.Sockets;
 
 namespace Toamaisutaa.Core;
 
-/// <summary>What counts as a NAT64 prefix an IPv4 address can be read back out of.</summary>
 internal static class Nat64Prefix
 {
     /// <summary>The prefix lengths RFC 6052 defines an embedding for.</summary>

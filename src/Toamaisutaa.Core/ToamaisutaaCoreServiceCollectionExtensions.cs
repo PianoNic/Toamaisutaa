@@ -9,13 +9,12 @@ public static class ToamaisutaaCoreServiceCollectionExtensions
 {
     /// <summary>
     /// Registers the claims mapper, the provisioning policy and the provisioner. Opt-in: the
-    /// package is fully usable without a local user table, which is what three of the four
-    /// applications this was extracted from actually do.
+    /// package is fully usable without a local user table.
     /// </summary>
     /// <remarks>
-    /// Stores come from a separate call, so this may run before or after them. Every service is
-    /// registered with TryAdd, so registering your own <see cref="IClaimsProfileMapper"/> or
-    /// <see cref="IProvisioningPolicy"/> first replaces the default.
+    /// Stores come from a separate call. Every service is registered with TryAdd, so registering
+    /// your own <see cref="IClaimsProfileMapper"/> or <see cref="IProvisioningPolicy"/> first
+    /// replaces the default.
     /// </remarks>
     public static IServiceCollection AddToamaisutaaProvisioning(
         this IServiceCollection services,
@@ -45,22 +44,18 @@ public static class ToamaisutaaCoreServiceCollectionExtensions
     /// instead of scraping its logs for one.
     /// </summary>
     /// <remarks>
-    /// Additive, not TryAdd: call it once per sink and all of them are invoked, in registration
-    /// order. Scoped, so a sink can take the same unit of work the request is already using, and
-    /// built on the first event of the request rather than on every request that resolves a
-    /// service. Nothing else needs switching on, and a sink that throws is logged and stepped over
-    /// rather than allowed to fail the request that produced the event - including a sink that
-    /// throws from its own constructor.
+    /// Additive: call it once per sink and all of them are invoked, in registration order. Scoped,
+    /// so a sink can share the request's unit of work. A sink that throws, including from its
+    /// constructor, is logged and stepped over rather than failing the request.
     /// </remarks>
     public static IServiceCollection AddToamaisutaaAuthenticationEventSink<TSink>(this IServiceCollection services)
         where TSink : class, IAuthenticationEventSink
     {
         ArgumentNullException.ThrowIfNull(services);
 
-        // TryAdd on the sink itself, so a consumer who registered it with a lifetime of their own
-        // keeps it. The interface registration is what a consumer resolving sinks directly reads;
-        // the publisher reads the registration instead, so building the sink happens inside its try
-        // rather than while dependency injection is materialising an enumerable.
+        // TryAdd keeps a consumer's own lifetime for the sink. The publisher reads the registration
+        // rather than the interface so a throwing constructor happens inside its try, not while DI
+        // materialises an enumerable.
         services.TryAddScoped<TSink>();
         services.AddScoped<IAuthenticationEventSink>(provider => provider.GetRequiredService<TSink>());
         services.AddScoped(provider => new AuthenticationEventSinkRegistration(typeof(TSink), provider.GetRequiredService<TSink>));
@@ -70,11 +65,8 @@ public static class ToamaisutaaCoreServiceCollectionExtensions
     }
 
     /// <summary>
-    /// Runs a periodic sweep of expired refresh, password-reset and invitation rows, plus the
-    /// two-factor challenge, trusted-device, email-verification, magic-link and passkey-challenge
-    /// rows when those features are configured. Opt-in: without it
-    /// those tables only grow, and with it this package writes to the database on a timer, which is
-    /// not something to switch on for someone.
+    /// Runs a periodic sweep of expired token, challenge and trusted-device rows. Opt-in: without it
+    /// those tables only grow, and with it this package writes to the database on a timer.
     /// </summary>
     public static IServiceCollection AddToamaisutaaTokenCleanup(this IServiceCollection services)
     {

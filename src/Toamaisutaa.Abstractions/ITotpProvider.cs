@@ -24,18 +24,17 @@ public interface IRecoveryCodeProvider
     IReadOnlyList<string> Generate(int count);
 
     /// <summary>Whether a string looks like a recovery code rather than a TOTP code, so one input
-    /// field can accept either and the person typing does not have to say which they hold.</summary>
+    /// field can accept either.</summary>
     bool LooksLikeRecoveryCode(string value);
 }
 
-/// <summary>Encrypts the TOTP secret at rest. AES-256-GCM behind an interface so the key can come
-/// from somewhere else - a key vault, an HSM - without touching anything that uses it.</summary>
+/// <summary>Encrypts the TOTP secret at rest (AES-256-GCM by default). Replace it to source the key
+/// from a key vault or an HSM.</summary>
 public interface ISecretProtector
 {
     ProtectedSecret Protect(byte[] plaintext);
 
-    /// <summary>Throws when the key that encrypted it is not available. Fails closed: verifying
-    /// against a secret we cannot read is not something to guess at.</summary>
+    /// <summary>Throws when the key that encrypted it is not available. Fails closed.</summary>
     byte[] Unprotect(ProtectedSecret secret);
 
     /// <summary>True when the row was written under a key that is no longer the active one, so the

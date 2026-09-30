@@ -3,9 +3,8 @@ using Toamaisutaa.Abstractions;
 namespace Toamaisutaa.Email.Smtp;
 
 /// <summary>
-/// Turns a magic-link token into the email that gets sent. Register your own and it replaces the
-/// default outright - the same seam <see cref="IPasswordResetEmailTemplate"/> offers for the reset
-/// email.
+/// Turns a magic-link token into the email that gets sent. Register your own to replace the
+/// default.
 /// </summary>
 public interface IMagicLinkEmailTemplate
 {
@@ -14,8 +13,8 @@ public interface IMagicLinkEmailTemplate
     /// nothing downstream of this call logs it.
     /// </summary>
     /// <remarks>
-    /// This link signs somebody in on its own, which no other message this package sends does. Say
-    /// so in the wording, and keep it out of anything that renders mail into a shared view.
+    /// This link signs somebody in on its own. Say so in the wording, and keep it out of anything
+    /// that renders mail into a shared view.
     /// </remarks>
     MagicLinkEmailContent Build(ToamaisutaaUser user, string magicLinkToken);
 }

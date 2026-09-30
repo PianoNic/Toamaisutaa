@@ -3,8 +3,7 @@ using Toamaisutaa.Abstractions;
 
 namespace Toamaisutaa.Email.Smtp;
 
-/// <summary>Plain, utilitarian wording, the same as the reset email. One message covers both admin
-/// paths, because the notifier is handed a password and a user and cannot tell a freshly created
+/// <summary>One message covers both admin paths, because the notifier cannot tell a freshly created
 /// account from one whose password was overwritten.</summary>
 internal sealed class DefaultAdminPasswordIssuedEmailTemplate(IOptions<ToamaisutaaSmtpEmailOptions> options) : IAdminPasswordIssuedEmailTemplate
 {
@@ -24,8 +23,7 @@ internal sealed class DefaultAdminPasswordIssuedEmailTemplate(IOptions<Toamaisut
             ? string.Empty
             : $"{Environment.NewLine}{Environment.NewLine}Sign in at {signInUrl}";
 
-        // Encoded because a generated password is a random string that may well contain & or <, and
-        // an email client that renders it as markup shows the wrong password with no sign of it.
+        // A generated password may contain & or <, and rendered as markup it shows the wrong password.
         var htmlCredentials = string.IsNullOrWhiteSpace(userName)
             ? $"Password: {Encode(rawPassword)}"
             : $"User name: {Encode(userName)}<br />Password: {Encode(rawPassword)}";

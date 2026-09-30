@@ -16,9 +16,8 @@ public static class ToamaisutaaPasskeyExtensions
     /// </summary>
     /// <remarks>
     /// Needs a store registration, <c>Passkeys:RelyingPartyId</c> and <c>Passkeys:Origins</c>, all
-    /// checked at startup rather than at the first ceremony. It also needs
-    /// <c>AddToamaisutaaPasswordLogin</c>, because a passkey sign-in ends in the same locally issued
-    /// token pair a password sign-in does and that is where the issuer and its keys are registered.
+    /// checked at startup. It also needs <c>AddToamaisutaaPasswordLogin</c>, which registers the token
+    /// issuer a passkey sign-in ends in.
     /// </remarks>
     public static IServiceCollection AddToamaisutaaPasskeys(
         this IServiceCollection services,
@@ -59,10 +58,8 @@ public static class ToamaisutaaPasskeyExtensions
         services.TryAddScoped<AuthenticationEventPublisher>();
         services.TryAddScoped<LocalSessionIssuer>();
 
-        // A singleton because the relying party is configuration, not per-request state. Built from
-        // the options rather than taken from the library's own AddFido2, so a consumer configures
-        // one section and not two - and so nothing in this package depends on a registration a
-        // consumer might make differently.
+        // Built from our options rather than the library's AddFido2, so nothing depends on a registration
+        // a consumer might make differently.
         services.TryAddSingleton<IFido2>(provider =>
         {
             var settings = provider.GetRequiredService<IOptions<ToamaisutaaPasskeyOptions>>().Value;

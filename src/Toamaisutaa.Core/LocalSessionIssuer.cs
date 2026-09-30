@@ -4,15 +4,9 @@ using Toamaisutaa.Abstractions;
 namespace Toamaisutaa.Core;
 
 /// <summary>
-/// The one place a local session is minted: an access token, the refresh row behind it, and the
-/// event that says a sign-in happened.
+/// The one place a local session is minted, for password and passkey sign-in alike; a second copy
+/// would be a second answer to what a token carries, and those drift.
 /// </summary>
-/// <remarks>
-/// Its own class because password login is no longer the only thing that ends in a token pair - a
-/// passkey assertion does too, from a package that cannot live in <c>Core</c> because it carries a
-/// WebAuthn dependency. A second copy of this would be a second answer to "what does a token carry
-/// now", and that question has already been the bug three phases running.
-/// </remarks>
 internal sealed class LocalSessionIssuer(
     IAccessTokenIssuer accessTokens,
     IRefreshTokenStore refreshTokens,
@@ -27,9 +21,7 @@ internal sealed class LocalSessionIssuer(
         var user = request.User;
         var userRoles = await roles.GetRolesAsync(user, cancellationToken);
 
-        // Computed before the token rather than inside the row, because both have to carry the same
-        // value: toa_sid is how step-up finds the row this token belongs to, and a token naming a
-        // family that does not exist can elevate nothing.
+        // The token and the row must carry the same family: toa_sid is how step-up finds the row.
         var family = request.FamilyId ?? Guid.CreateVersion7(request.Now);
 
         var access = await accessTokens.IssueAsync(
@@ -38,18 +30,14 @@ internal sealed class LocalSessionIssuer(
                 User = user,
                 Roles = userRoles,
 
-                // Read off the credential on every issue, refresh included, rather than carried on
-                // the refresh row: a verification or a change of address has to show up in the next
-                // token, and the credential is where both land.
+                // Recomputed on every issue, refresh included, so a verification or address change
+                // shows up in the next token.
                 VerifiedEmail = await VerifiedEmailAsync(user.Id, cancellationToken),
 
                 AuthenticationMethods = request.Methods,
 
-                // A sign-in that already presented a second factor is not one to be told to enrol
-                // in another. For a TOTP or device sign-in this changes nothing - the gate answers
-                // no for an enrolled user anyway - but a passkey satisfies RequiredForAll without
-                // any TOTP enrolment existing, and asking the gate alone would tell the one user
-                // who did the most work to go and do more.
+                // A passkey satisfies RequiredForAll without a TOTP enrolment, so the gate alone would
+                // tell a user who already presented a second factor to enrol in another.
                 TwoFactorEnrolmentRequired = request.TwoFactorSource is null
                     && await twoFactor.MustEnrolAsync(user.Id, cancellationToken),
 
@@ -73,8 +61,7 @@ internal sealed class LocalSessionIssuer(
                 FamilyStartedAt = request.FamilyStartedAt ?? request.Now,
                 SecurityStamp = user.SecurityStamp,
 
-                // Carried on the family so a rotation does not quietly downgrade a session that was
-                // established with a second factor into one that only ever proved a password.
+                // Carried on the family so a rotation does not downgrade a second-factor session.
                 AuthenticationMethods = string.Join(' ', request.Methods),
                 TwoFactorSource = request.TwoFactorSource,
                 SecondFactorAt = request.SecondFactorAt,
@@ -82,15 +69,11 @@ internal sealed class LocalSessionIssuer(
                 UserAgent = request.Client.UserAgent,
                 IpAddress = request.Client.IpAddress,
 
-                // The live row of a family is always the newest one, so this is the family's own
-                // last activity without anything ever writing over a row in place.
                 LastUsedAt = request.Now,
             },
             cancellationToken);
 
-        // A refresh lands here too, and it is not a sign-in: it proved nothing, it renewed
-        // something already proved. An audit table that counted rotations as sign-ins would report
-        // one every AccessTokenLifetime for anyone who left a tab open.
+        // A refresh is not a sign-in; counting rotations would report one every AccessTokenLifetime.
         if (request.NewSignIn)
         {
             await events.PublishAsync(
@@ -117,8 +100,7 @@ internal sealed class LocalSessionIssuer(
         };
     }
 
-    /// <summary>The credential's address once somebody has proven it, and null before. Resolved
-    /// rather than injected, because a passkey-only deployment registers no password store.</summary>
+    /// <summary>Resolved rather than injected: a passkey-only deployment registers no password store.</summary>
     internal async Task<string?> VerifiedEmailAsync(Guid userId, CancellationToken cancellationToken) =>
         provider.GetService(typeof(IPasswordCredentialStore)) is IPasswordCredentialStore store
             && await store.FindByUserIdAsync(userId, cancellationToken) is { EmailConfirmedAt: not null } credential
@@ -126,34 +108,21 @@ internal sealed class LocalSessionIssuer(
             : null;
 }
 
-/// <summary>
-/// Everything a session needs to be minted from.
-/// </summary>
-/// <remarks>
-/// A record rather than an argument list, for the reason <see cref="AccessTokenRequest"/> is one:
-/// what a token has to carry has grown every phase so far, and each growth widened a signature.
-/// </remarks>
 internal sealed record LocalSessionRequest
 {
     internal required ToamaisutaaUser User { get; init; }
 
-    /// <summary>Null for a new sign-in. Set on a refresh, which stays in the family it rotated out
-    /// of.</summary>
     internal Guid? FamilyId { get; init; }
 
-    /// <summary>Null for a new sign-in. Carried on a refresh, so rotation cannot restart the clock
-    /// on the family's absolute lifetime.</summary>
+    /// <summary>Carried on a refresh, so rotation cannot restart the family's absolute lifetime.</summary>
     internal DateTimeOffset? FamilyStartedAt { get; init; }
 
-    /// <summary>The RFC 8176 methods this session proved.</summary>
     internal required IReadOnlyList<string> Methods { get; init; }
 
-    /// <summary>One of <see cref="TwoFactorSource"/>, or null when no second factor was involved.</summary>
     internal string? TwoFactorSource { get; init; }
 
     internal DateTimeOffset? SecondFactorAt { get; init; }
 
-    /// <summary>False for a refresh, which renewed something rather than proving it.</summary>
     internal required bool NewSignIn { get; init; }
 
     internal required ClientMetadata.SessionClient Client { get; init; }
@@ -163,7 +132,6 @@ internal sealed record LocalSessionRequest
 
 internal readonly record struct IssuedSession
 {
-    /// <summary>The refresh family, which is what <c>toa_sid</c> carries.</summary>
     internal required Guid FamilyId { get; init; }
 
     internal required TokenPair Tokens { get; init; }

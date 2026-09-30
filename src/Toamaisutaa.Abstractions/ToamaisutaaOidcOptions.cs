@@ -1,10 +1,7 @@
 namespace Toamaisutaa.Abstractions;
 
 /// <summary>
-/// Everything read from the <c>Oidc</c> configuration section. Property names match the keys the
-/// existing deployments already use, so adopting the package is a re-registration rather than a
-/// re-keying. Shared with the interactive server-side flow when that arrives, which is why it is
-/// named after OIDC and not after the bearer transport.
+/// Everything read from the <c>Oidc</c> configuration section.
 /// </summary>
 public sealed class ToamaisutaaOidcOptions
 {
@@ -12,8 +9,7 @@ public sealed class ToamaisutaaOidcOptions
     public string? Authority { get; set; }
 
     /// <summary>How this process reaches the issuer for metadata discovery when that differs from
-    /// the public issuer (a container on the same Docker network, a service behind a proxy).
-    /// Tokens keep the public issuer; only discovery moves.</summary>
+    /// the public issuer. Tokens keep the public issuer; only discovery moves.</summary>
     public string? InternalAuthority { get; set; }
 
     public string? ClientId { get; set; }
@@ -23,7 +19,7 @@ public sealed class ToamaisutaaOidcOptions
     public bool ValidateIssuer { get; set; } = true;
 
     /// <summary>On by default. Turning it off accepts any token the issuer minted for any of its
-    /// clients, so it is a deliberate choice rather than a convenience.</summary>
+    /// clients.</summary>
     public bool ValidateAudience { get; set; } = true;
 
     /// <summary>Audiences accepted when <see cref="ValidateAudience"/> is on. Falls back to
@@ -33,27 +29,21 @@ public sealed class ToamaisutaaOidcOptions
     /// <summary>Claim type carrying the display name on the resulting identity.</summary>
     public string NameClaim { get; set; } = "name";
 
-    /// <summary>Claim type role checks read. Issuers disagree: Keycloak publishes <c>roles</c>,
-    /// while Pocket ID, Authentik and Entra publish <c>groups</c>. Reading the wrong one 403s every
-    /// request while the token itself is perfectly valid.</summary>
+    /// <summary>Claim type role checks read. Keycloak publishes <c>roles</c>, while Pocket ID,
+    /// Authentik and Entra publish <c>groups</c>; reading the wrong one 403s every request.</summary>
     public string RoleClaim { get; set; } = "roles";
 
     /// <summary>Fetch claims the access token does not carry from the issuer's userinfo endpoint.
-    /// Pocket ID, Okta and Entra keep group membership out of the access token to bound its size,
-    /// so without this those deployments can never satisfy a role requirement.</summary>
+    /// Pocket ID, Okta and Entra keep group membership out of the access token, so without this
+    /// they can never satisfy a role requirement.</summary>
     public bool FetchClaimsFromUserInfo { get; set; } = true;
 
     public TimeSpan UserInfoCacheDuration { get; set; } = TimeSpan.FromMinutes(5);
 
-    /// <summary>Off by default. Turning it on lets the userinfo cache use whatever
-    /// <c>IDistributedCache</c> the application registered as a second level, so a scaled-out
-    /// deployment warms the entry once rather than once per instance. It also puts claims the
-    /// package treats as authorization input - and whatever else userinfo returns, which is usually
-    /// an email and a name - into a store this package does not own, alongside every other tenant
-    /// of that store. That is a decision to make rather than a side effect of having Redis.</summary>
+    /// <summary>Off by default. Turning it on lets the userinfo cache use the application's
+    /// <c>IDistributedCache</c> as a second level, which also puts authorization claims and personal
+    /// data into a store this package does not own.</summary>
     public bool ShareUserInfoCacheAcrossInstances { get; set; }
-
-    // ── Served to the SPA by the configuration endpoint ──
 
     public string Scope { get; set; } = "openid profile email roles";
 
@@ -62,7 +52,7 @@ public sealed class ToamaisutaaOidcOptions
     public string? PostLogoutRedirectUri { get; set; }
 
     /// <summary>Public base URL of the app, used to derive the redirect URIs when they are not set
-    /// explicitly. One less thing to configure, and to get wrong.</summary>
+    /// explicitly.</summary>
     public string? PublicUrl { get; set; }
 
     /// <summary>Bearer token read from the query string, for handshakes that cannot carry a
@@ -74,39 +64,30 @@ public sealed class ToamaisutaaOidcOptions
 }
 
 /// <summary>
-/// Tunes the health check <c>AddToamaisutaaHealthChecks()</c> registers. Nested under <c>Oidc</c>
-/// rather than given a section of its own, because what it probes is decided by
-/// <see cref="ToamaisutaaOidcOptions.Authority"/> and
-/// <see cref="ToamaisutaaOidcOptions.InternalAuthority"/> and nothing else.
+/// Tunes the health check <c>AddToamaisutaaHealthChecks()</c> registers, which probes
+/// <see cref="ToamaisutaaOidcOptions.Authority"/> or
+/// <see cref="ToamaisutaaOidcOptions.InternalAuthority"/>.
 /// </summary>
 public sealed class ToamaisutaaDiscoveryHealthCheckOptions
 {
     /// <summary>How long a successful fetch is trusted before the check reaches for the issuer
-    /// again. Readiness probes run every few seconds and there are usually several replicas, so
-    /// fetching on every probe would put a steady load on the issuer for an answer that changes
-    /// rarely. Answered from the last result in between.</summary>
+    /// again, so frequent readiness probes do not load the issuer.</summary>
     public TimeSpan RefreshInterval { get; set; } = TimeSpan.FromMinutes(5);
 
-    /// <summary>How long a single fetch is given before it counts as unreachable. Short on purpose:
-    /// a probe that hangs is a probe that times out at whatever the orchestrator decides, which
-    /// tells nobody which of the two was slow.</summary>
+    /// <summary>How long a single fetch is given before it counts as unreachable.</summary>
     public TimeSpan Timeout { get; set; } = TimeSpan.FromSeconds(5);
 
     /// <summary>How long an unreachable issuer stays degraded, measured from the last fetch that
-    /// succeeded. Past it the check reports unhealthy. Degraded answers 200, so without a bound one
-    /// successful fetch would keep an instance in rotation for the life of the process however long
-    /// the issuer stayed gone. Three refresh intervals by default: long enough to ride out an
-    /// identity provider restart, short enough to be out of rotation well before signing keys
-    /// rotate. <see cref="TimeSpan.Zero"/> reports unhealthy on the first failure.</summary>
+    /// succeeded, before the check reports unhealthy. Degraded answers 200, so without this bound an
+    /// instance would stay in rotation however long the issuer stayed gone.
+    /// <see cref="TimeSpan.Zero"/> reports unhealthy on the first failure.</summary>
     public TimeSpan DegradedFor { get; set; } = TimeSpan.FromMinutes(15);
 }
 
 /// <summary>
-/// Browsers cannot set an <c>Authorization</c> header on a WebSocket handshake, so SignalR clients
-/// pass the token as a query parameter. Reading it everywhere would put tokens in access logs for
-/// no reason, so it is scoped to the paths that need it. An empty <see cref="IncludePaths"/> means
-/// the feature is off; there is no separate switch, so "enabled but scoped to nothing" cannot
-/// happen.
+/// Bearer token read from the query string, for WebSocket handshakes that cannot set an
+/// <c>Authorization</c> header. Scoped to <see cref="IncludePaths"/> to keep tokens out of access
+/// logs elsewhere; an empty <see cref="IncludePaths"/> means the feature is off.
 /// </summary>
 public sealed class ToamaisutaaQueryTokenOptions
 {

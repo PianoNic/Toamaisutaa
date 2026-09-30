@@ -24,11 +24,9 @@ public sealed class ToamaisutaaExternalLoginConfiguration : IEntityTypeConfigura
         builder.Property(login => login.CreatedAt).HasConversion(InstantConverters.Instant);
         builder.Property(login => login.LastSignInAt).HasConversion(InstantConverters.NullableInstant);
 
-        // The identity constraint of the whole package: one subject per provider, once. It is also
-        // what makes a concurrent first sign-in fail loudly instead of creating two users.
+        // Also what makes a concurrent first sign-in fail loudly instead of creating two users.
         builder.HasIndex(login => new { login.ProviderKey, login.Subject }).IsUnique();
 
-        // Configured from this side because ToamaisutaaUser deliberately has no navigation property.
         builder.HasOne<ToamaisutaaUser>()
             .WithMany()
             .HasForeignKey(login => login.UserId)

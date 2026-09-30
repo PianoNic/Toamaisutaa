@@ -50,9 +50,8 @@ internal sealed class PasskeyService(
 
         var created = fido2.RequestNewCredential(new RequestNewCredentialParams
         {
-            // The user id, and nothing derived from a name. A user handle is stored on the
-            // authenticator and shown in account pickers on shared machines, so an email address
-            // here would leak one to whoever borrows the laptop.
+            // The user handle is the id, never a name: it is shown in account pickers on shared
+            // machines, so an email address here would leak.
             User = new Fido2User
             {
                 Id = userId.ToByteArray(),
@@ -60,23 +59,20 @@ internal sealed class PasskeyService(
                 DisplayName = user.DisplayName ?? user.UserName ?? user.Email ?? userId.ToString(),
             },
 
-            // So an authenticator that already holds a credential for this account says so rather
-            // than quietly making a second one the user will never be able to tell apart.
+            // Stops an authenticator quietly making a second, indistinguishable credential for this account.
             ExcludeCredentials = [.. existing.Select(credential => new PublicKeyCredentialDescriptor(credential.CredentialId))],
 
             AuthenticatorSelection = new AuthenticatorSelection
             {
-                // Required rather than configurable. Sign-in here begins with no identifier, so
-                // the browser has to be able to find the credential on its own; a non-discoverable
-                // one would register happily and then never appear at a sign-in prompt again.
+                // Required, not configurable: sign-in begins with no identifier, so a non-discoverable
+                // credential would register and then never appear at a sign-in prompt.
                 ResidentKey = ResidentKeyRequirement.Required,
                 UserVerification = settings.RequireUserVerification
                     ? UserVerificationRequirement.Required
                     : UserVerificationRequirement.Preferred,
             },
 
-            // Nothing here inspects an attestation statement, and asking for one that is never
-            // checked buys nothing while sending the authenticator's model to the server.
+            // Nothing checks attestation, so asking for it would only disclose the authenticator's model.
             AttestationPreference = AttestationConveyancePreference.None,
         });
 
@@ -123,9 +119,7 @@ internal sealed class PasskeyService(
         }
         catch (Fido2VerificationException exception)
         {
-            // The message names the check that failed - a wrong origin, an attestation that does not
-            // parse - and the person reading it is signed in and registering their own authenticator,
-            // so there is nobody here to tell something they did not already know.
+            // Returning the library's message is safe: the reader is signed in and registering their own authenticator.
             logger.LogWarning(
                 exception,
                 "Passkey registration refused for user {UserId}: {Code}.",
@@ -141,8 +135,7 @@ internal sealed class PasskeyService(
 
         if (registered.Id.Length > 256)
         {
-            // Refused rather than truncated. The credential id is what the sign-in path matches on,
-            // so a shortened one is a credential that registers and can never be used again.
+            // Refused rather than truncated: sign-in matches on the full id, so a shortened one could never be used.
             throw new PasskeyRegistrationException(
                 $"That authenticator produced a {registered.Id.Length}-byte credential id, and this package stores at "
                 + "most 256. Register a different authenticator.");
@@ -183,9 +176,7 @@ internal sealed class PasskeyService(
 
     public async Task<PasskeyCeremonyStarted> BeginAssertionAsync(CancellationToken cancellationToken = default)
     {
-        // No allowed credentials, because there is no identifier: the browser finds a discoverable
-        // credential itself. It is also what keeps this endpoint from answering "does this account
-        // exist" to an anonymous caller, which a per-identifier list would do by its length alone.
+        // No allowed credentials: a per-identifier list would tell an anonymous caller whether an account exists.
         var assertion = fido2.GetAssertionOptions(new GetAssertionOptionsParams
         {
             AllowedCredentials = [],
@@ -254,8 +245,7 @@ internal sealed class PasskeyService(
                     OriginalOptions = AssertionOptions.FromJson(stored.Options),
                     StoredPublicKey = credential.PublicKey,
 
-                    // The counter the authenticator last reported. A value that fails to advance is
-                    // how a cloned authenticator gives itself away, and the library refuses it.
+                    // A counter that fails to advance past this betrays a cloned authenticator.
                     StoredSignatureCounter = (uint)credential.SignCount,
 
                     IsUserHandleOwnerOfCredentialIdCallback = (parameters, _) =>
@@ -278,9 +268,8 @@ internal sealed class PasskeyService(
         }
         catch (CborContentException)
         {
-            // Authenticator data whose extension flag is set with no CBOR behind it. The library
-            // parses that before it validates anything, and what comes out is neither of the two
-            // above - so without this an anonymous endpoint answers 500 to a malformed field.
+            // The library throws this for an extension flag with no CBOR behind it; without the catch
+            // an anonymous endpoint answers 500 to a malformed field.
             return await RefusedAsync(SignInOutcome.InvalidPasskey, credential.UserId, now, cancellationToken);
         }
 
@@ -288,8 +277,6 @@ internal sealed class PasskeyService(
 
         if (user is null)
         {
-            // A credential outliving its user row is a broken cascade rather than a failed sign-in,
-            // so it is logged as the fault it is instead of being counted as an attempt.
             logger.LogError(
                 "Passkey {PasskeyId} points at user {UserId}, which does not exist.",
                 credential.Id,
@@ -302,18 +289,12 @@ internal sealed class PasskeyService(
 
         metrics.TwoFactorVerified(TwoFactorSource.Passkey, succeeded: true);
 
-        // Read off the raw bytes rather than parsed a second time. The library has verified the
-        // structure by this point, and our own AuthenticatorData.Parse ahead of it - on bytes
-        // nothing had checked yet - threw a CBOR exception neither catch above covers, which left
-        // an anonymous endpoint answering 500 for authenticator data with the extension flag set.
-        // Byte 32 is the flags byte and 0x04 is UV, both fixed by the specification.
+        // Read off the raw bytes only after the library has verified them, since parsing unchecked bytes
+        // can throw CBOR errors. Byte 32 is the flags byte and 0x04 is UV, both fixed by the specification.
         var userVerified = (rawAuthenticatorData[32] & (byte)AuthenticatorFlags.UV) != 0;
 
-        // Enrolment alone decides a challenge, exactly as on the password and magic-link paths: a
-        // user who turned two-factor on gets asked in every mode. A verified assertion is the two
-        // factors already and passes through; one without user verification is possession alone, and
-        // letting that mint a token pair would mean a borrowed security key beat the account's own
-        // policy.
+        // An assertion without user verification is possession alone, so an enrolled account still
+        // gets a second-factor challenge; otherwise a borrowed security key would beat its policy.
         if (!userVerified && await twoFactor.RequiresChallengeAsync(user.Id, cancellationToken))
         {
             var challenge = await twoFactor.IssueChallengeAsync(
@@ -331,9 +312,8 @@ internal sealed class PasskeyService(
             return new PasskeySignInResult { Outcome = SignInOutcome.TwoFactorRequired, Challenge = challenge };
         }
 
-        // hwk is the possession half and user is the presence half, both RFC 8176. mfa is added only
-        // when the authenticator actually verified the user - a PIN or a fingerprint - because that
-        // is the difference between one factor and two, and it is what the enrolment policy reads.
+        // hwk and user are RFC 8176. mfa only when the authenticator verified the user, because the
+        // enrolment policy reads it as the second factor.
         List<string> methods = userVerified
             ? [ToamaisutaaDefaults.HardwareKeyMethod, ToamaisutaaDefaults.UserPresenceMethod, ToamaisutaaDefaults.MultiFactorMethod]
             : [ToamaisutaaDefaults.HardwareKeyMethod, ToamaisutaaDefaults.UserPresenceMethod];
@@ -344,9 +324,7 @@ internal sealed class PasskeyService(
                 User = user,
                 Methods = methods,
 
-                // Carried onto the refresh row by the issuer, so a rotation an hour later still
-                // reports a passkey session as one - and still satisfies the policies it satisfied
-                // at sign-in, rather than turning into a password-only session on the first refresh.
+                // Carried onto the refresh row, so a refreshed token still satisfies the policies it did at sign-in.
                 TwoFactorSource = userVerified ? TwoFactorSource.Passkey : null,
                 SecondFactorAt = userVerified ? now : null,
 
@@ -380,15 +358,13 @@ internal sealed class PasskeyService(
 
         var now = timeProvider.GetUtcNow();
 
-        // The same proof registration asks for, and asked first so it answers the same whether or not
-        // the id is this account's.
+        // Checked first so the answer is the same whether or not the id is this account's.
         await RequireLiveCredentialAsync(userId, proof, Removal, now, cancellationToken);
 
         if (!await credentials.DeleteAsync(userId, passkeyId, cancellationToken))
             return false;
 
-        // Nothing records which session this key opened, so all of them end: a key being removed is
-        // the moment somebody suspects it is not only in their own hands.
+        // Nothing records which session this key opened, so all of them end.
         await users.UpdateSecurityStampAsync(userId, SecureTokens.Create(), cancellationToken);
         await provider.GetRequiredService<IRefreshTokenStore>().RevokeAllForUserAsync(userId, "passkey-removed", now, cancellationToken);
 
@@ -400,8 +376,7 @@ internal sealed class PasskeyService(
             new PasskeyRemoved { OccurredAt = now, UserId = userId, PasskeyId = passkeyId },
             cancellationToken);
 
-        // Worth a warning rather than an information line: for an account with no password this is
-        // the moment the last way in disappeared, and the person doing it may not realise.
+        // A warning because on a passwordless account this may have removed the last way in.
         var remaining = await credentials.CountAsync(userId, cancellationToken);
 
         logger.LogWarning(
@@ -413,25 +388,6 @@ internal sealed class PasskeyService(
         return true;
     }
 
-    /// <summary>
-    /// Refuses to start a registration for a caller who has shown nothing but a bearer token.
-    /// </summary>
-    /// <remarks>
-    /// <para>
-    /// Two proofs are accepted, and they are the two the rest of the package already asks for. A
-    /// second factor presented inside <c>Passkeys:RegistrationProofWindow</c> - the same
-    /// <c>toa_2fa_at</c> claim <c>RequireFreshSecondFactor</c> reads - covers a passkey sign-in and
-    /// a step-up alike. Failing that, the current password, the way <c>/auth/email</c> asks for one.
-    /// </para>
-    /// <para>
-    /// The stores are resolved here rather than injected because an account can perfectly well have
-    /// no local password at all: an external identity provider issued its token, or a passkey is the
-    /// only credential on it. Those accounts prove a second factor instead, and a constructor
-    /// dependency would turn an optional registration into a crash at the first ceremony.
-    /// </para>
-    /// </remarks>
-    /// <summary>What the proof is for, in the words its refusals and log lines use. Removal used to
-    /// be refused as a registration, which told the person holding it to do something else.</summary>
     private readonly record struct ProvenOperation(string Name, string Doing, string Retry);
 
     private static readonly ProvenOperation Registration = new("Passkey registration", "Registering a passkey", "register");
@@ -447,11 +403,12 @@ internal sealed class PasskeyService(
     {
         var window = options.Value.RegistrationProofWindow;
 
-        // A time ahead of now is a clock problem rather than a fresh factor, and refusing keeps a
-        // skewed issuer from being a way past this instead of into it.
+        // A time ahead of now is refused so a skewed issuer clock cannot extend the window.
         if (proof.SecondFactorAt is { } presentedAt && presentedAt <= now && now - presentedAt <= window)
             return;
 
+        // Resolved rather than injected: the password stores may not be registered, and passwordless
+        // accounts prove a second factor instead.
         var passwords = provider.GetService<IPasswordCredentialStore>();
         var credential = passwords is null ? null : await passwords.FindByUserIdAsync(userId, cancellationToken);
 
@@ -495,14 +452,9 @@ internal sealed class PasskeyService(
     }
 
     /// <summary>
-    /// Writes the server's half of a ceremony and hands back the opaque token that names it.
+    /// Stores the options server-side rather than round-tripping them, since a client that could return
+    /// them could loosen the rules the completion step checks against.
     /// </summary>
-    /// <remarks>
-    /// The options are stored rather than returned for the client to give back. They carry the
-    /// challenge, the relying party and the user verification requirement, and every one of those is
-    /// a rule the completion step measures the authenticator against - so a client that could return
-    /// them could return different ones and mark its own work.
-    /// </remarks>
     private async Task<PasskeyCeremonyStarted> StoreChallengeAsync(
         Guid? userId,
         string optionsJson,
@@ -535,16 +487,9 @@ internal sealed class PasskeyService(
     }
 
     /// <summary>
-    /// Spends a challenge, if it is the right kind and has not been spent already. Null covers every
-    /// way it can fail, because which one it was is not something to confirm to whoever presented it.
+    /// Consumed before the ceremony is verified, unlike the two-factor challenge: a failed authenticator
+    /// response is not a typo, and a live challenge would allow unlimited attempts against it.
     /// </summary>
-    /// <remarks>
-    /// Consumed before the ceremony is verified rather than after, which is the opposite of the
-    /// two-factor challenge next door - and deliberately. A mistyped six-digit code is a routine
-    /// human error worth a second try; an authenticator response is produced by software in one
-    /// shot, so a failed one is not a typo, and leaving the challenge live would hand an attacker
-    /// unlimited attempts against a single one.
-    /// </remarks>
     private async Task<ToamaisutaaPasskeyChallenge?> RedeemAsync(
         string token,
         PasskeyCeremony ceremony,
@@ -578,8 +523,8 @@ internal sealed class PasskeyService(
         if (stored.ExpiresAt <= now)
             return null;
 
-        // Only whoever wins the write gets the ceremony. A synced passkey reports a counter of zero,
-        // so clone detection could not tell two assertions over one challenge apart either.
+        // Only the winner of the write proceeds: a synced passkey reports a counter of zero, so clone
+        // detection cannot catch two assertions over one challenge.
         if (!await challenges.MarkConsumedAsync(stored.Id, now, cancellationToken))
         {
             logger.LogWarning("Passkey challenge was spent by another request first.");
@@ -608,13 +553,9 @@ internal sealed class PasskeyService(
     }
 
     /// <summary>
-    /// Whether the handle the authenticator chose names the account this credential belongs to.
+    /// A handle that does not parse as a user id is refused rather than ignored, since it may be one
+    /// credential's response substituted for another's.
     /// </summary>
-    /// <remarks>
-    /// A handle that does not parse as a user id is refused rather than ignored: it is either an
-    /// authenticator this application never enrolled, or somebody substituting one credential's
-    /// response for another's.
-    /// </remarks>
     private static bool OwnsCredential(byte[]? userHandle, ToamaisutaaPasskeyCredential credential) =>
         userHandle is { Length: 16 } && new Guid(userHandle) == credential.UserId;
 
@@ -629,13 +570,9 @@ internal sealed class PasskeyService(
     };
 
     /// <summary>
-    /// What the browser reported, keeping only the values WebAuthn actually defines.
+    /// Unknown transports are dropped rather than refused: the list is only a prompt hint and nothing
+    /// authorises on it.
     /// </summary>
-    /// <remarks>
-    /// An unknown one is dropped rather than refused. The transport list is a hint for the next
-    /// sign-in prompt and nothing authorises on it, so a browser inventing a value is not a reason
-    /// to refuse a credential that is otherwise perfectly good.
-    /// </remarks>
     private static AuthenticatorTransport[] ParseTransports(IReadOnlyList<string>? transports)
     {
         if (transports is null)
@@ -652,8 +589,6 @@ internal sealed class PasskeyService(
         return [.. parsed];
     }
 
-    /// <summary>Space-separated, matching how <c>amr</c> is stored on a refresh row. Null when the
-    /// browser did not say, which is not the same as an authenticator with no transports.</summary>
     private static string? Describe(AuthenticatorTransport[]? transports) =>
         transports is null or { Length: 0 }
             ? null

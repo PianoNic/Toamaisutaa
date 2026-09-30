@@ -5,8 +5,6 @@ using MimeKit;
 
 namespace Toamaisutaa.Email.Smtp;
 
-/// <summary>Connects fresh for every message rather than pooling. Password reset emails are rare
-/// enough that a persistent connection would sit idle far more than it sends.</summary>
 internal sealed class MailKitSmtpMessageSender(IOptions<ToamaisutaaSmtpEmailOptions> options) : ISmtpMessageSender
 {
     public async Task SendAsync(MimeMessage message, CancellationToken cancellationToken)
@@ -19,7 +17,6 @@ internal sealed class MailKitSmtpMessageSender(IOptions<ToamaisutaaSmtpEmailOpti
         if (settings.SkipCertificateVerification)
             client.ServerCertificateValidationCallback = (_, _, _, _) => true;
 
-        // SmtpEmailStartupCheck refuses to start with no Host set, so this only runs once it is.
         await client.ConnectAsync(settings.Host!, settings.Port, ToSecureSocketOptions(settings.Security, settings.Port), cancellationToken)
             .ConfigureAwait(false);
 
@@ -31,9 +28,8 @@ internal sealed class MailKitSmtpMessageSender(IOptions<ToamaisutaaSmtpEmailOpti
     }
 
     /// <remarks>
-    /// Auto is not MailKit's Auto. That one is STARTTLS <i>when the server offers it</i>, so anyone
-    /// on the path who deletes the offer from the greeting gets the login and every reset link in the
-    /// clear. Here it is TLS from the first byte on 465 and STARTTLS or nothing everywhere else.
+    /// Auto is not MailKit's Auto, whose opportunistic STARTTLS can be stripped on the path to leak the
+    /// login and every link in the clear.
     /// </remarks>
     internal static SecureSocketOptions ToSecureSocketOptions(SmtpSecurityMode mode, int port) => mode switch
     {

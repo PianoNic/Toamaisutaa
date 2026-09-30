@@ -7,15 +7,12 @@ using Toamaisutaa.Core;
 namespace Toamaisutaa.OpenIdConnect;
 
 /// <summary>
-/// In Development the sample's published keys are allowed - that is what they are for - but only on
-/// a server nothing else can reach.
+/// Refuses the sample's published keys on a reachable Development host, since anyone with the public
+/// repository could forge its tokens.
 /// </summary>
 /// <remarks>
-/// A Development host bound to <c>0.0.0.0</c> - a container, or a staging box started with the wrong
-/// environment - is reachable, and signs tokens anyone with the public repository can forge. The
-/// addresses exist only once the server has bound them, which is why this runs at
-/// <see cref="IHostedLifecycleService.StartedAsync"/> rather than with the other startup checks. A
-/// server that reports no addresses, such as the test server, listens on nothing to reach.
+/// Runs at <see cref="IHostedLifecycleService.StartedAsync"/> because the addresses exist only once
+/// the server has bound them.
 /// </remarks>
 internal sealed class PublishedSecretsLoopbackCheck(IServiceProvider provider, IHostEnvironment environment, IServer server)
     : IHostedLifecycleService

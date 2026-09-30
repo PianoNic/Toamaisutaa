@@ -10,11 +10,9 @@ public interface IPasswordAccountService
     /// a credential already exists and must be absent when it does not.
     /// </summary>
     /// <remarks>
-    /// <c>authenticatedAt</c> is when the caller last actually authenticated - a live second factor
-    /// or an identity-provider sign-in, not a token refresh. It is only read for a first password,
-    /// which is refused unless it falls inside <c>LocalLogin:FirstPasswordProofWindow</c>: with no
-    /// current password to ask for, it is the one thing standing between a stolen access token and a
-    /// permanent way in.
+    /// <c>authenticatedAt</c> is when the caller last actually authenticated, not a token refresh. A
+    /// first password is refused unless it falls inside <c>LocalLogin:FirstPasswordProofWindow</c>,
+    /// so a stolen access token cannot become a permanent way in.
     /// </remarks>
     Task<AccountResult> SetPasswordAsync(
         Guid userId,
@@ -33,56 +31,46 @@ public interface IPasswordAccountService
     Task<AccountResult> ResetPasswordAsync(string resetToken, string newPassword, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Creates a local account on someone else's behalf. Never signs anyone in - the caller is
-    /// provisioning an account, not authenticating as its owner. <paramref name="password"/> is
-    /// optional: omit it and Toamaisutaa generates one. Either way, the raw value goes to
+    /// Creates a local account on someone else's behalf, without signing anyone in. Omit
+    /// <paramref name="password"/> to have one generated; either way the raw value goes to
     /// <see cref="IAdminPasswordIssuedNotifier"/> and is never returned from this call.
     /// </summary>
     Task<AccountResult> AdminCreateAccountAsync(string userName, string? email, string? password, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Overwrites <paramref name="userId"/>'s password with no current-password check, because the
-    /// caller is acting on someone else's account, not their own. Revokes every local session the
-    /// account holds, the same as a self-service change. <paramref name="password"/> is optional:
-    /// omit it and Toamaisutaa generates one. Either way, the raw value goes to
-    /// <see cref="IAdminPasswordIssuedNotifier"/> and is never returned from this call.
+    /// Overwrites <paramref name="userId"/>'s password with no current-password check and revokes
+    /// every local session the account holds. Omit <paramref name="password"/> to have one generated;
+    /// either way the raw value goes to <see cref="IAdminPasswordIssuedNotifier"/> and is never
+    /// returned from this call.
     /// </summary>
     /// <remarks>
     /// <para>
-    /// The notifier is handed the credential's own address, never the profile's: an account with no
-    /// credential, or none on it, reaches the notifier with no address, and the SMTP notifier then
-    /// mails nothing. With <see cref="ToamaisutaaLocalLoginOptions.RequireVerifiedEmailForPasswordReset"/>
-    /// on, an address that was never verified refuses the call before anything changes; an account
-    /// with no address at all is not refused, since nothing would be mailed.
+    /// The notifier is handed the credential's own address, never the profile's. With
+    /// <see cref="ToamaisutaaLocalLoginOptions.RequireVerifiedEmailForPasswordReset"/> on, an
+    /// unverified address refuses the call before anything changes.
     /// </para>
     /// <para>
-    /// The revocation happens before the notifier is called and does not depend on it. A notifier
-    /// that throws leaves the password set and every session gone, and says so through
-    /// <see cref="AccountResult.NotificationFailed"/> - the value reached nobody, so set one again
-    /// once delivery works.
+    /// A notifier that throws leaves the password set and every session gone, and reports
+    /// <see cref="AccountResult.NotificationFailed"/>; set a password again once delivery works.
     /// </para>
     /// </remarks>
     Task<AccountResult> AdminSetPasswordAsync(Guid userId, string? password, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Issues a verification token for <paramref name="newEmail"/> and hands it to
-    /// <see cref="IEmailVerificationNotifier"/>, which mails it there rather than to the address the
-    /// account currently has. Nothing on the account moves until the token comes back to
-    /// <see cref="VerifyEmailAsync"/>.
+    /// <see cref="IEmailVerificationNotifier"/>. Nothing on the account moves until the token comes
+    /// back to <see cref="VerifyEmailAsync"/>.
     /// </summary>
     /// <remarks>
-    /// <paramref name="currentPassword"/> is required even when <paramref name="newEmail"/> is the
-    /// address already on the credential, which is how a verification link is asked for a second
-    /// time. One rule rather than two, and the second address is the one that matters: whoever holds
-    /// a borrowed session should not be able to point an account at a mailbox of their own.
+    /// <paramref name="currentPassword"/> is always required, so a borrowed session cannot point an
+    /// account at a mailbox of its own.
     /// </remarks>
     Task<AccountResult> RequestEmailChangeAsync(Guid userId, string newEmail, string currentPassword, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Redeems a verification token: writes the address it names onto the credential and stamps
-    /// <see cref="ToamaisutaaPasswordCredential.EmailConfirmedAt"/>. A silent, single failure for a
-    /// token that is unknown, already used or expired, the same reasoning
-    /// <see cref="ResetPasswordAsync"/> uses.
+    /// <see cref="ToamaisutaaPasswordCredential.EmailConfirmedAt"/>. One indistinguishable failure for
+    /// a token that is unknown, already used or expired.
     /// </summary>
     Task<AccountResult> VerifyEmailAsync(string verificationToken, CancellationToken cancellationToken = default);
 
@@ -92,10 +80,8 @@ public interface IPasswordAccountService
     /// has verified. Never reveals which case it was.
     /// </summary>
     /// <remarks>
-    /// The verified-address rule is not an option and does not have one. Every other token this
-    /// package mails leads somewhere that asks for a password next; this one is exchanged for a
-    /// session, so sending it to an address that is a typo, or that somebody else now owns, hands
-    /// them the account.
+    /// The verified-address rule is not configurable: the link is exchanged for a session, so
+    /// sending it to an unproven address could hand the account to whoever owns that mailbox.
     /// </remarks>
     Task<MagicLinkRequestOutcome> RequestMagicLinkAsync(string email, CancellationToken cancellationToken = default);
 
@@ -104,10 +90,9 @@ public interface IPasswordAccountService
     /// invitation token to <see cref="IInvitationNotifier"/>. Never returned from this call.
     /// </summary>
     /// <remarks>
-    /// An address with an invitation still open is not reserved twice: the existing reservation is
-    /// reused and its earlier links retired, so only the newest one works. A notifier that throws
-    /// takes a new reservation with it - the row and its token are deleted - and sets
-    /// <see cref="AccountResult.NotificationFailed"/>; a reused one stays, with its links retired.
+    /// An address with an open invitation reuses that reservation and retires its earlier links. A
+    /// notifier that throws deletes a new reservation and sets
+    /// <see cref="AccountResult.NotificationFailed"/>; a reused one stays.
     /// </remarks>
     Task<AccountResult> CreateInvitationAsync(string email, CancellationToken cancellationToken = default);
 
@@ -120,9 +105,8 @@ public interface IPasswordAccountService
 
     /// <summary>
     /// Completes the one reserved account an invitation token names: sets the user name and password
-    /// the person chose, and signs them in - the same shape <see cref="RegisterAsync"/> answers with.
-    /// A silent, single failure for a token that is unknown, already used or expired, the same
-    /// reasoning <see cref="ResetPasswordAsync"/> uses.
+    /// the person chose, and signs them in like <see cref="RegisterAsync"/>. One indistinguishable
+    /// failure for a token that is unknown, already used or expired.
     /// </summary>
     Task<AccountResult> CompleteInvitationAsync(string invitationToken, string userName, string password, CancellationToken cancellationToken = default);
 }
@@ -134,42 +118,35 @@ public enum PasswordResetRequestOutcome
     UnknownEmail,
 
     /// <summary>The account exists but is owned by an identity provider, so there is no password
-    /// here to reset. Grep for this when someone reports that no mail arrived.</summary>
+    /// here to reset.</summary>
     NoLocalCredential,
 
-    /// <summary>The token was issued and stored, but <see cref="IPasswordResetNotifier"/> threw.
-    /// Grep for this when someone reports that no mail arrived and the account is local.</summary>
+    /// <summary>The token was issued and stored, but <see cref="IPasswordResetNotifier"/> threw.</summary>
     NotificationFailed,
 
     /// <summary>
     /// <see cref="ToamaisutaaLocalLoginOptions.RequireVerifiedEmailForPasswordReset"/> is on and
-    /// nobody has proven this address. Grep for this when someone reports that no mail arrived,
-    /// the account is local, and the option was switched on over an existing database.
+    /// nobody has proven this address.
     /// </summary>
     EmailNotVerified,
 }
 
-/// <summary>For the log, not for the caller. Every one of these answers 204, the same as
-/// <see cref="PasswordResetRequestOutcome"/> and for the same reason.</summary>
+/// <summary>For the log, not for the caller. Every one of these answers 204.</summary>
 public enum MagicLinkRequestOutcome
 {
     Sent,
     UnknownEmail,
 
-    /// <summary>The account exists but is owned by an identity provider. Signing in here would step
-    /// around the provider that owns the account. Grep for this when someone reports that no mail
-    /// arrived.</summary>
+    /// <summary>The account exists but is owned by an identity provider, which signing in here
+    /// would step around.</summary>
     NoLocalCredential,
 
     /// <summary>
-    /// Nobody has proven this address, so a link that is itself a session may not be sent to it.
-    /// Grep for this when someone reports that no mail arrived and the account is local: the way
-    /// forward is <c>/auth/email</c>.
+    /// Nobody has proven this address; verify it through <c>/auth/email</c> first.
     /// </summary>
     EmailNotVerified,
 
-    /// <summary>The token was issued and stored, but <see cref="IMagicLinkNotifier"/> threw. Grep
-    /// for this when someone reports that no mail arrived and the address is verified.</summary>
+    /// <summary>The token was issued and stored, but <see cref="IMagicLinkNotifier"/> threw.</summary>
     NotificationFailed,
 }
 
@@ -184,16 +161,14 @@ public sealed record AccountResult
 
     public TokenPair? Tokens { get; init; }
 
-    /// <summary>The user name or email is already taken. Separated from a validation failure only
-    /// so the endpoint can answer 409 rather than 400.</summary>
+    /// <summary>The user name or email is already taken, answered as 409 rather than 400.</summary>
     public bool Conflict { get; init; }
 
     /// <summary>
     /// The notifier carrying the secret this call produced threw, so nothing was delivered.
     /// Independent of <see cref="Succeeded"/>: <see cref="IPasswordAccountService.AdminSetPasswordAsync"/>
     /// keeps the change and reports true, <see cref="IPasswordAccountService.CreateInvitationAsync"/>
-    /// rolls its reservation back and reports false. Either way the endpoint answers 502 rather
-    /// than a 500 or a success the caller would read as "the mail went out".
+    /// rolls its reservation back and reports false. Either way the endpoint answers 502.
     /// </summary>
     public bool NotificationFailed { get; init; }
 

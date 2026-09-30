@@ -5,29 +5,9 @@ using Toamaisutaa.Abstractions;
 namespace Toamaisutaa.AspNetCore;
 
 /// <summary>
-/// Turns a stale security stamp into 401 instead of letting it escape as an unhandled exception.
+/// Turns a stale security stamp into 401 rather than a 500, which the happy path of enrolment and
+/// password changes otherwise reaches; a filter so the package's endpoints need no consumer setup.
 /// </summary>
-/// <remarks>
-/// <para>
-/// <see cref="ICurrentUser.GetOrProvisionAsync"/> throws
-/// <see cref="SecurityStampChangedException"/> when a token was issued before a credential changed.
-/// That is an authentication failure and always was; nothing mapped it, so it surfaced as a 500 -
-/// a stack trace in Development and a bare server error in Production, for a token the client only
-/// needed to refresh.
-/// </para>
-/// <para>
-/// It is reachable from the happy path rather than an edge: confirming a two-factor enrolment moves
-/// the stamp, so the token that made the call is dead the moment it returns, and the next request
-/// was answering 500. Disabling two-factor, regenerating recovery codes, changing a password and
-/// resetting one all do the same.
-/// </para>
-/// <para>
-/// A filter rather than middleware, so the package's own endpoints are correct without a consumer
-/// having to remember anything. Endpoints of your own that call
-/// <see cref="ICurrentUser.GetOrProvisionAsync"/> need the same treatment - see the docs for an
-/// <c>IExceptionHandler</c> that covers the whole application.
-/// </para>
-/// </remarks>
 internal sealed class StaleSecurityStampFilter(ILogger<StaleSecurityStampFilter> logger) : IEndpointFilter
 {
     public async ValueTask<object?> InvokeAsync(EndpointFilterInvocationContext context, EndpointFilterDelegate next)
@@ -46,9 +26,8 @@ internal sealed class StaleSecurityStampFilter(ILogger<StaleSecurityStampFilter>
     }
 
     /// <summary>
-    /// RFC 6750 names this case <c>invalid_token</c> and asks for the reason in
-    /// <c>WWW-Authenticate</c>, which is what a client library looks at before it decides whether
-    /// refreshing is worth trying.
+    /// RFC 6750 <c>invalid_token</c> in <c>WWW-Authenticate</c>, which client libraries read to decide
+    /// whether to refresh.
     /// </summary>
     internal static IResult StaleSecurityStamp(HttpContext context)
     {

@@ -4,15 +4,7 @@ using Toamaisutaa.Abstractions;
 
 namespace Toamaisutaa.Email.Smtp;
 
-/// <summary>
-/// The one implementation of <see cref="IMagicLinkNotifier"/> this repository ships. Builds the
-/// message from <see cref="IMagicLinkEmailTemplate"/> and hands it to <see cref="ISmtpMessageSender"/>.
-/// </summary>
-/// <remarks>
-/// Never logs the token or the link it appears in, the same rule every other notifier here follows -
-/// and the rule matters most on this one, because the link is a session rather than a step towards
-/// getting one.
-/// </remarks>
+/// <summary>Never logs the token or the link: the link is a session in itself.</summary>
 internal sealed class SmtpMagicLinkNotifier(
     IMagicLinkEmailTemplate template,
     ISmtpMessageSender sender,

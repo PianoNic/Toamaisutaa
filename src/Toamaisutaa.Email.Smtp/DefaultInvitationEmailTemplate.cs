@@ -3,9 +3,6 @@ using Toamaisutaa.Abstractions;
 
 namespace Toamaisutaa.Email.Smtp;
 
-/// <summary>Plain, utilitarian wording, the same as the reset email - an invitation link is the one
-/// thing standing between a stranger and an account, not the place for this package's usual
-/// voice.</summary>
 internal sealed class DefaultInvitationEmailTemplate(IOptions<ToamaisutaaSmtpEmailOptions> options) : IInvitationEmailTemplate
 {
     public InvitationEmailContent Build(ToamaisutaaUser user, string invitationToken)

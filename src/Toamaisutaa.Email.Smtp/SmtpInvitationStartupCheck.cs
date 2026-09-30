@@ -3,18 +3,13 @@ using Microsoft.Extensions.Options;
 
 namespace Toamaisutaa.Email.Smtp;
 
-/// <summary>Refuses to start rather than failing on the first invitation, the same reasoning
-/// <see cref="SmtpEmailStartupCheck"/> uses for the transport. Registered only by
-/// <c>AddToamaisutaaSmtpInvitationEmail</c>, so an application that never sends invitations is
-/// never held to an invitation link.</summary>
 internal sealed class SmtpInvitationStartupCheck(
     IOptions<ToamaisutaaSmtpEmailOptions> options,
     IInvitationEmailTemplate template) : IHostedService
 {
     public Task StartAsync(CancellationToken cancellationToken)
     {
-        // The link is the default template's business alone. A consumer template that builds its
-        // own, or none at all, has no reason to configure one.
+        // A consumer template may build its own link, or none, so only the default needs the option.
         if (template is not DefaultInvitationEmailTemplate)
             return Task.CompletedTask;
 

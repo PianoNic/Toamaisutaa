@@ -34,22 +34,19 @@ internal sealed class PasswordSignInService(
 
         if (credential is null)
         {
-            // Pay the same price a real account would, so the clock does not answer what the body
-            // will not.
+            // Timing equaliser: pay what a real account would, so the clock does not reveal existence.
             VerifyDummy(password);
             logger.LogInformation("Sign-in refused: no local credential matches the identifier presented.");
 
-            // The one event that names nobody. There is no account to attribute it to, and the
-            // identifier that was tried is not put in its place: somebody types their password into
-            // the user name box eventually, and this is not the place to keep it.
+            // The tried identifier is deliberately not recorded: users sometimes type their password
+            // into the user name box.
             await events.PublishAsync(new SignInFailed { OccurredAt = now, Reason = SignInOutcome.UnknownUser }, cancellationToken);
 
             return Refused(SignInOutcome.UnknownUser);
         }
 
-        // Read before the credential is reserved and checked, so the session and any challenge are
-        // bound to a stamp no newer than the password that was verified. Read after, a reset that
-        // landed while the hash ran handed its own fresh stamp to a sign-in with the old password.
+        // Read before the password is checked, or a reset landing while the hash runs hands its fresh
+        // stamp to a sign-in with the old password.
         var user = await users.FindByIdAsync(credential.UserId, cancellationToken)
             ?? throw new InvalidOperationException($"Credential for user {credential.UserId} has no user row.");
 
@@ -78,8 +75,7 @@ internal sealed class PasswordSignInService(
 
         if (verification == PasswordVerificationResult.Failed)
         {
-            // Already counted by the reservation. The event says the lock went on, once, and only for
-            // the attempt whose reservation set it - a parallel one that lost the race does not repeat it.
+            // Already counted by the reservation; only the attempt that set the lock reports it.
             if (reservation.LockedByThisAttempt && credential.LockedOutUntil is { } lockedOutUntil)
             {
                 metrics.LockedOut();
@@ -102,9 +98,8 @@ internal sealed class PasswordSignInService(
             return Refused(SignInOutcome.InvalidPassword);
         }
 
-        // The only moment the plaintext exists, so the rehash is taken now. Held here rather than set
-        // on the tracked credential: set there, the next SaveChanges of anything - the trusted-device
-        // insert - flushed it unguarded, over whatever had moved since, as an unhandled 500.
+        // Held here rather than set on the tracked credential, where any later SaveChanges would
+        // flush it unguarded over whatever had moved since.
         var rehash = verification == PasswordVerificationResult.SucceededRehashNeeded
             ? new Rehash(credential.PasswordHash, hasher.Hash(password))
             : (Rehash?)null;
@@ -112,26 +107,19 @@ internal sealed class PasswordSignInService(
         if (rehash is not null)
             logger.LogInformation("Rehashed the stored password for user {UserId} with current parameters.", credential.UserId);
 
-        // The password was right, which is the first factor and, for an enrolled account, not the
-        // last. Nothing is issued until the second one arrives.
-        //
-        // The device token is only consulted here - after lockout and after the password. Checking
-        // it earlier would skip the lockout check for anyone holding one, and would answer "is this
-        // device trusted" to somebody who has the token but not the password.
+        // The device token is consulted only after lockout and the password, or holding one would
+        // skip lockout and reveal device trust to somebody without the password.
         if (await twoFactor.RequiresChallengeAsync(user.Id, cancellationToken))
         {
             var trust = await trustedDevices.TryRedeemAsync(user, request.DeviceToken, now, cancellationToken);
 
-            // Counted here rather than inside the gate, which has six ways to refuse and no way to
-            // tell "this token is no good" from "nobody presented one".
             if (!string.IsNullOrWhiteSpace(request.DeviceToken))
                 metrics.TwoFactorVerified(TwoFactorSource.Device, trust.Trusted);
 
             if (!trust.Trusted)
             {
-                // The failure count is left standing apart from this attempt's own reservation. A
-                // right password is half a sign-in, and clearing the count here would let anyone who
-                // has it guess codes indefinitely by signing in again every few attempts.
+                // Only this reservation is refunded; clearing the count would let a password holder
+                // guess codes indefinitely by signing in again every few attempts.
                 credential = await credentials.RefundAsync(reservation, now, cancellationToken);
 
                 if (rehash is { } pending)
@@ -165,8 +153,7 @@ internal sealed class PasswordSignInService(
 
             logger.LogInformation("Sign-in succeeded for user {UserId} with a cached second factor.", user.Id);
 
-            // No otp: nothing one-time was presented. mfa still holds - a second factor was
-            // performed, just not now, which is what toa_2fa_at reports.
+            // No otp: nothing one-time was presented now; toa_2fa_at says when it was.
             string[] cached = ["pwd", ToamaisutaaDefaults.MultiFactorMethod];
 
             var cachedResult = await IssueAsync(
@@ -218,8 +205,7 @@ internal sealed class PasswordSignInService(
 
         var now = timeProvider.GetUtcNow();
 
-        // Found through the challenge, which is the only thing here that names the account. Null for
-        // an account with no password - a passkey-only one - whose count lives on the enrolment.
+        // Null for an account with no password, whose count lives on the enrolment.
         ToamaisutaaPasswordCredential? credential = null;
         AttemptReservation? reservation = null;
         EnrolmentReservation? enrolmentReservation = null;
@@ -233,8 +219,7 @@ internal sealed class PasswordSignInService(
             {
                 credential = await credentials.FindByUserIdAsync(userId, cancellationToken);
 
-                // Counted exactly as a code at step-up is, and before it is checked. Without it one
-                // challenge takes unlimited guesses and the per-address limiter is all that is left.
+                // Reserved before the code is checked, or one challenge takes unlimited guesses.
                 if (credential is not null)
                 {
                     reservation = await credentials.ReserveAttemptAsync(credential, options.Value, now, cancellationToken);
@@ -272,9 +257,8 @@ internal sealed class PasswordSignInService(
         var user = await users.FindByIdAsync(redemption.UserId!.Value, cancellationToken)
             ?? throw new InvalidOperationException($"Challenge points at user {redemption.UserId}, which does not exist.");
 
-        // A recovery code means the authenticator is gone. Trusting devices at that moment is
-        // exactly backwards, and the security stamp cannot carry this one: bumping it here would
-        // revoke the refresh family of the session being established.
+        // A recovery code means the authenticator is gone, so devices are revoked explicitly; bumping
+        // the stamp would revoke the session being established.
         if (redemption.UsedRecoveryCode)
         {
             await events.PublishAsync(
@@ -284,17 +268,14 @@ internal sealed class PasswordSignInService(
             await trustedDevices.RevokeAllAsync(user.Id, "recovery-code-redeemed", now, cancellationToken);
         }
 
-        // Only here. A device-trusted sign-in never reaches this method, which is what stops a
-        // family from renewing itself past its absolute lifetime.
+        // Only after a live second factor, or a device family could renew itself forever.
         var issued = redemption.UsedRecoveryCode
             ? null
             : await trustedDevices.IssueAsync(user, request, now, cancellationToken);
 
         logger.LogInformation("Sign-in completed for user {UserId} with a second factor.", user.Id);
 
-        // The first factor comes off the challenge rather than being assumed. A challenge reached
-        // through a magic link proved a mailbox and no password, and writing pwd here would put a
-        // claim on the token that nothing had earned.
+        // The first factor comes off the challenge, since a magic-link challenge proved no password.
         var methods = SecondFactorMethods(redemption.AuthenticationMethods, redemption.UsedRecoveryCode);
 
         var result = await IssueAsync(
@@ -322,8 +303,7 @@ internal sealed class PasswordSignInService(
         var now = timeProvider.GetUtcNow();
         var stored = await magicLinkTokens.FindByHashAsync(SecureTokens.HashToken(request.Token), cancellationToken);
 
-        // One outcome for every way this can fail, the same reasoning a reset link uses: unknown,
-        // spent and expired are the same answer to whoever is holding it.
+        // Unknown, spent and expired are deliberately one answer to whoever holds the link.
         if (stored is null || stored.ConsumedAt is not null || stored.ExpiresAt <= now)
         {
             logger.LogWarning("Magic-link sign-in refused: the token is unknown, already used or expired.");
@@ -338,12 +318,8 @@ internal sealed class PasswordSignInService(
         var user = await users.FindByIdAsync(stored.UserId, cancellationToken)
             ?? throw new InvalidOperationException($"Magic-link token {stored.Id} points at user {stored.UserId}, which does not exist.");
 
-        // Spent before anything is issued, and before the challenge below. A link that got somebody
-        // as far as a second factor has been used, whether or not they finish - the alternative
-        // leaves a live credential in a mailbox after it has already been read once.
-        //
-        // And spent only by whoever wins the write: the check above and this are two steps, and
-        // every request that landed between them used to be signed in.
+        // Spent before the challenge, so no live credential stays in a mailbox, and only by whoever
+        // wins the conditional write, since the check above is a separate step.
         if (!await magicLinkTokens.MarkConsumedAsync(stored.Id, now, cancellationToken))
         {
             logger.LogWarning("Magic-link sign-in refused for user {UserId}: the link was spent by another request.", stored.UserId);
@@ -357,9 +333,7 @@ internal sealed class PasswordSignInService(
 
         await magicLinkTokens.InvalidateAllForUserAsync(stored.UserId, now, cancellationToken);
 
-        // No device token is consulted, unlike the password path. There the cached factor sits
-        // behind a password; here it would sit behind a mailbox alone, and two cached things are
-        // not two factors.
+        // No device token here: a mailbox plus a cached factor is not two factors.
         if (await twoFactor.RequiresChallengeAsync(user.Id, cancellationToken))
         {
             var challenge = await twoFactor.IssueChallengeAsync(
@@ -442,10 +416,8 @@ internal sealed class PasswordSignInService(
             request.SessionId,
             refuseAttempt: async _ =>
             {
-                // A code here counts exactly as a password does, reserved before it is checked. It
-                // means somebody holding a stolen access token can lock the owner out of step-up, and
-                // that is the right trade: the alternative is an unthrottled six-digit oracle handed
-                // to that same person.
+                // Reserved before the code is checked. A stolen access token can lock the owner out
+                // of step-up, which beats handing it an unthrottled six-digit oracle.
                 reservation = await credentials.ReserveAttemptAsync(credential, options.Value, now, cancellationToken);
                 credential = reservation.Value.Credential;
                 return !reservation.Value.Allowed;
@@ -465,14 +437,12 @@ internal sealed class PasswordSignInService(
             return new StepUpResult { Outcome = redemption.Outcome };
         }
 
-        // Only this code's own reservation back, not the whole count. The count is the password's too,
-        // and clearing it here let a session holder guess the password four times, step up, and go
-        // again - around eleven thousand guesses a day instead of a few hundred.
+        // Only this reservation back, not the whole count, which also holds wrong passwords; clearing
+        // it would let a session holder reset password guessing with every step-up.
         if (reservation is { } spent)
             await credentials.RefundAsync(spent, now, cancellationToken);
 
-        // A recovery code means the authenticator is gone, and that inference does not change based
-        // on which endpoint it was typed into. Same revocation as at sign-in.
+        // A recovery code means the authenticator is gone, wherever it was typed.
         if (redemption.UsedRecoveryCode)
         {
             await events.PublishAsync(
@@ -488,10 +458,8 @@ internal sealed class PasswordSignInService(
         var source = redemption.UsedRecoveryCode ? TwoFactorSource.Recovery : TwoFactorSource.Otp;
         var methods = StepUpMethods(live.AuthenticationMethods, redemption.UsedRecoveryCode);
 
-        // The refresh row FIRST, then the token. If the update lands and the issue fails, the user
-        // is told step-up failed and keeps freshness they did in fact earn - wasteful, not wrong.
-        // The other order hands them a token claiming freshness the row will contradict at the next
-        // refresh, which is the whole failure this path exists to prevent.
+        // The refresh row FIRST, then the token: the other order can hand out a token claiming
+        // freshness the row contradicts at the next refresh.
         if (!await refreshTokens.UpdateSecondFactorAsync(request.SessionId, string.Join(' ', methods), source, now, cancellationToken))
         {
             logger.LogWarning(
@@ -531,18 +499,14 @@ internal sealed class PasswordSignInService(
         };
     }
 
-    /// <summary>
-    /// Everything both step-up endpoints check before they do anything, in the order they check it.
-    /// </summary>
     private async Task<StepUpGuard> GuardStepUpAsync(
         Guid userId,
         Guid sessionId,
         DateTimeOffset now,
         CancellationToken cancellationToken)
     {
-        // The session, not just the user. A signed-out family still has a valid access token in
-        // circulation for up to one AccessTokenLifetime, and elevating it would resurrect something
-        // the user deliberately ended.
+        // The session, not just the user: a signed-out family's access token is still valid for a
+        // while, and elevating it would resurrect a session the user ended.
         var live = await refreshTokens.FindLiveByFamilyAsync(sessionId, cancellationToken);
 
         if (live is null || live.UserId != userId)
@@ -554,10 +518,8 @@ internal sealed class PasswordSignInService(
         if (!await twoFactor.RequiresChallengeAsync(userId, cancellationToken))
             return StepUpGuard.Failed(SignInOutcome.TwoFactorNotEnrolled);
 
-        // Fails closed rather than assuming. A locally issued token implies a password credential
-        // today, because local sign-in cannot happen without one - but that is construction, and
-        // construction changes. With no row there is nothing to count lockout against, and an
-        // unthrottled code endpoint is not something to leave open on an assumption.
+        // Fails closed: with no credential there is nothing to count lockout against, and the code
+        // endpoint would be unthrottled.
         var credential = await credentials.FindByUserIdAsync(userId, cancellationToken);
 
         if (credential is null)
@@ -584,19 +546,9 @@ internal sealed class PasswordSignInService(
     }
 
     /// <summary>
-    /// What a finished challenge proved: whatever got the caller to it, plus the second factor.
+    /// Empty <paramref name="firstFactor"/> reads as <c>pwd</c> because older challenge rows were all
+    /// password sign-ins.
     /// </summary>
-    /// <remarks>
-    /// <para>
-    /// <paramref name="firstFactor"/> is empty for every challenge row written before a magic link
-    /// could reach one, and those were all password sign-ins - so empty reads as <c>pwd</c> rather
-    /// than as nothing.
-    /// </para>
-    /// <para>
-    /// A recovery code adds <c>mfa</c> and no <c>otp</c>, matching <see cref="StepUpMethods"/>:
-    /// nothing one-time was presented, but a second factor was.
-    /// </para>
-    /// </remarks>
     private static string[] SecondFactorMethods(string? firstFactor, bool usedRecoveryCode)
     {
         string[] proved = string.IsNullOrEmpty(firstFactor)
@@ -609,22 +561,9 @@ internal sealed class PasswordSignInService(
     }
 
     /// <summary>
-    /// The session's methods plus what this step-up proved, never minus anything.
+    /// Monotonic, so no policy that passed before a step-up can fail after one. A recovery code adds
+    /// only <c>mfa</c>, since RFC 8176 has no recovery value; <c>toa_2fa_source</c> says which it was.
     /// </summary>
-    /// <remarks>
-    /// <para>
-    /// Monotonic, so no policy that passed before a step-up can start failing after one. Without
-    /// this, a device-trusted session carrying <c>["pwd","mfa"]</c> would still fail
-    /// <c>RequireClaim("amr","otp")</c> immediately after completing a live TOTP challenge - the one
-    /// user who did the most work failing the policy that asked for it.
-    /// </para>
-    /// <para>
-    /// A recovery code adds <c>mfa</c> and nothing else, matching what a recovery <i>sign-in</i>
-    /// records. There is no <c>recovery</c> value in RFC 8176 and this package does not invent
-    /// claims values; which factor it actually was lives in <c>toa_2fa_source</c>, which is the
-    /// claim that exists to answer exactly that.
-    /// </para>
-    /// </remarks>
     private static IReadOnlyList<string> StepUpMethods(string existing, bool usedRecoveryCode)
     {
         var methods = existing.Length == 0
@@ -675,8 +614,7 @@ internal sealed class PasswordSignInService(
         if (stored.ExpiresAt <= now)
             return Failed(SignInOutcome.RefreshTokenExpired);
 
-        // Rotation keeps a session alive indefinitely on its own. The family's own age is what
-        // eventually sends someone back to the login form.
+        // Rotation alone would keep a session alive forever; the family's age ends it.
         if (now - stored.FamilyStartedAt >= options.Value.RefreshTokenAbsoluteLifetime)
         {
             logger.LogInformation(
@@ -691,10 +629,8 @@ internal sealed class PasswordSignInService(
         var user = await users.FindByIdAsync(stored.UserId, cancellationToken)
             ?? throw new InvalidOperationException($"Refresh token {stored.Id} points at user {stored.UserId}, which does not exist.");
 
-        // This is one of the two places the security stamp is enforced, and the reason it is
-        // enforced here is that the read already happened. A password change or a disabled second
-        // factor revokes the families outright, so a stale stamp on a live family means the two
-        // writes disagree - which is exactly when refusing is the right answer.
+        // Credential changes revoke families outright, so a stale stamp on a live family means those
+        // writes disagree, which is exactly when to refuse.
         if (!string.Equals(stored.SecurityStamp, user.SecurityStamp, StringComparison.Ordinal))
         {
             logger.LogWarning(
@@ -706,13 +642,11 @@ internal sealed class PasswordSignInService(
             return Failed(SignInOutcome.SecurityStampChanged);
         }
 
-        // The check above and this write are not one step, so a second request can pass the check
-        // in between. The conditional write is what decides: whoever loses it presented a token that
-        // another request is exchanging right now, which is reuse, and is answered as reuse.
+        // The conditional write decides: the loser presented a token another request is exchanging,
+        // which is reuse.
         if (!await refreshTokens.MarkRotatedAsync(stored.Id, now, cancellationToken))
         {
-            // Lost to a sign-out or a revocation rather than to another exchange, which is not reuse:
-            // answering it as reuse took every trusted device away from somebody who closed a tab.
+            // Losing to a sign-out or revocation is not reuse, and must not cost every trusted device.
             if (await refreshTokens.FindByHashAsync(stored.TokenHash, cancellationToken) is { RotatedAt: null, RevokedAt: not null })
                 return Failed(SignInOutcome.RefreshTokenRevoked);
 
@@ -726,24 +660,21 @@ internal sealed class PasswordSignInService(
             stored.AuthenticationMethods.Length == 0 ? ["pwd"] : stored.AuthenticationMethods.Split(' '),
             recoveryCodesRunningLow: false,
 
-            // Replayed, never recomputed. A rotation that dropped these would report a session as
-            // password-only, and any step-up policy would start failing one access-token lifetime
-            // after a perfectly good two-factor sign-in.
+            // Carried, never recomputed, or step-up policies start failing one access-token lifetime
+            // after a good two-factor sign-in.
             twoFactorSource: stored.TwoFactorSource,
             secondFactorAt: stored.SecondFactorAt,
             trustedDevice: null,
             newSignIn: false,
 
-            // Carried too, for a plainer reason than the claims above: /auth/refresh is the one call
-            // a background timer makes, so taking these again would eventually describe every
+            // Carried: refresh is made by background timers, which would otherwise redescribe the
             // session as whatever last renewed it.
             client: new ClientMetadata.SessionClient(stored.UserAgent, stored.IpAddress),
             now,
             cancellationToken);
 
-        // A revocation that landed between the rotation and the new token's insert covered the
-        // family as it was then, not the token this request just added to it, which stayed live.
-        // Read after the insert, so either this sees the revocation or the revocation saw the token.
+        // Re-read after the insert: a revocation landing between rotation and insert missed the new
+        // token, so either this sees the revocation or the revocation saw the token.
         if (issued.Succeeded
             && await refreshTokens.FindByHashAsync(stored.TokenHash, cancellationToken) is { RevokedAt: not null } revoked)
         {
@@ -760,8 +691,7 @@ internal sealed class PasswordSignInService(
     }
 
     /// <summary>
-    /// This token was already exchanged, so two parties hold the chain and one of them is not the
-    /// account owner. There is no way to tell which, so neither keeps it.
+    /// Two parties hold the chain and there is no way to tell which is the owner, so neither keeps it.
     /// </summary>
     private async Task<SignInResult> RefuseReusedAsync(ToamaisutaaRefreshToken stored, DateTimeOffset now, CancellationToken cancellationToken)
     {
@@ -780,9 +710,7 @@ internal sealed class PasswordSignInService(
 
         await RevokeFamilyAsync(stored, "refresh-token-reuse", now, cancellationToken);
 
-        // Explicit, because the stamp cannot carry this one either: bumping it would revoke this
-        // user's other legitimate sessions, which is a behaviour change beyond what reuse detection
-        // has ever done.
+        // Explicit, because bumping the stamp would also revoke the user's other legitimate sessions.
         await trustedDevices.RevokeAllAsync(stored.UserId, "refresh-token-reuse", now, cancellationToken);
 
         return Failed(SignInOutcome.RefreshTokenReused);
@@ -796,16 +724,10 @@ internal sealed class PasswordSignInService(
         if (stored is null)
             return;
 
-        // The whole family, not just this token: signing out on one device should not leave a
-        // rotated sibling alive somewhere else.
         await RevokeFamilyAsync(stored, "signed-out", timeProvider.GetUtcNow(), cancellationToken);
         logger.LogInformation("Signed out user {UserId}; revoked refresh family {FamilyId}.", stored.UserId, stored.FamilyId);
     }
 
-    /// <summary>
-    /// Revokes a family and publishes it, so the reason stored on the rows and the reason an audit
-    /// sink is handed are one string rather than two literals free to drift apart.
-    /// </summary>
     private async Task RevokeFamilyAsync(
         ToamaisutaaRefreshToken stored,
         string reason,
@@ -825,14 +747,6 @@ internal sealed class PasswordSignInService(
             cancellationToken);
     }
 
-    /// <summary>
-    /// Mints the session and puts the password path's own extras on the result.
-    /// </summary>
-    /// <remarks>
-    /// The minting itself moved to <see cref="LocalSessionIssuer"/>, because a passkey assertion
-    /// ends in the same token pair and lives in a package Core cannot reference. What stays here is
-    /// what only a password sign-in has: a recovery-code warning, and a device token to hand back.
-    /// </remarks>
     private async Task<SignInResult> IssueAsync(
         ToamaisutaaUser user,
         Guid? familyId,
@@ -874,9 +788,8 @@ internal sealed class PasswordSignInService(
     private static SignInResult Failed(SignInOutcome outcome) => new() { Outcome = outcome };
 
     /// <summary>
-    /// A sign-in attempt that ends here, counted on the way out. Refresh uses <see cref="Failed"/>
-    /// instead: rotating a token is not somebody trying to sign in, and folding the two together
-    /// would make the attempt rate rise with session length rather than with traffic.
+    /// Refresh uses <see cref="Failed"/> instead, or the sign-in attempt rate would rise with session
+    /// length rather than traffic.
     /// </summary>
     private SignInResult Refused(SignInOutcome outcome)
     {
@@ -884,8 +797,6 @@ internal sealed class PasswordSignInService(
         return Failed(outcome);
     }
 
-    /// <summary>The equalising derivation against the dummy hash, timed like the real one so the
-    /// series can be compared and the equalisation checked rather than assumed.</summary>
     private void VerifyDummy(string password)
     {
         var started = Stopwatch.GetTimestamp();
@@ -894,10 +805,8 @@ internal sealed class PasswordSignInService(
     }
 
     /// <summary>
-    /// A right code that lost its challenge, or the code itself, to another request was counted as
-    /// a wrong one: a double-click on Verify left a failure behind after the winning request had
-    /// already cleared the count. Its reservation is given back instead - on the credential, or on
-    /// the enrolment for an account without a password.
+    /// A right code that lost a race is not a wrong guess, so its reservation is given back, or a
+    /// double-click on Verify leaves a failure behind.
     /// </summary>
     private async Task GiveBackLostRaceAsync(
         SignInOutcome outcome,
@@ -948,8 +857,6 @@ internal sealed class PasswordSignInService(
             await ReportLockedOutAsync(credential.UserId, lockedOutUntil, now, cancellationToken);
     }
 
-    /// <summary>The lock, said once, by the attempt that set it - on a credential or, for an account
-    /// with no password, on the enrolment, which used to lock without telling anybody.</summary>
     private async Task ReportLockedOutAsync(Guid userId, DateTimeOffset lockedOutUntil, DateTimeOffset now, CancellationToken cancellationToken)
     {
         logger.LogWarning("User {UserId} is locked out until {LockedOutUntil}.", userId, lockedOutUntil);

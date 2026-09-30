@@ -1,9 +1,8 @@
 namespace Toamaisutaa.Email.Smtp;
 
 /// <summary>
-/// Everything read from the <c>Email:Smtp</c> configuration section. Binds an SMTP transport and the
-/// links the emails it sends point at; nothing here is required unless
-/// <c>AddToamaisutaaSmtpEmail</c> is actually called.
+/// Everything read from the <c>Email:Smtp</c> configuration section: the SMTP transport and the
+/// links the emails point at.
 /// </summary>
 public sealed class ToamaisutaaSmtpEmailOptions
 {
@@ -16,9 +15,7 @@ public sealed class ToamaisutaaSmtpEmailOptions
     public string? Password { get; set; }
 
     /// <summary>How the connection is secured. <see cref="SmtpSecurityMode.Auto"/> picks TLS for
-    /// port 465 and required STARTTLS for everything else, which is right for almost every provider.
-    /// A server that does not offer STARTTLS fails the send rather than getting the password in the
-    /// clear.</summary>
+    /// port 465 and required STARTTLS for everything else.</summary>
     public SmtpSecurityMode Security { get; set; } = SmtpSecurityMode.Auto;
 
     /// <summary>
@@ -32,9 +29,8 @@ public sealed class ToamaisutaaSmtpEmailOptions
     public string? FromDisplayName { get; set; }
 
     /// <summary>
-    /// The reset link, with <c>{token}</c> replaced by the raw token. The default template is the
-    /// only thing that reads this - a custom <see cref="IPasswordResetEmailTemplate"/> can ignore it
-    /// entirely.
+    /// The reset link, with <c>{token}</c> replaced by the raw token. Read only by the default
+    /// <see cref="IPasswordResetEmailTemplate"/>.
     /// </summary>
     public string? PasswordResetLinkTemplate { get; set; }
 
@@ -64,9 +60,7 @@ public sealed class ToamaisutaaSmtpEmailOptions
     public string? MagicLinkTemplate { get; set; }
 
     /// <summary>
-    /// Where someone signs in, put at the end of the admin-issued password email. Optional and
-    /// checked nowhere: a credentials email is still useful without it, and the person reading one
-    /// was usually told what they are signing in to by whoever provisioned the account.
+    /// Where someone signs in, put at the end of the admin-issued password email. Optional.
     /// </summary>
     public string? SignInUrl { get; set; }
 
@@ -77,7 +71,7 @@ public sealed class ToamaisutaaSmtpEmailOptions
 public enum SmtpSecurityMode
 {
     /// <summary>TLS on connect for port 465, required STARTTLS otherwise. Unlike MailKit's own Auto,
-    /// a server that does not offer STARTTLS is refused rather than spoken to in the clear.</summary>
+    /// a server that does not offer STARTTLS is refused.</summary>
     Auto,
 
     /// <summary>No transport security. For a local relay only, and startup logs a warning.</summary>

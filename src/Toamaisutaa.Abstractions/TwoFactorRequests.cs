@@ -4,8 +4,8 @@ namespace Toamaisutaa.Abstractions;
 /// <c>TwoFactor:EnrolmentProofWindow</c>, which the endpoint reads off their token.</summary>
 public sealed record BeginTwoFactorRequest(string? CurrentPassword = null);
 
-/// <summary><see cref="Code"/> comes from the authenticator app that just scanned the QR code. It
-/// proves the app actually holds the secret, which is what turns the enrolment on.</summary>
+/// <summary><see cref="Code"/> comes from the authenticator app that just scanned the QR code, and
+/// turns the enrolment on.</summary>
 public sealed record ConfirmTwoFactorRequest(string Code);
 
 /// <summary><see cref="Proof"/> is a current TOTP code or an unspent recovery code. An
@@ -18,8 +18,7 @@ public sealed record RegenerateRecoveryCodesRequest(string Proof);
 
 /// <summary>
 /// Finishes a sign-in that stopped for a second factor. <see cref="Code"/> takes either a TOTP code
-/// or a recovery code - one field, because the person typing it should not have to tell us which
-/// kind they are holding when the shape already says.
+/// or a recovery code.
 /// </summary>
 public sealed record VerifyTwoFactorRequest(
     string Challenge,
@@ -31,9 +30,7 @@ public sealed record VerifyTwoFactorRequest(
 /// Completes a step-up. <see cref="Code"/> takes a TOTP code or a recovery code, as everywhere else.
 /// </summary>
 /// <remarks>
-/// <b>There is deliberately no device token field.</b> A trusted device is a cached second factor,
-/// and cached is exactly what step-up exists to refuse - so the way it is refused is that there is
-/// nothing to present, in the same spirit as the challenge being unable to be a bearer token. A
-/// field and a check would be a rule; an absent field is not a rule anyone can loosen.
+/// <b>There is deliberately no device token field.</b> Step-up exists to refuse a cached second
+/// factor, and an absent field cannot be loosened the way a check could.
 /// </remarks>
 public sealed record StepUpVerifyRequest(string Challenge, string Code);

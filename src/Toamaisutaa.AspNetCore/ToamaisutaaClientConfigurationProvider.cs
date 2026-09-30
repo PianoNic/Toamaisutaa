@@ -20,8 +20,6 @@ internal sealed class ToamaisutaaClientConfigurationProvider(
 
         var settings = options.Value;
 
-        // Explicit setting first, then the configured public URL, then whatever the request came in
-        // on. The last one keeps a local run working with nothing configured at all.
         var configured = NullIfBlank(settings.RedirectUri) ?? WithTrailingSlash(NullIfBlank(settings.PublicUrl));
 
         if (configured is null && !environment.IsDevelopment() && Interlocked.Exchange(ref _warnedAboutHost, 1) == 0)
@@ -34,9 +32,8 @@ internal sealed class ToamaisutaaClientConfigurationProvider(
 
         var redirectUri = configured ?? WithTrailingSlash(Origin(context))!;
 
-        // Set here rather than on the one route this package maps: the docs send consumers to build
-        // their own endpoint on this, and there the redirect URI came from the caller's Host header
-        // with nothing stopping a shared cache from handing one forged answer to everybody.
+        // Set here, not on the mapped route, so a consumer's own endpoint cannot let a shared cache
+        // serve one Host-header-forged redirect URI to everybody.
         context.Response.Headers.CacheControl = "no-store";
 
         return new ToamaisutaaClientConfiguration

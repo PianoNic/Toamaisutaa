@@ -1,9 +1,8 @@
 namespace Toamaisutaa.Abstractions;
 
 /// <summary>
-/// The (provider, subject) pair already exists. Two concurrent first requests for the same user
-/// both decide to create; the loser gets this, re-reads, and carries on. Stores translate their
-/// own unique-violation into it so provisioning never sees a storage-specific exception.
+/// The (provider, subject) pair already exists, so the loser of a concurrent first sign-in re-reads
+/// and carries on. Stores translate their own unique-violation into it.
 /// </summary>
 public sealed class ExternalLoginConflictException : Exception
 {

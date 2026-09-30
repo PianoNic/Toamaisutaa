@@ -1,9 +1,7 @@
 namespace Toamaisutaa.Abstractions;
 
 /// <summary>
-/// Authorization is configured separately from authentication, and neither requires the other.
-/// Bound from the same <c>Oidc</c> section, because that is where these keys already live in the
-/// deployments this replaces.
+/// Authorization options, independent of authentication. Bound from the <c>Oidc</c> section.
 /// </summary>
 public sealed class ToamaisutaaAuthorizationOptions
 {
@@ -16,9 +14,8 @@ public sealed class ToamaisutaaAuthorizationOptions
 
     public string AdminPolicyName { get; set; } = "Toamaisutaa.Admin";
 
-    /// <summary>Put <see cref="AdminRole"/> into the fallback policy and the default policy, so the
-    /// whole application is admin-only rather than just the endpoints that ask for it - including
-    /// every endpoint marked with a bare <c>[Authorize]</c> or <c>RequireAuthorization()</c>, this
-    /// package's own among them. Anonymous endpoints such as <c>/auth/login</c> stay reachable.</summary>
+    /// <summary>Put <see cref="AdminRole"/> into the fallback and default policies, making every
+    /// authorized endpoint admin-only, this package's own included. Anonymous endpoints such as
+    /// <c>/auth/login</c> stay reachable.</summary>
     public bool RequireAdminRoleGlobally { get; set; }
 }

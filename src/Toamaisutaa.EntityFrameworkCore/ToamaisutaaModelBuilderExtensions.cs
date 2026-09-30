@@ -39,10 +39,8 @@ public static class ToamaisutaaModelBuilderExtensions
     /// <c>Database</c>.
     /// </summary>
     /// <remarks>
-    /// An OpenID Connect subject is case-sensitive, and the default collations on those two are not -
-    /// MySQL's ignores accents too - so the unique index on provider and subject treated <c>alice</c>
-    /// and <c>ALICE</c> as one subject, and the second could never be provisioned. PostgreSQL and
-    /// SQLite already compare exactly, and are left alone.
+    /// An OpenID Connect subject is case-sensitive, but the default collations on those two are not,
+    /// so the unique index would treat <c>alice</c> and <c>ALICE</c> as one subject.
     /// </remarks>
     public static ModelBuilder ApplyToamaisutaaConfiguration(this ModelBuilder modelBuilder, DatabaseFacade database)
     {

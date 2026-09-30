@@ -3,15 +3,9 @@ using Toamaisutaa.Abstractions;
 namespace Toamaisutaa.Core;
 
 /// <summary>
-/// One throwaway hash, computed once, so a sign-in attempt against an identifier that does not
-/// exist can still pay for a verification.
+/// Lets a sign-in for an unknown identifier pay for a verification, so response time cannot
+/// enumerate accounts. Warmed at startup so the first unknown-user login is not the outlier.
 /// </summary>
-/// <remarks>
-/// Without this, the response time answers a question the response body refuses to: a request for
-/// an unknown user returns in microseconds while a request for a real one spends a key derivation,
-/// and anyone can enumerate accounts with a stopwatch. The startup check forces this to be computed
-/// before the first request, so the very first unknown-user login is not itself the outlier.
-/// </remarks>
 internal sealed class DummyPasswordHash(IPasswordHasher hasher)
 {
     private readonly Lazy<string> _hash = new(
