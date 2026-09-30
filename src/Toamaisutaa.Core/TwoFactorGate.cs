@@ -187,6 +187,7 @@ internal sealed class TwoFactorGate(
             UsedRecoveryCode = verification.UsedRecoveryCode,
             RecoveryCodesRunningLow = verification.RecoveryCodesRunningLow,
             AuthenticationMethods = stored.AuthenticationMethods,
+            SecurityStamp = stored.SecurityStamp,
         };
     }
 
@@ -221,6 +222,9 @@ internal readonly record struct ChallengeRedemption
 
     /// <summary>Empty or absent means <c>pwd</c>, because older rows predate magic-link challenges.</summary>
     internal string? AuthenticationMethods { get; init; }
+
+    /// <summary>The stamp the challenge was checked against; null on rows that predate it.</summary>
+    internal string? SecurityStamp { get; init; }
 
     internal static ChallengeRedemption Failed(SignInOutcome outcome, Guid? userId = null) =>
         new() { Outcome = outcome, UserId = userId };
