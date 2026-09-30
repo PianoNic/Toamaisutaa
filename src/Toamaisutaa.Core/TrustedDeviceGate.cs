@@ -155,7 +155,6 @@ internal sealed class TrustedDeviceGate(
         return new DeviceTrustResult
         {
             Trusted = true,
-            FamilyId = stored.FamilyId,
             SecondFactorAt = stored.SecondFactorAt,
             RotatedToken = new TrustedDeviceToken(
                 rotated,
@@ -299,8 +298,6 @@ internal sealed class TrustedDeviceGate(
 internal readonly record struct DeviceTrustResult
 {
     internal bool Trusted { get; init; }
-
-    internal Guid FamilyId { get; init; }
 
     internal DateTimeOffset SecondFactorAt { get; init; }
 

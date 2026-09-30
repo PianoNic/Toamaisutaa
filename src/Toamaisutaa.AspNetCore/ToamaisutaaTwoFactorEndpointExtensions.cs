@@ -175,8 +175,7 @@ public static class ToamaisutaaTwoFactorEndpointExtensions
 
         try
         {
-            var started = await twoFactor.BeginEnrolmentAsync(user.Id, proof, cancellationToken);
-            return Results.Ok(started);
+            return Results.Ok(await twoFactor.BeginEnrolmentAsync(user.Id, proof, cancellationToken));
         }
         catch (TwoFactorEnrolmentException exception)
         {
@@ -197,8 +196,7 @@ public static class ToamaisutaaTwoFactorEndpointExtensions
 
         try
         {
-            var completed = await twoFactor.ConfirmEnrolmentAsync(user.Id, request.Code, cancellationToken);
-            return Results.Ok(completed);
+            return Results.Ok(await twoFactor.ConfirmEnrolmentAsync(user.Id, request.Code, cancellationToken));
         }
         catch (TwoFactorEnrolmentException exception)
         {
@@ -236,8 +234,7 @@ public static class ToamaisutaaTwoFactorEndpointExtensions
 
         try
         {
-            var completed = await twoFactor.RegenerateRecoveryCodesAsync(user.Id, request.Proof, cancellationToken);
-            return Results.Ok(completed);
+            return Results.Ok(await twoFactor.RegenerateRecoveryCodesAsync(user.Id, request.Proof, cancellationToken));
         }
         catch (TwoFactorEnrolmentException exception)
         {

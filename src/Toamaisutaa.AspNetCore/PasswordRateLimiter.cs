@@ -63,10 +63,8 @@ internal sealed class PasswordRateLimiter : IDisposable
                     remote);
             }
 
-            var partition = PartitionKey(remote, settings.Nat64Prefixes);
-
             return RateLimitPartition.GetFixedWindowLimiter(
-                partition,
+                PartitionKey(remote, settings.Nat64Prefixes),
                 _ => new FixedWindowRateLimiterOptions
                 {
                     PermitLimit = settings.PermitLimit,

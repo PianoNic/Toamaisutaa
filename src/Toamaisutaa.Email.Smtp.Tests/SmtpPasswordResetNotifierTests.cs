@@ -1,6 +1,5 @@
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
-using MimeKit;
 using Toamaisutaa.Abstractions;
 
 namespace Toamaisutaa.Email.Smtp.Tests;

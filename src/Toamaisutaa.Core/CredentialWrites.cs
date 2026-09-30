@@ -180,8 +180,6 @@ internal static class CredentialWrites
             return null;
         }
 
-        var lockedByThisAttempt = reservation.LockedByThisAttempt;
-
         logger.LogWarning(
             "{Action} refused for user {UserId}: the current password is wrong. {FailedAttempts} failed attempt(s) in the current window{Locked}.",
             action,
@@ -189,7 +187,7 @@ internal static class CredentialWrites
             credential.FailedAttemptCount,
             credential.LockedOutUntil is { } until ? $"; locked out until {until:O}" : string.Empty);
 
-        if (lockedByThisAttempt && credential.LockedOutUntil is { } lockedOutUntil)
+        if (reservation.LockedByThisAttempt && credential.LockedOutUntil is { } lockedOutUntil)
         {
             await events.PublishAsync(
                 new AccountLockedOut { OccurredAt = now, UserId = credential.UserId, LockedOutUntil = lockedOutUntil },

@@ -398,6 +398,4 @@ public class StepUpHttpTests
             ? [.. amr.EnumerateArray().Select(value => value.GetString()!)]
             : [amr.GetString()!];
     }
-
-    private static string StripSessionClaim(string accessToken) => accessToken[..^4] + "AAAA";
 }

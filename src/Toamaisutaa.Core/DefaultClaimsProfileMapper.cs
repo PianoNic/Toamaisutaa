@@ -21,13 +21,11 @@ public sealed class DefaultClaimsProfileMapper(IOptions<ToamaisutaaProvisioningO
 
         var names = options.Value.ClaimNames;
 
-        var subject = Find(principal, names.Subject) ?? Find(principal, ClaimTypes.NameIdentifier);
-        if (subject is null)
-        {
-            throw new InvalidOperationException(
+        var subject = Find(principal, names.Subject)
+            ?? Find(principal, ClaimTypes.NameIdentifier)
+            ?? throw new InvalidOperationException(
                 $"The principal carries no '{names.Subject}' claim, so it cannot be linked to a local user. "
                 + "Check that the token includes a subject and that ToamaisutaaClaimNames.Subject matches your issuer.");
-        }
 
         var userName = Find(principal, names.UserName);
         var email = Find(principal, names.Email);
@@ -47,14 +45,6 @@ public sealed class DefaultClaimsProfileMapper(IOptions<ToamaisutaaProvisioningO
 
     /// <summary>First non-blank value for a claim type, or null. Blank is the same as absent: an
     /// issuer that sends an empty string should not overwrite a stored value with nothing.</summary>
-    private static string? Find(ClaimsPrincipal principal, string claimType)
-    {
-        foreach (var claim in principal.FindAll(claimType))
-        {
-            if (!string.IsNullOrWhiteSpace(claim.Value))
-                return claim.Value;
-        }
-
-        return null;
-    }
+    private static string? Find(ClaimsPrincipal principal, string claimType) =>
+        principal.FindAll(claimType).FirstOrDefault(claim => !string.IsNullOrWhiteSpace(claim.Value))?.Value;
 }

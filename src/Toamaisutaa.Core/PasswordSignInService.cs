@@ -27,11 +27,10 @@ internal sealed class PasswordSignInService(
     {
         ArgumentNullException.ThrowIfNull(request);
 
-        var identifier = request.Identifier;
         var password = request.Password;
 
         var now = timeProvider.GetUtcNow();
-        var credential = await credentials.FindByIdentifierAsync(Normalizer.Normalize(identifier), cancellationToken);
+        var credential = await credentials.FindByIdentifierAsync(Normalizer.Normalize(request.Identifier), cancellationToken);
 
         if (credential is null)
         {
@@ -263,8 +262,10 @@ internal sealed class PasswordSignInService(
             return Refused(redemption.Outcome);
         }
 
+        // The count comes off only when a sign-in has finished, never after a first factor that
+        // still owes a second.
         if (credential is not null)
-            await RegisterSuccessAsync(credential, now, cancellationToken);
+            await credentials.RegisterSuccessAsync(credential, now, cancellationToken);
         else
             await twoFactor.RegisterEnrolmentSuccessAsync(redemption.UserId!.Value, cancellationToken);
 
@@ -926,11 +927,6 @@ internal sealed class PasswordSignInService(
         return Refused(SignInOutcome.LockedOut);
     }
 
-    /// <summary>The count comes off only when a sign-in or step-up has finished, never after a
-    /// first factor that still owes a second.</summary>
-    private Task RegisterSuccessAsync(ToamaisutaaPasswordCredential credential, DateTimeOffset now, CancellationToken cancellationToken) =>
-        credentials.RegisterSuccessAsync(credential, now, cancellationToken);
-
     /// <summary>A wrong second factor, already counted by its reservation exactly as a wrong password
     /// is, wherever it was typed. What is left is to say so, and to say once if it set the lock.</summary>
     private async Task ReportWrongCodeAsync(
@@ -940,7 +936,6 @@ internal sealed class PasswordSignInService(
         CancellationToken cancellationToken)
     {
         var credential = reservation.Credential;
-        var lockedByThisAttempt = reservation.LockedByThisAttempt;
 
         logger.LogWarning(
             "{Ceremony} refused for user {UserId}: wrong code. {FailedAttempts} failed attempt(s) in the current window{Locked}.",
@@ -949,7 +944,7 @@ internal sealed class PasswordSignInService(
             credential.FailedAttemptCount,
             credential.LockedOutUntil is { } until ? $"; locked out until {until:O}" : string.Empty);
 
-        if (lockedByThisAttempt && credential.LockedOutUntil is { } lockedOutUntil)
+        if (reservation.LockedByThisAttempt && credential.LockedOutUntil is { } lockedOutUntil)
             await ReportLockedOutAsync(credential.UserId, lockedOutUntil, now, cancellationToken);
     }
 

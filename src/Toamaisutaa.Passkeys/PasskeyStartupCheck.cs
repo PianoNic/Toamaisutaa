@@ -45,8 +45,7 @@ internal sealed class PasskeyStartupCheck(
                 + "default because guessing it wrong is permanent: credentials registered against one value cannot be "
                 + "re-bound to another. Set it to the site's domain alone - 'example.com', with no scheme and no port.");
         }
-        else if (settings.RelyingPartyId.Contains("://", StringComparison.Ordinal)
-            || settings.RelyingPartyId.Contains(':', StringComparison.Ordinal)
+        else if (settings.RelyingPartyId.Contains(':', StringComparison.Ordinal)
             || settings.RelyingPartyId.Contains('/', StringComparison.Ordinal))
         {
             problems.Add(
