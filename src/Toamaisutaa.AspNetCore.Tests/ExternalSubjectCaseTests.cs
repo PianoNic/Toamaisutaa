@@ -39,16 +39,36 @@ public class ExternalSubjectCaseTests
     [Test]
     public async Task Provisioning_a_subject_the_database_folds_into_another_says_why()
     {
+        var refused = await RefusalAsync<CaseInsensitiveContext>("alice", "ALICE");
+
+        await Assert.That(refused.Message).Contains("collation");
+    }
+
+    /// <summary>
+    /// SQL Server pads trailing spaces under every collation, BIN2 included, so the refusal blamed case
+    /// or accents for subjects that differ in neither. SQLite's RTRIM compares the same way.
+    /// </summary>
+    [Test]
+    public async Task Provisioning_a_subject_that_differs_by_trailing_spaces_says_so()
+    {
+        var refused = await RefusalAsync<TrailingSpaceContext>("u1", "u1 ");
+
+        await Assert.That(refused.Message).Contains("trailing spaces");
+    }
+
+    private static async Task<InvalidOperationException> RefusalAsync<TContext>(string first, string second)
+        where TContext : ToamaisutaaDbContext
+    {
         await using var connection = new SqliteConnection("DataSource=:memory:");
         await connection.OpenAsync();
 
         var services = new ServiceCollection()
-            .AddDbContext<CaseInsensitiveContext>(options => options.UseSqlite(connection))
-            .AddToamaisutaaEntityFrameworkStores<CaseInsensitiveContext>()
+            .AddDbContext<TContext>(options => options.UseSqlite(connection))
+            .AddToamaisutaaEntityFrameworkStores<TContext>()
             .BuildServiceProvider();
 
         await using var scope = services.CreateAsyncScope();
-        await scope.ServiceProvider.GetRequiredService<CaseInsensitiveContext>().Database.EnsureCreatedAsync();
+        await scope.ServiceProvider.GetRequiredService<TContext>().Database.EnsureCreatedAsync();
 
         var options = Microsoft.Extensions.Options.Options.Create(new ToamaisutaaProvisioningOptions());
         var provisioner = new Toamaisutaa.Core.ExternalLoginProvisioner(
@@ -64,11 +84,9 @@ public class ExternalSubjectCaseTests
         static System.Security.Claims.ClaimsPrincipal Subject(string subject) =>
             new(new System.Security.Claims.ClaimsIdentity([new System.Security.Claims.Claim("sub", subject)], "test"));
 
-        await provisioner.ProvisionAsync(Subject("alice"));
+        await provisioner.ProvisionAsync(Subject(first));
 
-        var refused = await Assert.That(async () => await provisioner.ProvisionAsync(Subject("ALICE"))).Throws<InvalidOperationException>();
-
-        await Assert.That(refused!.Message).Contains("collation");
+        return (await Assert.That(async () => await provisioner.ProvisionAsync(Subject(second))).Throws<InvalidOperationException>())!;
     }
 
     [Test]
@@ -102,6 +120,16 @@ public class ExternalSubjectCaseTests
 
             modelBuilder.Entity<ToamaisutaaExternalLogin>().Property(login => login.Subject).UseCollation("NOCASE");
             modelBuilder.Entity<ToamaisutaaExternalLogin>().Property(login => login.ProviderKey).UseCollation("NOCASE");
+        }
+    }
+
+    private sealed class TrailingSpaceContext(DbContextOptions<TrailingSpaceContext> options) : ToamaisutaaDbContext(options)
+    {
+        protected override void OnModelCreating(ModelBuilder modelBuilder)
+        {
+            base.OnModelCreating(modelBuilder);
+
+            modelBuilder.Entity<ToamaisutaaExternalLogin>().Property(login => login.Subject).UseCollation("RTRIM");
         }
     }
 }
