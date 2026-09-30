@@ -382,6 +382,59 @@ public class IdentityProviderTokenHttpTests
     /// third party as a bearer token on every request. A provider token still goes, which is what
     /// shows the call is wired at all.
     /// </summary>
+    /// <summary>
+    /// A token this package issued already says what its enrolment is, so the claims transformation
+    /// leaves it alone. Nothing in its claims shows whether it did - a local subject never matches an
+    /// external login - so what is counted is the lookup it would otherwise make on every request.
+    /// </summary>
+    [Test]
+    public async Task A_local_token_costs_the_two_factor_claims_no_lookup()
+    {
+        using var identityProviderKey = RSA.Create(2048);
+        using var localKey = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+        var lookups = new CountedLookups();
+
+        await using var app = await StartAsync(identityProviderKey, localKey, services =>
+        {
+            services.AddToamaisutaaTwoFactorClaims();
+
+            var real = services.Last(descriptor => descriptor.ServiceType == typeof(IExternalLoginStore)).ImplementationFactory!;
+            services.AddScoped<IExternalLoginStore>(provider => lookups.Wrap((IExternalLoginStore)real(provider)));
+        });
+
+        var local = await Account.RegisterAsync(app);
+        lookups.Reset();
+
+        await Assert.That((await app.Client.Get("/test/me", local.AccessToken)).StatusCode).IsEqualTo(HttpStatusCode.OK);
+        await Assert.That(lookups.Count).IsEqualTo(0);
+    }
+
+    private sealed class CountedLookups
+    {
+        private int _count;
+
+        internal int Count => Volatile.Read(ref _count);
+
+        internal void Reset() => Interlocked.Exchange(ref _count, 0);
+
+        internal IExternalLoginStore Wrap(IExternalLoginStore inner) => new Counting(this, inner);
+
+        private sealed class Counting(CountedLookups owner, IExternalLoginStore inner) : IExternalLoginStore
+        {
+            public Task<ToamaisutaaExternalLogin?> FindAsync(string providerKey, string subject, CancellationToken cancellationToken = default)
+            {
+                Interlocked.Increment(ref owner._count);
+                return inner.FindAsync(providerKey, subject, cancellationToken);
+            }
+
+            public Task<ToamaisutaaExternalLogin> LinkAsync(Guid userId, string providerKey, ExternalUserProfile profile, CancellationToken cancellationToken = default) =>
+                inner.LinkAsync(userId, providerKey, profile, cancellationToken);
+
+            public Task RecordSignInAsync(Guid externalLoginId, CancellationToken cancellationToken = default) =>
+                inner.RecordSignInAsync(externalLoginId, cancellationToken);
+        }
+    }
+
     /// <remarks>Under the legacy validators too, where the validated token is a JwtSecurityToken
     /// rather than a JsonWebToken, and a check on the one type let every local token through.</remarks>
     [Test]
