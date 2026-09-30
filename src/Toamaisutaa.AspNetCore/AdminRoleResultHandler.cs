@@ -20,7 +20,9 @@ internal sealed class AdminRoleResultHandler(
 
         if (authorizeResult.Succeeded
             && settings.RequireAdminRoleGlobally
-            && settings.AdminRole is { Length: > 0 } adminRole
+            // Blank counts as none, as it does for the policies: a whitespace role forbade everyone.
+            && settings.AdminRole is { } adminRole
+            && !string.IsNullOrWhiteSpace(adminRole)
             && context.GetEndpoint()?.Metadata.GetMetadata<IAllowAnonymous>() is null
             && !context.User.IsInRole(adminRole))
         {
