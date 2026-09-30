@@ -99,11 +99,8 @@ public class ConcurrentRefreshHttpTests
 
         internal Guid FamilyId { get; private set; }
 
-        internal void Register(IServiceCollection services)
-        {
-            var real = services.Last(descriptor => descriptor.ServiceType == typeof(IRefreshTokenStore)).ImplementationFactory!;
-            services.AddScoped<IRefreshTokenStore>(provider => new Held(this, (IRefreshTokenStore)real(provider)));
-        }
+        internal void Register(IServiceCollection services) =>
+            services.Decorate<IRefreshTokenStore>(inner => new Held(this, inner));
 
         internal void Let()
         {

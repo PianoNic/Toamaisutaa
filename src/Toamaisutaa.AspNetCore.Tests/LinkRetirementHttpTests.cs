@@ -36,7 +36,7 @@ public class LinkRetirementHttpTests
         var resets = new List<string>();
 
         await using var app = await TestApp.StartAsync(configureServices: services =>
-            services.AddSingleton<IPasswordResetNotifier>(new ResetCapture(resets)));
+            services.AddSingleton<IPasswordResetNotifier>(new CapturingResetNotifier(resets)));
 
         var account = await Account.RegisterAsync(app);
         await account.VerifyEmailAsync();
@@ -58,7 +58,7 @@ public class LinkRetirementHttpTests
         var resets = new List<string>();
 
         await using var app = await TestApp.StartAsync(configureServices: services =>
-            services.AddSingleton<IPasswordResetNotifier>(new ResetCapture(resets)));
+            services.AddSingleton<IPasswordResetNotifier>(new CapturingResetNotifier(resets)));
 
         var account = await Account.RegisterAsync(app);
 
@@ -75,14 +75,5 @@ public class LinkRetirementHttpTests
         var redeemed = await app.Client.PostJson("/auth/password/reset", new { token = link, newPassword = "an entirely different password" });
 
         await Assert.That(redeemed.StatusCode).IsEqualTo(HttpStatusCode.BadRequest);
-    }
-
-    private sealed class ResetCapture(List<string> issued) : IPasswordResetNotifier
-    {
-        public Task SendAsync(ToamaisutaaUser user, string resetToken, CancellationToken cancellationToken = default)
-        {
-            issued.Add(resetToken);
-            return Task.CompletedTask;
-        }
     }
 }

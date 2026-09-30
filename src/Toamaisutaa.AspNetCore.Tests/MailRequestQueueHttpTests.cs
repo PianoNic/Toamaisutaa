@@ -62,7 +62,7 @@ public class MailRequestQueueHttpTests
 
         await using var app = await TestApp.StartAsync(
             configure: settings => settings["LocalLogin:MailRequestCooldown"] = "00:01:00",
-            configureServices: services => services.AddSingleton<IPasswordResetNotifier>(new ResetCapture(resets)));
+            configureServices: services => services.AddSingleton<IPasswordResetNotifier>(new CapturingResetNotifier(resets)));
 
         var account = await Account.RegisterAsync(app);
         await account.VerifyEmailAsync();
@@ -102,16 +102,5 @@ public class MailRequestQueueHttpTests
         await app.Client.PostJson(path, new { email = account.Email });
 
         await Assert.That(resets.Count + app.IssuedMagicLinks.Count).IsEqualTo(1);
-    }
-
-    private sealed class ResetCapture(List<string> issued) : IPasswordResetNotifier
-    {
-        public Task SendAsync(ToamaisutaaUser user, string resetToken, CancellationToken cancellationToken = default)
-        {
-            lock (issued)
-                issued.Add(resetToken);
-
-            return Task.CompletedTask;
-        }
     }
 }

@@ -103,13 +103,8 @@ public class TrustedDeviceHttpTests
 
         internal volatile bool Hold;
 
-        internal void Register(IServiceCollection services)
-        {
-            // Registered by type, so built here the way the container would have built it.
-            var real = services.Last(descriptor => descriptor.ServiceType == typeof(ITrustedDeviceStore)).ImplementationType!;
-            services.AddScoped<ITrustedDeviceStore>(provider =>
-                new Held(this, (ITrustedDeviceStore)ActivatorUtilities.CreateInstance(provider, real)));
-        }
+        internal void Register(IServiceCollection services) =>
+            services.Decorate<ITrustedDeviceStore>(inner => new Held(this, inner));
 
         private void Meet()
         {
@@ -197,17 +192,7 @@ public class TrustedDeviceHttpTests
     {
         await using var app = await TestApp.StartAsync();
         var account = await Account.RegisterAsync(app);
-
-        var begin = await app.Client.PostJson("/auth/2fa/begin", new { currentPassword = account.Password }, account.AccessToken);
-        var secret = (await begin.Json()).String("secret")!;
-
-        app.Time.AdvanceToNextTotpStep();
-        var confirm = await app.Client.PostJson(
-            "/auth/2fa/confirm",
-            new { code = Totp.Code(secret, app.Time.Now) },
-            account.AccessToken);
-
-        var recoveryCode = (await confirm.Json()).GetProperty("recoveryCodes")[0].GetString()!;
+        var recoveryCode = (await account.EnrolForRecoveryCodesAsync())[0];
 
         var challenge = (await app.Client.PostJson(
             "/auth/login",

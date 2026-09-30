@@ -1,6 +1,5 @@
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
-using MimeKit;
 using Toamaisutaa.Abstractions;
 
 namespace Toamaisutaa.Email.Smtp;
@@ -32,15 +31,7 @@ internal sealed class SmtpMagicLinkNotifier(
         }
 
         var content = template.Build(user, magicLinkToken);
-        var settings = options.Value;
-
-        var message = new MimeMessage();
-        message.From.Add(new MailboxAddress(settings.FromDisplayName ?? string.Empty, settings.From));
-        message.To.Add(new MailboxAddress(string.Empty, user.Email));
-        message.Subject = content.Subject;
-
-        var body = new BodyBuilder { TextBody = content.PlainTextBody, HtmlBody = content.HtmlBody };
-        message.Body = body.ToMessageBody();
+        var message = SmtpMessages.Create(options.Value, user.Email, content.Subject, content.PlainTextBody, content.HtmlBody);
 
         await sender.SendAsync(message, cancellationToken).ConfigureAwait(false);
 

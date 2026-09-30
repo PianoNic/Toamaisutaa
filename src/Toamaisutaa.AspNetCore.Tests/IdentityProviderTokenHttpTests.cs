@@ -397,9 +397,7 @@ public class IdentityProviderTokenHttpTests
         await using var app = await StartAsync(identityProviderKey, localKey, services =>
         {
             services.AddToamaisutaaTwoFactorClaims();
-
-            var real = services.Last(descriptor => descriptor.ServiceType == typeof(IExternalLoginStore)).ImplementationFactory!;
-            services.AddScoped<IExternalLoginStore>(provider => lookups.Wrap((IExternalLoginStore)real(provider)));
+            services.Decorate<IExternalLoginStore>(lookups.Wrap);
         });
 
         var local = await Account.RegisterAsync(app);
@@ -533,8 +531,7 @@ public class IdentityProviderTokenHttpTests
         for (var i = 0; i < 5; i++)
         {
             app.Time.AdvanceToNextTotpStep();
-            var code = Totp.Code(secret, app.Time.Now);
-            var wrong = (char)('0' + ((code[0] - '0' + 1) % 10)) + code[1..];
+            var wrong = Totp.WrongCode(secret, app.Time.Now);
 
             await app.Client.PostJson(path, new { proof = wrong }, token);
         }
@@ -568,8 +565,7 @@ public class IdentityProviderTokenHttpTests
         await Assert.That(confirmed.StatusCode).IsEqualTo(HttpStatusCode.OK);
 
         app.Time.AdvanceToNextTotpStep();
-        var code = Totp.Code(secret, app.Time.Now);
-        var wrong = (char)('0' + ((code[0] - '0' + 1) % 10)) + code[1..];
+        var wrong = Totp.WrongCode(secret, app.Time.Now);
 
         await Task.WhenAll(Enumerable.Range(0, 10).Select(_ =>
             app.Client.PostJson("/auth/2fa/recovery-codes", new { proof = wrong }, token)));

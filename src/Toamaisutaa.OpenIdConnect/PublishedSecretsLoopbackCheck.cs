@@ -36,11 +36,10 @@ internal sealed class PublishedSecretsLoopbackCheck(IServiceProvider provider, I
 
         if (problems.Count > 0)
         {
-            throw new InvalidOperationException(
+            throw StartupProblems.Refusal(
                 $"Toamaisutaa refuses to serve values from the public sample on {string.Join(", ", reachable)}, which is not "
-                + "loopback. They are accepted in Development on localhost only. Bind to localhost, or generate your own:"
-                + Environment.NewLine
-                + string.Join(Environment.NewLine, problems.Select(problem => "  - " + problem)));
+                + "loopback. They are accepted in Development on localhost only. Bind to localhost, or generate your own:",
+                problems);
         }
 
         return Task.CompletedTask;

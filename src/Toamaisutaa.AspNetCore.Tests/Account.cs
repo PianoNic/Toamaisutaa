@@ -84,6 +84,17 @@ internal sealed class Account(TestApp app, string userName, string password)
     /// </summary>
     public async Task EnrolAsync()
     {
+        await EnrolForRecoveryCodesAsync();
+        await SignInWithSecondFactorAsync();
+    }
+
+    /// <summary>
+    /// Enrols and confirms, handing back the recovery codes confirming returns once and never again.
+    /// Unlike <see cref="EnrolAsync"/> it does not sign in afterwards, so <see cref="AccessToken"/> is
+    /// left as the token confirming made stale.
+    /// </summary>
+    public async Task<IReadOnlyList<string>> EnrolForRecoveryCodesAsync()
+    {
         var begin = await app.Client.PostJson("/auth/2fa/begin", new { currentPassword = Password }, AccessToken);
         Secret = (await begin.Json()).String("secret")!;
 
@@ -97,7 +108,7 @@ internal sealed class Account(TestApp app, string userName, string password)
         if (confirm.StatusCode != HttpStatusCode.OK)
             throw new InvalidOperationException($"Confirm failed: {confirm.StatusCode} {await confirm.Content.ReadAsStringAsync()}");
 
-        await SignInWithSecondFactorAsync();
+        return (await confirm.Json()).Strings("recoveryCodes");
     }
 
     /// <summary>Begins and completes a step-up on the session this account currently holds.</summary>

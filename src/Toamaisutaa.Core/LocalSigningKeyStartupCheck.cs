@@ -30,10 +30,7 @@ internal sealed class LocalSigningKeyStartupCheck(IServiceCollection services, L
         if (signingKeys.Problems.Count == 0 || PasswordLoginIsRegistered())
             return Task.CompletedTask;
 
-        throw new InvalidOperationException(
-            "Toamaisutaa cannot use LocalLogin:SigningKeys as configured:"
-            + Environment.NewLine
-            + string.Join(Environment.NewLine, signingKeys.Problems.Select(problem => "  - " + problem)));
+        throw StartupProblems.Refusal("Toamaisutaa cannot use LocalLogin:SigningKeys as configured:", signingKeys.Problems);
     }
 
     public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;

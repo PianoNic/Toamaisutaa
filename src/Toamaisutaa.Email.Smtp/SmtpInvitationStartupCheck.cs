@@ -18,24 +18,14 @@ internal sealed class SmtpInvitationStartupCheck(
         if (template is not DefaultInvitationEmailTemplate)
             return Task.CompletedTask;
 
-        var linkTemplate = options.Value.InvitationLinkTemplate;
+        var problem = LinkTemplates.Problem(
+            options.Value.InvitationLinkTemplate,
+            nameof(ToamaisutaaSmtpEmailOptions.InvitationLinkTemplate),
+            "invitation",
+            nameof(IInvitationEmailTemplate));
 
-        if (string.IsNullOrWhiteSpace(linkTemplate))
-        {
-            throw new InvalidOperationException(
-                "Toamaisutaa SMTP invitation email is registered but not usable:"
-                + Environment.NewLine
-                + "  - Email:Smtp:InvitationLinkTemplate is not set. The default template needs it to build the link "
-                + "the invitation email points at - or register your own IInvitationEmailTemplate that does not need it.");
-        }
-
-        if (!linkTemplate.Contains("{token}", StringComparison.Ordinal))
-        {
-            throw new InvalidOperationException(
-                "Toamaisutaa SMTP invitation email is registered but not usable:"
-                + Environment.NewLine
-                + "  - Email:Smtp:InvitationLinkTemplate does not contain \"{token}\", so every invitation link would point at the same place.");
-        }
+        if (problem is not null)
+            throw StartupProblems.Refusal("Toamaisutaa SMTP invitation email is registered but not usable:", [problem]);
 
         return Task.CompletedTask;
     }

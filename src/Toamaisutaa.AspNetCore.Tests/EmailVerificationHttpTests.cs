@@ -135,7 +135,7 @@ public class EmailVerificationHttpTests
     [Test]
     public async Task Requiring_a_verified_address_still_answers_204_and_sends_nothing()
     {
-        var sentResets = new List<Guid>();
+        var sentResets = new List<string>();
 
         await using var app = await TestApp.StartAsync(
             configure: settings => settings["LocalLogin:RequireVerifiedEmailForPasswordReset"] = "true",
@@ -152,7 +152,7 @@ public class EmailVerificationHttpTests
     [Test]
     public async Task A_verified_address_still_gets_its_reset_link_when_the_option_is_on()
     {
-        var sentResets = new List<Guid>();
+        var sentResets = new List<string>();
 
         await using var app = await TestApp.StartAsync(
             configure: settings => settings["LocalLogin:RequireVerifiedEmailForPasswordReset"] = "true",
@@ -178,7 +178,7 @@ public class EmailVerificationHttpTests
     [Test]
     public async Task An_unverified_address_still_gets_its_reset_link_by_default()
     {
-        var sentResets = new List<Guid>();
+        var sentResets = new List<string>();
 
         await using var app = await TestApp.StartAsync(
             configureServices: services => services.AddSingleton<IPasswordResetNotifier>(new CapturingResetNotifier(sentResets)));
@@ -189,14 +189,5 @@ public class EmailVerificationHttpTests
 
         await Assert.That(response.StatusCode).IsEqualTo(HttpStatusCode.NoContent);
         await Assert.That(sentResets.Count).IsEqualTo(1);
-    }
-
-    private sealed class CapturingResetNotifier(List<Guid> sent) : IPasswordResetNotifier
-    {
-        public Task SendAsync(ToamaisutaaUser user, string resetToken, CancellationToken cancellationToken = default)
-        {
-            sent.Add(user.Id);
-            return Task.CompletedTask;
-        }
     }
 }

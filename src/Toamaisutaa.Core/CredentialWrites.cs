@@ -104,17 +104,16 @@ internal static class CredentialWrites
             reservation.Credential,
             current =>
             {
-                var state = LockoutState.Of(current);
+                var refunded = LockoutPolicy.Refund(
+                    LockoutState.Of(current),
+                    reservation.LockedByThisAttempt,
+                    reservation.Before,
+                    reservation.After,
+                    now);
 
-                // The lock this attempt set, still standing: undone back to what it replaced.
-                if (reservation.LockedByThisAttempt && state == reservation.After)
+                if (refunded is { } next)
                 {
-                    reservation.Before.ApplyTo(current);
-                    current.UpdatedAt = now;
-                }
-                else if (!LockoutPolicy.IsLockedOut(state, now) && state.FailedAttemptCount > 0)
-                {
-                    current.FailedAttemptCount--;
+                    next.ApplyTo(current);
                     current.UpdatedAt = now;
                 }
             },
@@ -263,15 +262,7 @@ internal static class CredentialWrites
 
             var next = LockoutPolicy.RegisterFailure(current, options, now);
 
-            if (await store.UpdateFailedAttemptsAsync(
-                    userId,
-                    current.FailedAttemptCount,
-                    current.FirstFailedAttemptAt,
-                    current.LockedOutUntil,
-                    next.FailedAttemptCount,
-                    next.FirstFailedAttemptAt,
-                    next.LockedOutUntil,
-                    cancellationToken))
+            if (await TryMoveCountAsync(store, userId, current, next, cancellationToken))
             {
                 return new EnrolmentReservation(
                     Allowed: true,
@@ -309,27 +300,12 @@ internal static class CredentialWrites
                 return;
 
             var state = LockoutState.Of(enrolment);
-            LockoutState next;
 
-            if (reservation.LockedUntil is not null && state == reservation.After)
-                next = reservation.Before;
-            else if (!LockoutPolicy.IsLockedOut(state, now) && state.FailedAttemptCount > 0)
-                next = state with { FailedAttemptCount = state.FailedAttemptCount - 1 };
-            else
+            if (LockoutPolicy.Refund(state, reservation.LockedUntil is not null, reservation.Before, reservation.After, now) is not { } next)
                 return;
 
-            if (await store.UpdateFailedAttemptsAsync(
-                    userId,
-                    state.FailedAttemptCount,
-                    state.FirstFailedAttemptAt,
-                    state.LockedOutUntil,
-                    next.FailedAttemptCount,
-                    next.FirstFailedAttemptAt,
-                    next.LockedOutUntil,
-                    cancellationToken))
-            {
+            if (await TryMoveCountAsync(store, userId, state, next, cancellationToken))
                 return;
-            }
         }
     }
 
@@ -345,20 +321,28 @@ internal static class CredentialWrites
             if (await store.FindAsync(userId, cancellationToken) is not { } enrolment || LockoutState.Of(enrolment) == LockoutState.Clear)
                 return;
 
-            if (await store.UpdateFailedAttemptsAsync(
-                    userId,
-                    enrolment.FailedAttemptCount,
-                    enrolment.FirstFailedAttemptAt,
-                    enrolment.LockedOutUntil,
-                    0,
-                    null,
-                    null,
-                    cancellationToken))
-            {
+            if (await TryMoveCountAsync(store, userId, LockoutState.Of(enrolment), LockoutState.Clear, cancellationToken))
                 return;
-            }
         }
     }
+
+    /// <summary>Moves an enrolment's count, but only if it still reads <paramref name="from"/>, so a
+    /// parallel attempt's write is lost to a retry rather than overwritten.</summary>
+    private static Task<bool> TryMoveCountAsync(
+        ITwoFactorStore store,
+        Guid userId,
+        LockoutState from,
+        LockoutState to,
+        CancellationToken cancellationToken) =>
+        store.UpdateFailedAttemptsAsync(
+            userId,
+            from.FailedAttemptCount,
+            from.FirstFailedAttemptAt,
+            from.LockedOutUntil,
+            to.FailedAttemptCount,
+            to.FirstFailedAttemptAt,
+            to.LockedOutUntil,
+            cancellationToken);
 
     /// <summary>
     /// Clears the count for a right password, unless a lock that other attempts set while this one

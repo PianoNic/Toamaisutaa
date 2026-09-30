@@ -33,12 +33,7 @@ internal sealed class PasswordLoginStartupCheck(
         CheckNat64Prefixes(settings, problems);
 
         if (problems.Count > 0)
-        {
-            throw new InvalidOperationException(
-                "Toamaisutaa password login is registered but not usable:"
-                + Environment.NewLine
-                + string.Join(Environment.NewLine, problems.Select(problem => "  - " + problem)));
-        }
+            throw StartupProblems.Refusal("Toamaisutaa password login is registered but not usable:", problems);
 
         // Compute the placeholder hash now, so the first sign-in against an unknown identifier is
         // not the one request that pays for it and stands out on the clock.

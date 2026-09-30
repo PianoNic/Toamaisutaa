@@ -1,6 +1,5 @@
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
-using MimeKit;
 using Toamaisutaa.Abstractions;
 
 namespace Toamaisutaa.Email.Smtp;
@@ -32,17 +31,7 @@ internal sealed class SmtpEmailVerificationNotifier(
         ArgumentNullException.ThrowIfNull(verificationToken);
 
         var content = template.Build(user, email, verificationToken);
-        var settings = options.Value;
-
-        var message = new MimeMessage();
-        message.From.Add(new MailboxAddress(settings.FromDisplayName ?? string.Empty, settings.From));
-        // The bare address, not the user's display name: that name is theirs to choose and this
-        // mailbox has not been proven to be theirs.
-        message.To.Add(new MailboxAddress(string.Empty, email));
-        message.Subject = content.Subject;
-
-        var body = new BodyBuilder { TextBody = content.PlainTextBody, HtmlBody = content.HtmlBody };
-        message.Body = body.ToMessageBody();
+        var message = SmtpMessages.Create(options.Value, email, content.Subject, content.PlainTextBody, content.HtmlBody);
 
         await sender.SendAsync(message, cancellationToken).ConfigureAwait(false);
 

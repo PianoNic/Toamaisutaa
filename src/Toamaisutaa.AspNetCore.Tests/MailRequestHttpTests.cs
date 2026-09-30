@@ -70,7 +70,7 @@ public class MailRequestHttpTests
     [Test]
     public async Task A_second_reset_request_for_one_address_inside_the_cooldown_sends_nothing()
     {
-        var sent = new List<Guid>();
+        var sent = new List<string>();
 
         await using var app = await TestApp.StartAsync(
             configure: settings => settings["LocalLogin:MailRequestCooldown"] = "00:01:00",
@@ -97,14 +97,5 @@ public class MailRequestHttpTests
     private sealed class StalledMagicLinkNotifier(Task mailServer) : IMagicLinkNotifier
     {
         public Task SendAsync(ToamaisutaaUser user, string magicLinkToken, CancellationToken cancellationToken = default) => mailServer;
-    }
-
-    private sealed class CapturingResetNotifier(List<Guid> sent) : IPasswordResetNotifier
-    {
-        public Task SendAsync(ToamaisutaaUser user, string resetToken, CancellationToken cancellationToken = default)
-        {
-            sent.Add(user.Id);
-            return Task.CompletedTask;
-        }
     }
 }
