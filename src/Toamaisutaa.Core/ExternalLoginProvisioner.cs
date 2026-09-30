@@ -45,6 +45,16 @@ internal sealed class ExternalLoginProvisioner(
             {
                 return await RunAsync(profile, cancellationToken);
             }
+            catch (ExternalLoginConflictException again) when (profile.Subject.EndsWith(' '))
+            {
+                // No collation fixes this: SQL Server pads trailing spaces under all of them.
+                throw new InvalidOperationException(
+                    $"Cannot provision subject '{profile.Subject}' for provider '{options.Value.ProviderKey}': it ends in "
+                    + "trailing spaces, and the database treats it as equal to an existing subject without them. SQL Server "
+                    + "ignores trailing spaces in comparisons under every collation, and utf8mb4_bin on MySQL does too. The "
+                    + "identity provider has to stop issuing subjects that differ only by trailing spaces.",
+                    again);
+            }
             catch (ExternalLoginConflictException again)
             {
                 throw new InvalidOperationException(
@@ -52,7 +62,8 @@ internal sealed class ExternalLoginProvisioner(
                     + "treats it as equal to an existing subject that differs only in case or accents. OIDC subjects are "
                     + "case-sensitive; give ToamaisutaaExternalLogins.Subject a case- and accent-sensitive collation "
                     + "(utf8mb4_bin on MySQL, Latin1_General_100_BIN2 on SQL Server). The shipped migrations do this; a "
-                    + "context of your own needs ApplyToamaisutaaConfiguration(Database) and a new migration.",
+                    + "context of your own needs ApplyToamaisutaaConfiguration(Database) and a new migration. If the existing "
+                    + "subject differs only by trailing spaces instead, no collation on SQL Server tells them apart.",
                     again);
             }
         }

@@ -40,7 +40,10 @@ public static class ToamaisutaaModelBuilderExtensions
     /// </summary>
     /// <remarks>
     /// An OpenID Connect subject is case-sensitive, but the default collations on those two are not,
-    /// so the unique index would treat <c>alice</c> and <c>ALICE</c> as one subject.
+    /// so the unique index would treat <c>alice</c> and <c>ALICE</c> as one subject. Exact except for
+    /// trailing spaces: both collations pad, and on SQL Server every collation does, so <c>u1</c> and
+    /// <c>u1 </c> are still one subject to the index. Lookups compare ordinally afterwards, so that
+    /// refuses the second subject rather than signing it in as the first.
     /// </remarks>
     public static ModelBuilder ApplyToamaisutaaConfiguration(this ModelBuilder modelBuilder, DatabaseFacade database)
     {
