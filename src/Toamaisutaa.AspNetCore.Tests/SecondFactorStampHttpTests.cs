@@ -57,8 +57,11 @@ public class SecondFactorStampHttpTests
             public Task<bool> ReplacePendingAsync(ToamaisutaaUserTwoFactor enrolment, CancellationToken cancellationToken = default) =>
                 inner.ReplacePendingAsync(enrolment, cancellationToken);
 
-            public Task<bool> RewrapSecretAsync(Guid userId, string expectedKeyVersion, byte[] secretCiphertext, byte[] secretNonce, byte[] secretTag, string keyVersion, DateTimeOffset updatedAt, CancellationToken cancellationToken = default) =>
-                inner.RewrapSecretAsync(userId, expectedKeyVersion, secretCiphertext, secretNonce, secretTag, keyVersion, updatedAt, cancellationToken);
+            public Task<bool> RewrapSecretAsync(Guid userId, string expectedKeyVersion, byte[] secretCiphertext, byte[] secretNonce, byte[] secretTag, string keyVersion, CancellationToken cancellationToken = default) =>
+                inner.RewrapSecretAsync(userId, expectedKeyVersion, secretCiphertext, secretNonce, secretTag, keyVersion, cancellationToken);
+
+            public Task<bool> ConfirmPendingAsync(Guid userId, DateTimeOffset expectedUpdatedAt, DateTimeOffset confirmedAt, CancellationToken cancellationToken = default) =>
+                inner.ConfirmPendingAsync(userId, expectedUpdatedAt, confirmedAt, cancellationToken);
 
             public Task DeleteAsync(Guid userId, CancellationToken cancellationToken = default) =>
                 inner.DeleteAsync(userId, cancellationToken);
