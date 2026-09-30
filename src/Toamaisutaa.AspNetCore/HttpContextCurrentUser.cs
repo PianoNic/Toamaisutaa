@@ -96,20 +96,8 @@ internal sealed class HttpContextCurrentUser(
         return _provisioned = user;
     }
 
-    private string? Find(string claimType)
-    {
-        var principal = Principal;
-        if (principal is null)
-            return null;
-
-        foreach (var claim in principal.FindAll(claimType))
-        {
-            if (!string.IsNullOrWhiteSpace(claim.Value))
-                return claim.Value;
-        }
-
-        return null;
-    }
+    private string? Find(string claimType) =>
+        Principal?.FindAll(claimType).FirstOrDefault(claim => !string.IsNullOrWhiteSpace(claim.Value))?.Value;
 
     // Deduplicated because the claim types can name the same thing - a role claim type that is the
     // configured claim, or a principal enriched from userinfo with what the token already carried.

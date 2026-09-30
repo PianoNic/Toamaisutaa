@@ -1,4 +1,3 @@
-using Microsoft.Extensions.Options;
 using Toamaisutaa.Abstractions;
 
 namespace Toamaisutaa.Core;
@@ -19,10 +18,8 @@ internal sealed class DummyPasswordHash(IPasswordHasher hasher)
         () => hasher.Hash("toamaisutaa-timing-equalisation-placeholder"),
         LazyThreadSafetyMode.ExecutionAndPublication);
 
-    internal string Value => _hash.Value;
-
     /// <summary>Burns the same work a real verification would, and discards the answer.</summary>
-    internal void Verify(string password) => hasher.Verify(password, Value);
+    internal void Verify(string password) => hasher.Verify(password, _hash.Value);
 
     internal void Warm() => _ = _hash.Value;
 }

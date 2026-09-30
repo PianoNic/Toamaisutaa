@@ -55,7 +55,7 @@ internal sealed class ConfigureToamaisutaaJwtBearerOptions(
         options.TokenValidationParameters.ValidateAudience = settings.ValidateAudience;
         options.TokenValidationParameters.ValidAudiences = ValidAudiences(settings, localLoginOptions.Value);
 
-        ConfigureLocallyIssuedTokens(options, settings);
+        ConfigureLocallyIssuedTokens(options);
 
         options.Events = new JwtBearerEvents
         {
@@ -130,7 +130,7 @@ internal sealed class ConfigureToamaisutaaJwtBearerOptions(
     /// id we own.
     /// </para>
     /// </remarks>
-    private void ConfigureLocallyIssuedTokens(JwtBearerOptions options, ToamaisutaaOidcOptions settings)
+    private void ConfigureLocallyIssuedTokens(JwtBearerOptions options)
     {
         var local = localLoginOptions.Value;
 

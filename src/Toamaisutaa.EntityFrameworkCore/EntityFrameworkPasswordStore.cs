@@ -191,19 +191,15 @@ internal sealed class EntityFrameworkPasswordStore<TContext>(TContext context)
         string authenticationMethods,
         string twoFactorSource,
         DateTimeOffset secondFactorAt,
-        CancellationToken cancellationToken = default)
-    {
-        var updated = await context.Set<ToamaisutaaRefreshToken>()
+        CancellationToken cancellationToken = default) =>
+        await context.Set<ToamaisutaaRefreshToken>()
             .Where(token => token.FamilyId == familyId && token.RotatedAt == null && token.RevokedAt == null)
             .ExecuteUpdateAsync(
                 setters => setters
                     .SetProperty(token => token.AuthenticationMethods, authenticationMethods)
                     .SetProperty(token => token.TwoFactorSource, twoFactorSource)
                     .SetProperty(token => token.SecondFactorAt, secondFactorAt),
-                cancellationToken);
-
-        return updated > 0;
-    }
+                cancellationToken) > 0;
 
     public async Task<int> DeleteExpiredAsync(DateTimeOffset expiredBefore, CancellationToken cancellationToken = default) =>
         await context.Set<ToamaisutaaRefreshToken>()
