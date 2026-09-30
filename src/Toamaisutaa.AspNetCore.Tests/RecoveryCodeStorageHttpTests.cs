@@ -160,16 +160,6 @@ public class RecoveryCodeStorageHttpTests
     private static async Task<(Account Account, IReadOnlyList<string> Codes)> EnrolAsync(TestApp app)
     {
         var account = await Account.RegisterAsync(app);
-
-        var begin = await app.Client.PostJson("/auth/2fa/begin", new { currentPassword = account.Password }, account.AccessToken);
-        var secret = (await begin.Json()).String("secret")!;
-
-        app.Time.AdvanceToNextTotpStep();
-        var confirm = await (await app.Client.PostJson(
-            "/auth/2fa/confirm",
-            new { code = Totp.Code(secret, app.Time.Now) },
-            account.AccessToken)).Json();
-
-        return (account, confirm.Strings("recoveryCodes"));
+        return (account, await account.EnrolForRecoveryCodesAsync());
     }
 }

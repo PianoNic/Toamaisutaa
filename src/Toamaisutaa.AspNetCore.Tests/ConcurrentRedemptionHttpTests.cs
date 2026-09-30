@@ -32,7 +32,7 @@ public class ConcurrentRedemptionHttpTests
         var issued = new List<string>();
 
         await using var app = await TestApp.StartAsync(configureServices: services =>
-            services.AddSingleton<IPasswordResetNotifier>(new ResetCapture(issued)));
+            services.AddSingleton<IPasswordResetNotifier>(new CapturingResetNotifier(issued)));
 
         var account = await Account.RegisterAsync(app);
 
@@ -97,13 +97,7 @@ public class ConcurrentRedemptionHttpTests
     {
         await using var app = await TestApp.StartAsync();
         var account = await Account.RegisterAsync(app);
-
-        var begin = await app.Client.PostJson("/auth/2fa/begin", new { currentPassword = account.Password }, account.AccessToken);
-        var secret = (await begin.Json()).String("secret")!;
-
-        app.Time.AdvanceToNextTotpStep();
-        var confirm = await app.Client.PostJson("/auth/2fa/confirm", new { code = Totp.Code(secret, app.Time.Now) }, account.AccessToken);
-        var codes = (await confirm.Json()).GetProperty("recoveryCodes").EnumerateArray().Select(code => code.GetString()!).ToList();
+        var codes = await account.EnrolForRecoveryCodesAsync();
 
         var challenge = (await (await account.LoginAsync()).Json()).String("challenge");
 
@@ -125,12 +119,8 @@ public class ConcurrentRedemptionHttpTests
         await using var app = await TestApp.StartAsync(configureServices: challenges.Register);
 
         var account = await Account.RegisterAsync(app);
-        var begin = await app.Client.PostJson("/auth/2fa/begin", new { currentPassword = account.Password }, account.AccessToken);
-        var secret = (await begin.Json()).String("secret")!;
-
-        app.Time.AdvanceToNextTotpStep();
-        var confirm = await app.Client.PostJson("/auth/2fa/confirm", new { code = Totp.Code(secret, app.Time.Now) }, account.AccessToken);
-        var recoveryCode = (await confirm.Json()).GetProperty("recoveryCodes")[0].GetString()!;
+        var recoveryCode = (await account.EnrolForRecoveryCodesAsync())[0];
+        var secret = account.Secret!;
         var userId = Guid.Parse(account.Claims().String("sub")!);
 
         var challenge = (await (await account.LoginAsync()).Json()).String("challenge");
@@ -166,12 +156,8 @@ public class ConcurrentRedemptionHttpTests
         await using var app = await TestApp.StartAsync(configureServices: credentials.Register);
 
         var account = await Account.RegisterAsync(app);
-        var begin = await app.Client.PostJson("/auth/2fa/begin", new { currentPassword = account.Password }, account.AccessToken);
-        var secret = (await begin.Json()).String("secret")!;
-
-        app.Time.AdvanceToNextTotpStep();
-        var confirm = await app.Client.PostJson("/auth/2fa/confirm", new { code = Totp.Code(secret, app.Time.Now) }, account.AccessToken);
-        var recoveryCode = (await confirm.Json()).GetProperty("recoveryCodes")[0].GetString()!;
+        var recoveryCode = (await account.EnrolForRecoveryCodesAsync())[0];
+        var secret = account.Secret!;
         var userId = Guid.Parse(account.Claims().String("sub")!);
 
         var challenge = (await (await account.LoginAsync()).Json()).String("challenge");
@@ -194,9 +180,9 @@ public class ConcurrentRedemptionHttpTests
         await Assert.That(stored!.FailedAttemptCount).IsEqualTo(0);
     }
 
-    /// <summary>The real credential store, except that the first read by user id after
-    /// <see cref="Hold"/> is set waits until the test lets it go.</summary>
-    private sealed class HoldFirstCredentialRead
+    /// <summary>A real store, except that the first call a subclass routes through <see cref="Wait"/>
+    /// after <see cref="Hold"/> is set waits until the test lets it go.</summary>
+    private abstract class HoldFirst
     {
         private readonly ManualResetEventSlim _release = new();
         private int _held;
@@ -205,11 +191,7 @@ public class ConcurrentRedemptionHttpTests
 
         internal TaskCompletionSource Entered { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
-        internal void Register(IServiceCollection services)
-        {
-            var real = services.Last(descriptor => descriptor.ServiceType == typeof(IPasswordCredentialStore)).ImplementationFactory!;
-            services.AddScoped<IPasswordCredentialStore>(provider => new Held(this, (IPasswordCredentialStore)real(provider)));
-        }
+        internal abstract void Register(IServiceCollection services);
 
         internal void Let()
         {
@@ -217,7 +199,7 @@ public class ConcurrentRedemptionHttpTests
             _release.Set();
         }
 
-        private void Wait()
+        protected void Wait()
         {
             if (!Hold || Interlocked.Exchange(ref _held, 1) == 1)
                 return;
@@ -225,6 +207,14 @@ public class ConcurrentRedemptionHttpTests
             Entered.TrySetResult();
             _release.Wait(TimeSpan.FromSeconds(30));
         }
+    }
+
+    /// <summary>The real credential store, except that the first read by user id after
+    /// <see cref="HoldFirst.Hold"/> is set waits until the test lets it go.</summary>
+    private sealed class HoldFirstCredentialRead : HoldFirst
+    {
+        internal override void Register(IServiceCollection services) =>
+            services.Decorate<IPasswordCredentialStore>(inner => new Held(this, inner));
 
         private sealed class Held(HoldFirstCredentialRead owner, IPasswordCredentialStore inner) : IPasswordCredentialStore
         {
@@ -248,37 +238,12 @@ public class ConcurrentRedemptionHttpTests
         }
     }
 
-    /// <summary>The real challenge store, except that the first spend after <see cref="Hold"/> is set
-    /// waits until the test lets it go.</summary>
-    private sealed class HoldFirstConsume
+    /// <summary>The real challenge store, except that the first spend after
+    /// <see cref="HoldFirst.Hold"/> is set waits until the test lets it go.</summary>
+    private sealed class HoldFirstConsume : HoldFirst
     {
-        private readonly ManualResetEventSlim _release = new();
-        private int _held;
-
-        internal volatile bool Hold;
-
-        internal TaskCompletionSource Entered { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
-
-        internal void Register(IServiceCollection services)
-        {
-            var real = services.Last(descriptor => descriptor.ServiceType == typeof(ITwoFactorChallengeStore)).ImplementationFactory!;
-            services.AddScoped<ITwoFactorChallengeStore>(provider => new Held(this, (ITwoFactorChallengeStore)real(provider)));
-        }
-
-        internal void Let()
-        {
-            Hold = false;
-            _release.Set();
-        }
-
-        private void Wait()
-        {
-            if (!Hold || Interlocked.Exchange(ref _held, 1) == 1)
-                return;
-
-            Entered.TrySetResult();
-            _release.Wait(TimeSpan.FromSeconds(30));
-        }
+        internal override void Register(IServiceCollection services) =>
+            services.Decorate<ITwoFactorChallengeStore>(inner => new Held(this, inner));
 
         private sealed class Held(HoldFirstConsume owner, ITwoFactorChallengeStore inner) : ITwoFactorChallengeStore
         {
@@ -327,17 +292,7 @@ public class ConcurrentRedemptionHttpTests
     {
         await using var app = await TestApp.StartAsync();
         var account = await Account.RegisterAsync(app);
-
-        var begin = await app.Client.PostJson("/auth/2fa/begin", new { currentPassword = account.Password }, account.AccessToken);
-        var secret = (await begin.Json()).String("secret")!;
-
-        app.Time.AdvanceToNextTotpStep();
-        var confirm = await (await app.Client.PostJson(
-            "/auth/2fa/confirm",
-            new { code = Totp.Code(secret, app.Time.Now) },
-            account.AccessToken)).Json();
-
-        var recoveryCode = confirm.Strings("recoveryCodes")[0];
+        var recoveryCode = (await account.EnrolForRecoveryCodesAsync())[0];
 
         var challenges = new List<string>();
         for (var i = 0; i < Parallel; i++)
@@ -347,14 +302,5 @@ public class ConcurrentRedemptionHttpTests
             app.Client.PostJson("/auth/2fa/verify", new { challenge, code = recoveryCode })));
 
         await Assert.That(attempts.Count(response => response.StatusCode == HttpStatusCode.OK)).IsEqualTo(1);
-    }
-
-    private sealed class ResetCapture(List<string> issued) : IPasswordResetNotifier
-    {
-        public Task SendAsync(ToamaisutaaUser user, string resetToken, CancellationToken cancellationToken = default)
-        {
-            issued.Add(resetToken);
-            return Task.CompletedTask;
-        }
     }
 }

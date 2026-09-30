@@ -141,6 +141,14 @@ internal static class Totp
         return (binary % 1_000_000).ToString("D6");
     }
 
+    /// <summary>The right code with its first digit moved on, which no drift step will also produce
+    /// outside a one-in-a-million coincidence.</summary>
+    public static string WrongCode(string base32Secret, DateTimeOffset at)
+    {
+        var code = Code(base32Secret, at);
+        return (char)('0' + ((code[0] - '0' + 1) % 10)) + code[1..];
+    }
+
     private static byte[] DecodeBase32(string value)
     {
         var trimmed = value.TrimEnd('=').ToUpperInvariant();

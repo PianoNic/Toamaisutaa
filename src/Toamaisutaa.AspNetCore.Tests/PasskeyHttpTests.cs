@@ -698,16 +698,6 @@ public class PasskeyHttpTests
     }
 }
 
-/// <summary>Hands back the reset token, which is otherwise only ever seen by the notifier.</summary>
-internal sealed class CapturingResetNotifier(List<string> issued) : IPasswordResetNotifier
-{
-    public Task SendAsync(ToamaisutaaUser user, string resetToken, CancellationToken cancellationToken = default)
-    {
-        issued.Add(resetToken);
-        return Task.CompletedTask;
-    }
-}
-
 /// <summary>Drives the passkey endpoints the way a client does. Everything goes over HTTP.</summary>
 internal static class Passkeys
 {

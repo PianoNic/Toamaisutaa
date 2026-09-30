@@ -311,17 +311,7 @@ public class StepUpHttpTests
     {
         await using var app = await TestApp.StartAsync();
         var account = await Account.RegisterAsync(app);
-
-        var begin = await app.Client.PostJson("/auth/2fa/begin", new { currentPassword = account.Password }, account.AccessToken);
-        var secret = (await begin.Json()).String("secret")!;
-
-        app.Time.AdvanceToNextTotpStep();
-        var confirm = await app.Client.PostJson(
-            "/auth/2fa/confirm",
-            new { code = Totp.Code(secret, app.Time.Now) },
-            account.AccessToken);
-
-        var recoveryCode = (await confirm.Json()).GetProperty("recoveryCodes")[0].GetString()!;
+        var recoveryCode = (await account.EnrolForRecoveryCodesAsync())[0];
 
         var challenge = (await app.Client.PostJson(
             "/auth/login",
@@ -330,7 +320,7 @@ public class StepUpHttpTests
         app.Time.AdvanceToNextTotpStep();
         var session = await (await app.Client.PostJson(
             "/auth/2fa/verify",
-            new { challenge, code = Totp.Code(secret, app.Time.Now), rememberDevice = true })).Json();
+            new { challenge, code = Totp.Code(account.Secret!, app.Time.Now), rememberDevice = true })).Json();
 
         var token = session.String("access_token")!;
         await Assert.That((await app.Client.Get("/auth/devices", token)).Json().Result.GetArrayLength()).IsEqualTo(1);

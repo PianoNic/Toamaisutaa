@@ -139,8 +139,7 @@ public class TwoFactorLockoutHttpTests
         for (var i = 0; i < Threshold; i++)
         {
             app.Time.AdvanceToNextTotpStep();
-            var code = Totp.Code(secret, app.Time.Now);
-            var wrong = (char)('0' + ((code[0] - '0' + 1) % 10)) + code[1..];
+            var wrong = Totp.WrongCode(secret, app.Time.Now);
 
             await Assert.That((await app.Client.PostJson("/auth/2fa/confirm", new { code = wrong }, account.AccessToken)).StatusCode)
                 .IsEqualTo(HttpStatusCode.BadRequest);
@@ -260,11 +259,5 @@ public class TwoFactorLockoutHttpTests
         return app.Client.PostJson("/auth/2fa/verify", new { challenge, code });
     }
 
-    /// <summary>The right code with its first digit moved on, which no drift step will also produce
-    /// outside a one-in-a-million coincidence.</summary>
-    private static string Wrong(Account account, TestApp app)
-    {
-        var code = Totp.Code(account.Secret!, app.Time.Now);
-        return (char)('0' + ((code[0] - '0' + 1) % 10)) + code[1..];
-    }
+    private static string Wrong(Account account, TestApp app) => Totp.WrongCode(account.Secret!, app.Time.Now);
 }

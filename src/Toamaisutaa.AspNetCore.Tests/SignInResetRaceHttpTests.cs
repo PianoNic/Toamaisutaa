@@ -98,7 +98,7 @@ public class SignInResetRaceHttpTests
         var app = await TestApp.StartAsync(configureServices: services =>
         {
             hasher.Register(services);
-            services.AddSingleton<IPasswordResetNotifier>(new ResetCapture(resets));
+            services.AddSingleton<IPasswordResetNotifier>(new CapturingResetNotifier(resets));
 
             if (freshUserReads)
             {
@@ -154,14 +154,5 @@ public class SignInResetRaceHttpTests
 
         if (reset.StatusCode != HttpStatusCode.NoContent)
             throw new InvalidOperationException($"Reset failed: {reset.StatusCode}");
-    }
-
-    private sealed class ResetCapture(List<string> issued) : IPasswordResetNotifier
-    {
-        public Task SendAsync(ToamaisutaaUser user, string resetToken, CancellationToken cancellationToken = default)
-        {
-            issued.Add(resetToken);
-            return Task.CompletedTask;
-        }
     }
 }

@@ -143,7 +143,7 @@ public class ConcurrentCredentialWriteHttpTests
         await using var app = await TestApp.StartAsync(configureServices: services =>
         {
             hasher.Register(services);
-            services.AddSingleton<IPasswordResetNotifier>(new ResetCapture(resets));
+            services.AddSingleton<IPasswordResetNotifier>(new CapturingResetNotifier(resets));
         });
 
         var account = await Account.RegisterAsync(app);
@@ -169,14 +169,5 @@ public class ConcurrentCredentialWriteHttpTests
 
         var signIn = await app.Client.PostJson("/auth/login", new { identifier = account.UserName, password = reset });
         await Assert.That(signIn.StatusCode).IsEqualTo(HttpStatusCode.OK);
-    }
-
-    private sealed class ResetCapture(List<string> issued) : IPasswordResetNotifier
-    {
-        public Task SendAsync(ToamaisutaaUser user, string resetToken, CancellationToken cancellationToken = default)
-        {
-            issued.Add(resetToken);
-            return Task.CompletedTask;
-        }
     }
 }
