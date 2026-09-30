@@ -103,15 +103,15 @@ internal sealed class PasswordSignInService(
             return Refused(SignInOutcome.InvalidPassword);
         }
 
-        var rehashed = verification == PasswordVerificationResult.SucceededRehashNeeded;
-        var verifiedHash = credential.PasswordHash;
+        // The only moment the plaintext exists, so the rehash is taken now. Held here rather than set
+        // on the tracked credential: set there, the next SaveChanges of anything - the trusted-device
+        // insert - flushed it unguarded, over whatever had moved since, as an unhandled 500.
+        var rehash = verification == PasswordVerificationResult.SucceededRehashNeeded
+            ? new Rehash(credential.PasswordHash, hasher.Hash(password))
+            : (Rehash?)null;
 
-        if (rehashed)
-        {
-            // The only moment the plaintext exists. Take it.
-            credential.PasswordHash = hasher.Hash(password);
+        if (rehash is not null)
             logger.LogInformation("Rehashed the stored password for user {UserId} with current parameters.", credential.UserId);
-        }
 
         // The password was right, which is the first factor and, for an enrolled account, not the
         // last. Nothing is issued until the second one arrives.
@@ -135,19 +135,13 @@ internal sealed class PasswordSignInService(
                 // has it guess codes indefinitely by signing in again every few attempts.
                 credential = await credentials.RefundAsync(reservation, now, cancellationToken);
 
-                if (rehashed)
+                if (rehash is { } pending)
                 {
-                    var rehash = credential.PasswordHash;
-
                     await credentials.UpdateAsync(
                         credential,
                         current =>
                         {
-                            // Only over the hash that was verified. A reset that landed in between
-                            // wrote a new password, and the rehash of the old one must not undo it.
-                            if (current.PasswordHash == verifiedHash)
-                                current.PasswordHash = rehash;
-
+                            pending.ApplyTo(current);
                             current.UpdatedAt = now;
                         },
                         cancellationToken);
@@ -167,7 +161,7 @@ internal sealed class PasswordSignInService(
                 return new SignInResult { Outcome = SignInOutcome.TwoFactorRequired, Challenge = challenge };
             }
 
-            if (!await credentials.TryRegisterSuccessAsync(credential, reservation, now, cancellationToken))
+            if (!await credentials.TryRegisterSuccessAsync(credential, reservation, now, cancellationToken, rehash))
                 return await LockedWhileVerifyingAsync(user.Id, now, cancellationToken);
 
             logger.LogInformation("Sign-in succeeded for user {UserId} with a cached second factor.", user.Id);
@@ -194,7 +188,7 @@ internal sealed class PasswordSignInService(
             return cachedResult;
         }
 
-        if (!await credentials.TryRegisterSuccessAsync(credential, reservation, now, cancellationToken))
+        if (!await credentials.TryRegisterSuccessAsync(credential, reservation, now, cancellationToken, rehash))
             return await LockedWhileVerifyingAsync(user.Id, now, cancellationToken);
 
         logger.LogInformation("Sign-in succeeded for user {UserId}.", user.Id);

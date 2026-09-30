@@ -220,4 +220,69 @@ public class TrustedDeviceHttpTests
         await Assert.That(verify.StatusCode).IsEqualTo(HttpStatusCode.OK);
         await Assert.That((await verify.Json()).Has("device_token")).IsFalse();
     }
+
+    /// <summary>
+    /// A password stored under older parameters is rehashed on sign-in, and the rehash was set on the
+    /// tracked credential and left there. The trusted-device insert saved it, unguarded, against a
+    /// row a wrong password had moved in the meantime: a 500, after the old device row was already
+    /// spent, so the device lost its trust as well.
+    /// </summary>
+    [Test]
+    public async Task A_rehash_on_a_device_trusted_sign_in_survives_a_wrong_password_landing_meanwhile()
+    {
+        var hasher = new HeldHasher { HashingOnly = true };
+        await using var app = await TestApp.StartAsync(configureServices: hasher.Register);
+
+        var account = await Account.RegisterAsync(app);
+        await account.EnrolAsync();
+        var deviceToken = (await account.SignInWithSecondFactorAsync(rememberDevice: true)).String("device_token")!;
+        var userId = Guid.Parse(account.Claims().String("sub")!);
+
+        // Stored under fewer iterations than the app now asks for, which is what asks for a rehash.
+        await using (var scope = app.Services.CreateAsyncScope())
+        {
+            var configured = scope.ServiceProvider.GetRequiredService<Microsoft.Extensions.Options.IOptions<ToamaisutaaLocalLoginOptions>>().Value;
+            var weaker = new Toamaisutaa.Core.Pbkdf2PasswordHasher(Microsoft.Extensions.Options.Options.Create(new ToamaisutaaLocalLoginOptions
+            {
+                Pbkdf2Iterations = 1_000,
+                Pepper = configured.Pepper,
+                PepperVersion = configured.PepperVersion,
+            }));
+
+            var store = scope.ServiceProvider.GetRequiredService<IPasswordCredentialStore>();
+            var credential = (await store.FindByUserIdAsync(userId))!;
+            credential.PasswordHash = weaker.Hash(account.Password);
+            await store.UpdateAsync(credential);
+        }
+
+        hasher.Hold = account.Password;
+        var signIn = app.Client.PostJson("/auth/login", new { identifier = account.UserName, password = account.Password, deviceToken });
+        await hasher.Entered.Task.WaitAsync(TimeSpan.FromSeconds(30));
+
+        await app.Client.PostJson("/auth/login", new { identifier = account.UserName, password = "not the password" });
+        hasher.Let();
+
+        HttpResponseMessage? response = null;
+
+        try
+        {
+            response = await signIn;
+        }
+        catch (Exception)
+        {
+            // The test server rethrows what the endpoint threw, which is the 500 a real host answers.
+        }
+
+        await Assert.That(response?.StatusCode).IsEqualTo(HttpStatusCode.OK);
+        await Assert.That((await response!.Json()).Has("access_token")).IsTrue();
+
+        // And the rehash still landed, rather than being dropped to get out of the way.
+        await using (var scope = app.Services.CreateAsyncScope())
+        {
+            var stored = (await scope.ServiceProvider.GetRequiredService<IPasswordCredentialStore>().FindByUserIdAsync(userId))!;
+            var current = scope.ServiceProvider.GetRequiredService<IPasswordHasher>();
+
+            await Assert.That(current.Verify(account.Password, stored.PasswordHash)).IsEqualTo(PasswordVerificationResult.Succeeded);
+        }
+    }
 }
