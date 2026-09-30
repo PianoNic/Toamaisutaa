@@ -122,6 +122,9 @@ internal sealed class UserInfoClaimsEnricher(
 
     /// <summary>
     /// Never keyed on a 32-bit hash code, which would let one caller's roles be served to another.
+    /// Shared across a subject's tokens only when they were granted the same scopes by the same
+    /// client, because userinfo answers per grant: a token without a groups scope must not be handed
+    /// groups fetched with one that had it.
     /// </summary>
     private static string CacheKey(ToamaisutaaOidcOptions settings, TokenValidatedContext context, string accessToken)
     {
@@ -130,8 +133,8 @@ internal sealed class UserInfoClaimsEnricher(
         var subject = context.Principal?.FindFirst("sub")?.Value
             ?? context.Principal?.FindFirst(ClaimTypes.NameIdentifier)?.Value;
 
-        if (subject is not null)
-            return $"toamaisutaa:userinfo:{context.Scheme.Name}:{scope}:sub:{subject}";
+        if (subject is not null && GrantDigest(context.Principal!) is { } grant)
+            return $"toamaisutaa:userinfo:{context.Scheme.Name}:{scope}:sub:{subject}:{grant}";
 
         var digest = Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(accessToken)));
         return $"toamaisutaa:userinfo:{context.Scheme.Name}:{scope}:tok:{digest}";
@@ -150,6 +153,24 @@ internal sealed class UserInfoClaimsEnricher(
         var identity = $"{settings.Authority}\n{audiences}";
 
         return Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(identity)));
+    }
+
+    /// <summary>Null when the token names no scopes, which leaves nothing to share a key on.</summary>
+    private static string? GrantDigest(ClaimsPrincipal principal)
+    {
+        var scopes = principal.FindAll("scope").Concat(principal.FindAll("scp"))
+            .SelectMany(claim => claim.Value.Split(' ', StringSplitOptions.RemoveEmptyEntries))
+            .Distinct(StringComparer.Ordinal)
+            .Order(StringComparer.Ordinal)
+            .ToList();
+
+        if (scopes.Count == 0)
+            return null;
+
+        var client = principal.FindFirst("azp")?.Value ?? principal.FindFirst("client_id")?.Value ?? string.Empty;
+        var grant = $"{client}\n{string.Join(' ', scopes)}";
+
+        return Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(grant)));
     }
 
     private static async Task<string?> EndpointAsync(TokenValidatedContext context, CancellationToken cancellationToken)

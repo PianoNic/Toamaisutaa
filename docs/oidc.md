@@ -27,7 +27,7 @@ Everything binds from the `Oidc` section.
 | `Oidc:NameClaim` | `name` | |
 | `Oidc:RoleClaim` | `roles` | Set to `groups` for Pocket ID, Authentik and Entra |
 | `Oidc:FetchClaimsFromUserInfo` | `true` | Reads roles from userinfo when the access token omits them |
-| `Oidc:UserInfoCacheDuration` | `00:05:00` | Cached per subject, per issuer and audience |
+| `Oidc:UserInfoCacheDuration` | `00:05:00` | Cached per subject and grant, per issuer and audience |
 | `Oidc:ShareUserInfoCacheAcrossInstances` | `false` | Lets the userinfo cache use your `IDistributedCache` as a second level |
 | `Oidc:Scope` | `openid profile email roles` | Served to the client |
 | `Oidc:RedirectUri` | derived | Falls back to `PublicUrl`, then the request origin |
@@ -63,7 +63,9 @@ single group - and merges what it finds.
 A userinfo endpoint that is down logs a warning and lets the token's own claims decide. It never
 turns a valid login into a 500.
 
-Results are cached per subject for `Oidc:UserInfoCacheDuration`, through
+Results are cached per subject and grant (the token's scopes and client) for
+`Oidc:UserInfoCacheDuration`, because userinfo answers per grant; a token that names no scopes is
+cached on its own. The cache goes through
 [`HybridCache`](https://learn.microsoft.com/aspnet/core/performance/caching/hybrid). Two things
 follow from that:
 
