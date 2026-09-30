@@ -45,6 +45,30 @@ public class AdminOnlyHttpTests
         await Assert.That((await app.Client.Get("/test/named", admin.AccessToken)).StatusCode).IsEqualTo(HttpStatusCode.OK);
     }
 
+    /// <summary>With RequireAuthenticatedUser off, admin-only used to switch off with it, silently.</summary>
+    [Test]
+    public async Task Admin_only_holds_with_RequireAuthenticatedUser_off()
+    {
+        await using var app = await TestApp.StartAsync(
+            configure: settings =>
+            {
+                settings["Oidc:RequireAdminRoleGlobally"] = "true";
+                settings["Oidc:RequireAuthenticatedUser"] = "false";
+            },
+            mapExtra: endpoints =>
+            {
+                endpoints.MapGet("/test/authorized", () => "ok").RequireAuthorization();
+                endpoints.MapGet("/test/unmarked", () => "ok");
+            });
+
+        var ordinary = await Account.RegisterAsync(app);
+        var admin = await Account.RegisterAsync(app, TestApp.AdminUserName);
+
+        await Assert.That((await app.Client.Get("/test/authorized", ordinary.AccessToken)).StatusCode).IsEqualTo(HttpStatusCode.Forbidden);
+        await Assert.That((await app.Client.Get("/test/unmarked", ordinary.AccessToken)).StatusCode).IsEqualTo(HttpStatusCode.Forbidden);
+        await Assert.That((await app.Client.Get("/test/authorized", admin.AccessToken)).StatusCode).IsEqualTo(HttpStatusCode.OK);
+    }
+
     [Test]
     public async Task Without_the_flag_a_signed_in_user_passes_plain_authorization()
     {

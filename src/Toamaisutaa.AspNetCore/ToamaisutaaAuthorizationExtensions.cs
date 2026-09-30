@@ -117,13 +117,15 @@ internal sealed class ConfigureToamaisutaaAuthorizationOptions(IOptions<Toamaisu
                 policy => policy.RequireAuthenticatedUser().RequireRole(settings.AdminRole));
         }
 
-        if (!settings.RequireAuthenticatedUser)
+        // Ignored when no admin role is configured, so the flag alone cannot lock everyone out.
+        var adminOnly = settings.RequireAdminRoleGlobally && !string.IsNullOrWhiteSpace(settings.AdminRole);
+
+        // Admin-only is the stricter of the two settings, so it holds even with RequireAuthenticatedUser
+        // off; letting that switch it off silently failed open.
+        if (!settings.RequireAuthenticatedUser && !adminOnly)
             return;
 
         var fallback = new AuthorizationPolicyBuilder().RequireAuthenticatedUser();
-
-        // Ignored when no admin role is configured, so the flag alone cannot lock everyone out.
-        var adminOnly = settings.RequireAdminRoleGlobally && !string.IsNullOrWhiteSpace(settings.AdminRole);
 
         if (adminOnly)
             fallback = fallback.RequireRole(settings.AdminRole!);
