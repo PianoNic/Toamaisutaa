@@ -87,7 +87,8 @@ anyone diagnoses "no mail arrived". It says so in one line, with the user id and
 ::: danger It takes password reset away from every existing account at once
 Every credential already in the database has `EmailConfirmedAt` null. Switching this on locks all of
 them out of password reset, and the way back is `/auth/email`, which needs the password they came
-here without. Verify the existing accounts first, or expect to reset them by hand.
+here without. Verify the existing accounts first. An administrator cannot set a password for them
+either while this is on: it would be mailed in the clear to the same unproven address.
 :::
 
 Startup refuses the one configuration that has no way out at all: the option on with no

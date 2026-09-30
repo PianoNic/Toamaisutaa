@@ -159,7 +159,8 @@ public sealed class ToamaisutaaLocalLoginOptions
     /// <summary>
     /// Off by default. When on, <c>/auth/password/forgot</c> issues nothing for a credential whose
     /// address was never verified, so a reset link can only ever be sent to an address somebody has
-    /// proven they hold.
+    /// proven they hold - and an administrator-set password, which travels in the clear, is refused
+    /// for the same credential rather than mailed to it.
     /// </summary>
     /// <remarks>
     /// It closes a real hole and opens a real one, so read both. An unverified address that is a
@@ -167,7 +168,8 @@ public sealed class ToamaisutaaLocalLoginOptions
     /// every account already in the database has <see cref="ToamaisutaaPasswordCredential.EmailConfirmedAt"/>
     /// null, so switching this on takes password reset away from all of them at once - and the only
     /// way back is <c>/auth/email</c>, which needs the password they came here without. Verify the
-    /// existing accounts first, or expect to reset them by hand.
+    /// existing accounts first: an administrator cannot set a password for them either while the
+    /// option is on, because it would be mailed to the same unproven address.
     /// </remarks>
     public bool RequireVerifiedEmailForPasswordReset { get; set; }
 

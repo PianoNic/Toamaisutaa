@@ -176,9 +176,14 @@ as the new account, and the response never carries a password - see
 { "userId": "0199...", "userName": "newteacher", "email": "newteacher@example.com" }
 ```
 
-**`POST /auth/users/{userId}/password`** - admin only, overwrites `userId`'s password
-unconditionally. `password` is optional; omit it and Toamaisutaa generates one. Answers 204, 400,
-403, or 502 when the password was set but could not be delivered - never a password.
+**`POST /auth/users/{userId}/password`** - admin only, overwrites `userId`'s password with no
+current-password check. `password` is optional; omit it and Toamaisutaa generates one. Answers 204,
+400, 403, or 502 when the password was set but could not be delivered - never a password.
+
+The password is mailed only to the credential's own address, never to the profile email an
+identity provider writes. An account with none gets no mail, so deliver the password another way.
+With `LocalLogin:RequireVerifiedEmailForPasswordReset` on, an address that was never verified
+answers 400 before anything changes.
 
 ```json
 { "password": null }

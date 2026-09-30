@@ -239,9 +239,16 @@ internal sealed class PasswordAccountService(
         var now = timeProvider.GetUtcNow();
         var credential = await credentials.FindByUserIdAsync(userId, cancellationToken);
 
-        // The password travels in the clear to whatever address it is mailed to, so the rule a
-        // self-service reset follows applies here too, checked before anything is changed.
-        if (credential is not null && options.Value.RequireVerifiedEmailForPasswordReset && credential.EmailConfirmedAt is null)
+        // The address the password goes to: the credential's and nothing else. The profile field is
+        // what an identity provider's sync writes, and falling back to it mailed a password in the
+        // clear to whoever controlled that - for an account with no credential, or one whose
+        // unproven address was released to the person who proved it.
+        var mailTo = credential?.Email;
+
+        // The password travels in the clear to that address, so the rule a self-service reset
+        // follows applies here too, checked before anything is changed. With no address there is
+        // nothing to mail, and nothing for the rule to protect.
+        if (mailTo is not null && options.Value.RequireVerifiedEmailForPasswordReset && credential!.EmailConfirmedAt is null)
         {
             logger.LogInformation(
                 "Admin password refused for user {UserId}: the address has never been verified and "
@@ -252,10 +259,6 @@ internal sealed class PasswordAccountService(
                 "This account's email address has never been verified, and LocalLogin:RequireVerifiedEmailForPasswordReset "
                 + "is on, so a password cannot be mailed to it. Have the owner verify the address first.");
         }
-
-        // The address the password goes to: the credential's, which is the one the account signs in
-        // with, not the profile field an identity provider's sync writes.
-        var mailTo = credential?.Email ?? user.Email;
 
         if (credential is null)
         {
