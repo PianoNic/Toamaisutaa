@@ -57,6 +57,34 @@ public class TwoFactorEnrolmentHttpTests
         await Assert.That(confirm.StatusCode).IsEqualTo(HttpStatusCode.OK);
     }
 
+    /// <summary>
+    /// The secret went out in the clear when the enrolment began. One abandoned for good stayed
+    /// confirmable for ever, by anybody who kept the QR code and a token.
+    /// </summary>
+    [Test]
+    public async Task An_enrolment_left_unconfirmed_past_its_lifetime_has_to_begin_again()
+    {
+        await using var app = await TestApp.StartAsync();
+        var account = await Account.RegisterAsync(app);
+
+        var begin = await app.Client.PostJson("/auth/2fa/begin", new { currentPassword = account.Password }, account.AccessToken);
+        var secret = (await begin.Json()).String("secret")!;
+
+        app.Time.Advance(TimeSpan.FromMinutes(16));
+        var late = await app.Client.PostJson("/auth/2fa/confirm", new { code = Totp.Code(secret, app.Time.Now) }, account.AccessToken);
+
+        await Assert.That(late.StatusCode).IsEqualTo(HttpStatusCode.BadRequest);
+        await Assert.That((await app.Client.Get("/auth/2fa", account.AccessToken)).Json().Result.Bool("enabled")).IsFalse();
+
+        var again = await app.Client.PostJson("/auth/2fa/begin", new { currentPassword = account.Password }, account.AccessToken);
+        var fresh = (await again.Json()).String("secret")!;
+
+        app.Time.AdvanceToNextTotpStep();
+        var confirmed = await app.Client.PostJson("/auth/2fa/confirm", new { code = Totp.Code(fresh, app.Time.Now) }, account.AccessToken);
+
+        await Assert.That(confirmed.StatusCode).IsEqualTo(HttpStatusCode.OK);
+    }
+
     [Test]
     public async Task The_current_password_begins_an_enrolment()
     {

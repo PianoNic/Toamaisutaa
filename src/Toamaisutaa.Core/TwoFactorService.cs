@@ -108,6 +108,13 @@ internal sealed class TwoFactorService(
         if (enrolment.IsEnabled)
             throw new TwoFactorEnrolmentException("This account already has a confirmed second factor.");
 
+        // Counted from the last begin, which is when this secret was handed out.
+        if (timeProvider.GetUtcNow() - enrolment.UpdatedAt >= options.Value.EnrolmentLifetime)
+        {
+            logger.LogWarning("Two-factor confirmation refused for user {UserId}: the enrolment has expired.", userId);
+            throw new TwoFactorEnrolmentException("This enrolment has expired. Begin again for a new secret, then confirm it.");
+        }
+
         // Counted like every other code, because confirming pays out too: a stolen token finding an
         // abandoned enrolment could guess its way to switching two-factor on, unthrottled.
         var (_, refusal) = await VerifyProofAsync(userId, code, timeProvider.GetUtcNow(), cancellationToken, requireConfirmed: false);
