@@ -77,6 +77,9 @@ internal sealed class PasswordHarness
         // Always there in a real host. The two-factor gate reads the stamp through it.
         provider.Add<IUserStore>(Users);
 
+        // Likewise, and resolved rather than injected by the services that report without needing it.
+        provider.Add(Metrics);
+
         // Registered by default, so most tests get it for free; the one test about the missing-
         // notifier failure asks for it to be left out instead.
         if (withAdminPasswordNotifier)

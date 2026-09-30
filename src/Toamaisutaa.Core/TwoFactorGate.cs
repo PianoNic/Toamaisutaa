@@ -218,7 +218,7 @@ internal sealed class TwoFactorGate(
 
     /// <summary>For an account with no password credential, whose wrong-code count lives on the
     /// enrolment rather than on a credential it does not have.</summary>
-    internal Task<(bool Allowed, bool LockedByThisAttempt)> ReserveEnrolmentAttemptAsync(
+    internal Task<(bool Allowed, DateTimeOffset? LockedUntil)> ReserveEnrolmentAttemptAsync(
         Guid userId,
         ToamaisutaaLocalLoginOptions localLogin,
         DateTimeOffset now,

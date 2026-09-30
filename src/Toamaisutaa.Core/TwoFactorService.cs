@@ -253,17 +253,19 @@ internal sealed class TwoFactorService(
         // with no password keeps its count on the enrolment instead - an identity provider's account,
         // or a passkey-only one - so a stolen token cannot guess it unthrottled either.
         bool allowed;
-        bool lockedByThisAttempt;
+        DateTimeOffset? lockedUntil;
         AttemptReservation? reservation = null;
 
         if (credential is not null)
         {
             reservation = await passwords!.ReserveAttemptAsync(credential, localLogin, now, cancellationToken);
-            (credential, allowed, lockedByThisAttempt) = (reservation.Value.Credential, reservation.Value.Allowed, reservation.Value.LockedByThisAttempt);
+            credential = reservation.Value.Credential;
+            allowed = reservation.Value.Allowed;
+            lockedUntil = reservation.Value.LockedByThisAttempt ? credential.LockedOutUntil : null;
         }
         else
         {
-            (allowed, lockedByThisAttempt) = await enrolments.ReserveAttemptAsync(userId, localLogin, now, cancellationToken);
+            (allowed, lockedUntil) = await enrolments.ReserveAttemptAsync(userId, localLogin, now, cancellationToken);
         }
 
         if (!allowed)
@@ -300,7 +302,7 @@ internal sealed class TwoFactorService(
 
         if (credential is null)
         {
-            logger.LogWarning("Two-factor proof refused for user {UserId}: wrong code{Locked}.", userId, lockedByThisAttempt ? "; now locked out" : string.Empty);
+            logger.LogWarning("Two-factor proof refused for user {UserId}: wrong code{Locked}.", userId, lockedUntil is not null ? "; now locked out" : string.Empty);
         }
         else
         {
@@ -309,13 +311,17 @@ internal sealed class TwoFactorService(
                 userId,
                 credential.FailedAttemptCount,
                 credential.LockedOutUntil is { } until ? $"; locked out until {until:O}" : string.Empty);
+        }
 
-            if (lockedByThisAttempt && credential.LockedOutUntil is { } lockedOutUntil)
-            {
-                await events.PublishAsync(
-                    new AccountLockedOut { OccurredAt = now, UserId = userId, LockedOutUntil = lockedOutUntil },
-                    cancellationToken);
-            }
+        // Said once, by the attempt that set it, whichever row the count lives on. A passwordless
+        // account used to lock without an event or a metric, invisible to every audit sink.
+        if (lockedUntil is { } lockedOutUntil)
+        {
+            provider.GetService<ToamaisutaaMetrics>()?.LockedOut();
+
+            await events.PublishAsync(
+                new AccountLockedOut { OccurredAt = now, UserId = userId, LockedOutUntil = lockedOutUntil },
+                cancellationToken);
         }
 
         await PublishWrongProofAsync(userId, SignInOutcome.InvalidTwoFactorCode, now, cancellationToken);
