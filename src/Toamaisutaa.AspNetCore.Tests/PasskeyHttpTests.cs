@@ -519,6 +519,120 @@ public class PasskeyHttpTests
         await Assert.That(sessions.EnumerateArray().ToList()).HasCount().EqualTo(1);
     }
 
+    /// <summary>
+    /// The assertion found its passkey, then the owner removed it or changed their password, then the
+    /// assertion read the user and minted a session carrying the new stamp, after every session had
+    /// been revoked. That session outlived the revocation meant to end it.
+    /// </summary>
+    [Test]
+    [Arguments("remove")]
+    [Arguments("change-password")]
+    public async Task A_passkey_revoked_while_its_assertion_is_checked_opens_nothing_that_lasts(string revocation)
+    {
+        var race = new RevokeWhileAsserting();
+        await using var app = await TestApp.StartAsync(configureServices: race.Register);
+        var account = await Account.RegisterAsync(app);
+        using var authenticator = new SoftwareAuthenticator();
+
+        var id = (await (await Passkeys.RegisterAsync(app, account.AccessToken, authenticator)).Json()).String("id")!;
+
+        var revokedOk = false;
+
+        race.Revoke = async () =>
+        {
+            var revoked = revocation == "remove"
+                ? await app.Client.Delete($"/auth/passkeys/{id}", new { currentPassword = account.Password }, account.AccessToken)
+                : await app.Client.PostJson("/auth/password", new { currentPassword = account.Password, newPassword = "a different passphrase" }, account.AccessToken);
+
+            revokedOk = revoked.IsSuccessStatusCode;
+        };
+
+        var signedIn = await Passkeys.SignInAsync(app, authenticator);
+
+        // The revocation ran and landed, so the race under test happened.
+        await Assert.That(revokedOk).IsTrue();
+
+        if (signedIn.StatusCode == HttpStatusCode.OK)
+        {
+            var refreshed = await app.Client.PostJson("/auth/refresh", new { refreshToken = (await signedIn.Json()).String("refresh_token") });
+            await Assert.That(refreshed.StatusCode).IsEqualTo(HttpStatusCode.Unauthorized);
+        }
+    }
+
+    /// <summary>
+    /// A password change that moved the stamp before deleting passkeys let a sign-in landing in
+    /// between read the new stamp and still find its passkey.
+    /// </summary>
+    [Test]
+    public async Task A_passkey_sign_in_while_a_password_change_deletes_passkeys_opens_nothing_that_lasts()
+    {
+        var race = new RevokeWhileAsserting();
+        await using var app = await TestApp.StartAsync(configureServices: race.Register);
+        var account = await Account.RegisterAsync(app);
+        using var authenticator = new SoftwareAuthenticator();
+
+        await Passkeys.RegisterAsync(app, account.AccessToken, authenticator);
+
+        HttpResponseMessage? signedIn = null;
+        race.BeforeDeletingAll = async () => signedIn = await Passkeys.SignInAsync(app, authenticator);
+
+        var changed = await app.Client.PostJson("/auth/password", new { currentPassword = account.Password, newPassword = "a different passphrase" }, account.AccessToken);
+        await Assert.That(changed.IsSuccessStatusCode).IsTrue();
+
+        await Assert.That(signedIn!.StatusCode).IsEqualTo(HttpStatusCode.OK);
+
+        var refreshed = await app.Client.PostJson("/auth/refresh", new { refreshToken = (await signedIn.Json()).String("refresh_token") });
+        await Assert.That(refreshed.StatusCode).IsEqualTo(HttpStatusCode.Unauthorized);
+    }
+
+    /// <summary>Runs the owner's revocation once, right after the assertion found its passkey, or a
+    /// sign-in once, just before a revocation deletes every passkey.</summary>
+    private sealed class RevokeWhileAsserting
+    {
+        internal Func<Task>? Revoke;
+
+        internal Func<Task>? BeforeDeletingAll;
+
+        internal void Register(IServiceCollection services) =>
+            services.Decorate<IPasskeyCredentialStore>(inner => new Store(this, inner));
+
+        private sealed class Store(RevokeWhileAsserting owner, IPasskeyCredentialStore inner) : IPasskeyCredentialStore
+        {
+            public async Task<ToamaisutaaPasskeyCredential?> FindByCredentialIdAsync(byte[] credentialId, CancellationToken cancellationToken = default)
+            {
+                var found = await inner.FindByCredentialIdAsync(credentialId, cancellationToken);
+
+                if (found is not null && Interlocked.Exchange(ref owner.Revoke, null) is { } revoke)
+                    await revoke();
+
+                return found;
+            }
+
+            public Task<IReadOnlyList<ToamaisutaaPasskeyCredential>> ListAsync(Guid userId, CancellationToken cancellationToken = default) =>
+                inner.ListAsync(userId, cancellationToken);
+
+            public Task CreateAsync(ToamaisutaaPasskeyCredential credential, CancellationToken cancellationToken = default) =>
+                inner.CreateAsync(credential, cancellationToken);
+
+            public Task RecordUseAsync(Guid credentialId, long signCount, bool isBackedUp, DateTimeOffset usedAt, CancellationToken cancellationToken = default) =>
+                inner.RecordUseAsync(credentialId, signCount, isBackedUp, usedAt, cancellationToken);
+
+            public Task<bool> DeleteAsync(Guid userId, Guid credentialId, CancellationToken cancellationToken = default) =>
+                inner.DeleteAsync(userId, credentialId, cancellationToken);
+
+            public async Task<int> DeleteAllAsync(Guid userId, CancellationToken cancellationToken = default)
+            {
+                if (Interlocked.Exchange(ref owner.BeforeDeletingAll, null) is { } signIn)
+                    await signIn();
+
+                return await inner.DeleteAllAsync(userId, cancellationToken);
+            }
+
+            public Task<int> CountAsync(Guid userId, CancellationToken cancellationToken = default) =>
+                inner.CountAsync(userId, cancellationToken);
+        }
+    }
+
     [Test]
     public async Task Deleting_someone_elses_passkey_answers_404()
     {
