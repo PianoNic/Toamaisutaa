@@ -66,6 +66,34 @@ public class TwoFactorEnrolmentHttpTests
         await Assert.That(confirmed.StatusCode).IsEqualTo(HttpStatusCode.OK);
     }
 
+    /// <summary>A begin checks the row is unconfirmed, then spends a key derivation on the password,
+    /// then writes. A confirm landing in between was written over, switching the factor off.</summary>
+    [Test]
+    public async Task A_begin_that_was_checking_the_password_does_not_undo_a_confirm()
+    {
+        var hasher = new HeldHasher();
+        await using var app = await TestApp.StartAsync(configureServices: hasher.Register);
+        var account = await Account.RegisterAsync(app);
+
+        var first = await app.Client.PostJson("/auth/2fa/begin", new { currentPassword = account.Password }, account.AccessToken);
+        var secret = (await first.Json()).String("secret")!;
+
+        hasher.Hold = account.Password;
+        var slowBegin = app.RawClient.PostJson("/auth/2fa/begin", new { currentPassword = account.Password }, account.AccessToken);
+        await hasher.Entered.Task.WaitAsync(TimeSpan.FromSeconds(30));
+
+        app.Time.AdvanceToNextTotpStep();
+        var confirm = await app.Client.PostJson("/auth/2fa/confirm", new { code = Totp.Code(secret, app.Time.Now) }, account.AccessToken);
+        await Assert.That(confirm.StatusCode).IsEqualTo(HttpStatusCode.OK);
+
+        hasher.Let();
+        await Assert.That((await slowBegin).StatusCode).IsEqualTo(HttpStatusCode.BadRequest);
+
+        // Still on: a sign-in stops for the second factor, which it only does for a confirmed one.
+        var signIn = await (await account.LoginAsync()).Json();
+        await Assert.That(signIn.String("challenge")).IsNotNull();
+    }
+
     [Test]
     public async Task The_current_password_begins_an_enrolment()
     {

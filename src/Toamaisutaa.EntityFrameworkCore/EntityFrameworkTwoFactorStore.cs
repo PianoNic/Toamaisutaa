@@ -30,6 +30,44 @@ internal sealed class EntityFrameworkTwoFactorStore<TContext>(TContext context)
         await context.SaveChangesAsync(cancellationToken);
     }
 
+    public async Task<bool> ReplacePendingAsync(ToamaisutaaUserTwoFactor enrolment, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(enrolment);
+
+        var set = context.Set<ToamaisutaaUserTwoFactor>();
+
+        // Detached so a later SaveChanges cannot write this copy back over whatever the conditional
+        // write below decided.
+        var tracked = context.ChangeTracker.Entries<ToamaisutaaUserTwoFactor>()
+            .FirstOrDefault(entry => entry.Entity.UserId == enrolment.UserId);
+
+        if (tracked is not null)
+            tracked.State = EntityState.Detached;
+
+        var replaced = await set
+            .Where(existing => existing.UserId == enrolment.UserId && existing.ConfirmedAt == null)
+            .ExecuteUpdateAsync(
+                setters => setters
+                    .SetProperty(existing => existing.SecretCiphertext, enrolment.SecretCiphertext)
+                    .SetProperty(existing => existing.SecretNonce, enrolment.SecretNonce)
+                    .SetProperty(existing => existing.SecretTag, enrolment.SecretTag)
+                    .SetProperty(existing => existing.EncryptionKeyVersion, enrolment.EncryptionKeyVersion)
+                    .SetProperty(existing => existing.LastUsedStep, (long?)null)
+                    .SetProperty(existing => existing.UpdatedAt, enrolment.UpdatedAt),
+                cancellationToken);
+
+        if (replaced == 1)
+            return true;
+
+        // Nothing replaced: either there is a confirmed row, which stays, or there is no row yet.
+        if (await set.AnyAsync(existing => existing.UserId == enrolment.UserId, cancellationToken))
+            return false;
+
+        set.Add(enrolment);
+        await context.SaveChangesAsync(cancellationToken);
+        return true;
+    }
+
     public async Task DeleteAsync(Guid userId, CancellationToken cancellationToken = default)
     {
         // Detach first, or the next SaveChanges on this request writes the deleted row back.
