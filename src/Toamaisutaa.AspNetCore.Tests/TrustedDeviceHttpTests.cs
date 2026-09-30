@@ -1,4 +1,6 @@
 using System.Net;
+using Microsoft.Extensions.DependencyInjection;
+using Toamaisutaa.Abstractions;
 
 namespace Toamaisutaa.AspNetCore.Tests;
 
@@ -68,6 +70,82 @@ public class TrustedDeviceHttpTests
 
         var devices = await (await app.Client.Get("/auth/devices", account.AccessToken)).Json();
         await Assert.That(devices.GetArrayLength()).IsEqualTo(0);
+    }
+
+    /// <summary>
+    /// Rotation marked the row spent whatever it held, so every request presenting one copied token
+    /// at once passed the checks, got a session that skipped the second factor, and minted a live
+    /// successor of its own - and none of it looked like reuse.
+    /// </summary>
+    [Test]
+    public async Task A_device_token_presented_in_parallel_skips_the_second_factor_at_most_once()
+    {
+        var store = new MeetBeforeRotating();
+        await using var app = await TestApp.StartAsync(configureServices: store.Register);
+
+        var account = await Account.RegisterAsync(app);
+        await account.EnrolAsync();
+
+        var issued = (await account.SignInWithSecondFactorAsync(rememberDevice: true)).String("device_token")!;
+
+        // Both past every check and waiting at the write, which is where a real race puts them.
+        store.Hold = true;
+        var attempts = await Task.WhenAll(account.LoginAsync(deviceToken: issued), account.LoginAsync(deviceToken: issued));
+        var bodies = await Task.WhenAll(attempts.Select(response => response.Json()));
+
+        await Assert.That(bodies.Count(body => body.Has("access_token"))).IsLessThanOrEqualTo(1);
+    }
+
+    /// <summary>The real store, except that the first two rotations wait for each other.</summary>
+    private sealed class MeetBeforeRotating
+    {
+        private readonly CountdownEvent _arrived = new(2);
+
+        internal volatile bool Hold;
+
+        internal void Register(IServiceCollection services)
+        {
+            // Registered by type, so built here the way the container would have built it.
+            var real = services.Last(descriptor => descriptor.ServiceType == typeof(ITrustedDeviceStore)).ImplementationType!;
+            services.AddScoped<ITrustedDeviceStore>(provider =>
+                new Held(this, (ITrustedDeviceStore)ActivatorUtilities.CreateInstance(provider, real)));
+        }
+
+        private void Meet()
+        {
+            if (!Hold)
+                return;
+
+            _arrived.Signal();
+            _arrived.Wait(TimeSpan.FromSeconds(30));
+        }
+
+        private sealed class Held(MeetBeforeRotating owner, ITrustedDeviceStore inner) : ITrustedDeviceStore
+        {
+            public Task<ToamaisutaaTrustedDevice?> FindByHashAsync(string tokenHash, CancellationToken cancellationToken = default) =>
+                inner.FindByHashAsync(tokenHash, cancellationToken);
+
+            public Task<IReadOnlyList<ToamaisutaaTrustedDevice>> ListActiveAsync(Guid userId, CancellationToken cancellationToken = default) =>
+                inner.ListActiveAsync(userId, cancellationToken);
+
+            public Task CreateAsync(ToamaisutaaTrustedDevice device, CancellationToken cancellationToken = default) =>
+                inner.CreateAsync(device, cancellationToken);
+
+            public Task<bool> MarkRotatedAsync(Guid deviceId, DateTimeOffset rotatedAt, CancellationToken cancellationToken = default)
+            {
+                owner.Meet();
+                return inner.MarkRotatedAsync(deviceId, rotatedAt, cancellationToken);
+            }
+
+            public Task RevokeFamilyAsync(Guid familyId, string reason, DateTimeOffset revokedAt, CancellationToken cancellationToken = default) =>
+                inner.RevokeFamilyAsync(familyId, reason, revokedAt, cancellationToken);
+
+            public Task<int> RevokeAllForUserAsync(Guid userId, string reason, DateTimeOffset revokedAt, CancellationToken cancellationToken = default) =>
+                inner.RevokeAllForUserAsync(userId, reason, revokedAt, cancellationToken);
+
+            public Task<int> DeleteExpiredAsync(DateTimeOffset expiredBefore, CancellationToken cancellationToken = default) =>
+                inner.DeleteExpiredAsync(expiredBefore, cancellationToken);
+        }
     }
 
     [Test]

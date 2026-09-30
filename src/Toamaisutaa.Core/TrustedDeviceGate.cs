@@ -106,7 +106,20 @@ internal sealed class TrustedDeviceGate(
             }
         }
 
-        await devices.MarkRotatedAsync(stored.Id, now, cancellationToken);
+        // The checks above and this write are not one step. Whoever loses it presented a token that
+        // another request is exchanging right now, which is reuse, and is answered as reuse.
+        if (!await devices.MarkRotatedAsync(stored.Id, now, cancellationToken))
+        {
+            logger.LogWarning(
+                "Trusted-device token reuse detected for user {UserId}. Device {DeviceId} was exchanged by another "
+                + "request first; revoking family {FamilyId}. Treat this as a possible captured token.",
+                stored.UserId,
+                stored.Id,
+                stored.FamilyId);
+
+            await RevokeFamilyAsync(devices, stored, "device-token-reuse", now, cancellationToken);
+            return DeviceTrustResult.NotTrusted;
+        }
 
         var rotated = SecureTokens.Create();
 
