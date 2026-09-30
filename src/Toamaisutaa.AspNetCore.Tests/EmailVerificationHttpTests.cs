@@ -4,11 +4,6 @@ using Toamaisutaa.Abstractions;
 
 namespace Toamaisutaa.AspNetCore.Tests;
 
-/// <summary>
-/// <c>/auth/email</c> and <c>/auth/email/verify</c> - the invariant that matters here: no response
-/// from either ever carries the verification token, only <c>IEmailVerificationNotifier</c> ever sees
-/// it, and it goes to the address being verified rather than the one on the account.
-/// </summary>
 public class EmailVerificationHttpTests
 {
     [Test]
@@ -122,16 +117,13 @@ public class EmailVerificationHttpTests
             new { newEmail = "moved@example.com", currentPassword = account.Password },
             account.AccessToken);
 
-        // Authenticated, even though the endpoint would be anonymous if it existed: an unmatched
-        // route meets the fallback policy first and answers 401, which says nothing about mapping.
+        // Authenticated, because an unmatched route meets the fallback policy first and answers 401.
         var verify = await app.Client.PostJson("/auth/email/verify", new { token = "anything" }, account.AccessToken);
 
         await Assert.That(change.StatusCode).IsEqualTo(HttpStatusCode.NotFound);
         await Assert.That(verify.StatusCode).IsEqualTo(HttpStatusCode.NotFound);
     }
 
-    // docs/email-verification.md promises the option changes nothing a caller can see: forgetting a
-    // password against an unverified address answers exactly what it always did.
     [Test]
     public async Task Requiring_a_verified_address_still_answers_204_and_sends_nothing()
     {
@@ -173,8 +165,6 @@ public class EmailVerificationHttpTests
         await Assert.That(sentResets.Count).IsEqualTo(1);
     }
 
-    // The other half, and the one that guards everybody who never asked for any of this: with the
-    // option off, an address nobody has verified is still sent its reset link.
     [Test]
     public async Task An_unverified_address_still_gets_its_reset_link_by_default()
     {

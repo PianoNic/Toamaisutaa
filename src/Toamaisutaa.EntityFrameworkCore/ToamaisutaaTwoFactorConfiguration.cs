@@ -12,20 +12,15 @@ public sealed class ToamaisutaaUserTwoFactorConfiguration : IEntityTypeConfigura
     {
         builder.ToTable(TableName);
 
-        // The user id is the key. One enrolment per account, enforced by the schema rather than by
-        // remembering to check.
         builder.HasKey(enrolment => enrolment.UserId);
         builder.Property(enrolment => enrolment.UserId).ValueGeneratedNever();
 
-        // The wrong-code count for an account with no password credential to keep it on. Zero for
-        // every row written before the columns existed; instants as Unix milliseconds, like every
-        // other timestamp here, so SQLite can compare them.
+        // Defaulted so rows written before the column existed read as zero.
         builder.Property(enrolment => enrolment.FailedAttemptCount).HasDefaultValue(0);
         builder.Property(enrolment => enrolment.FirstFailedAttemptAt).HasConversion(InstantConverters.NullableInstant);
         builder.Property(enrolment => enrolment.LockedOutUntil).HasConversion(InstantConverters.NullableInstant);
 
-        // 20 bytes of secret plus AES-GCM's fixed overhead. Sized generously because
-        // SecretSizeBytes is configurable and a column limit is a poor way to discover that.
+        // Sized generously because SecretSizeBytes is configurable.
         builder.Property(enrolment => enrolment.SecretCiphertext).HasMaxLength(256).IsRequired();
         builder.Property(enrolment => enrolment.SecretNonce).HasMaxLength(32).IsRequired();
         builder.Property(enrolment => enrolment.SecretTag).HasMaxLength(32).IsRequired();
@@ -60,9 +55,7 @@ public sealed class ToamaisutaaRecoveryCodeConfiguration : IEntityTypeConfigurat
         builder.Property(code => code.CreatedAt).HasConversion(InstantConverters.Instant);
         builder.Property(code => code.ConsumedAt).HasConversion(InstantConverters.NullableInstant);
 
-        // Redemption looks up one user's codes by hash. Not unique on the hash alone: two accounts
-        // colliding on a fifty-bit code is not going to happen, but a unique index would turn it
-        // into somebody else's failed login rather than a shrug.
+        // Not unique: a cross-account hash collision must not become somebody else's failed login.
         builder.HasIndex(code => new { code.UserId, code.CodeHash });
 
         builder.HasOne<ToamaisutaaUser>()
@@ -89,17 +82,11 @@ public sealed class ToamaisutaaTwoFactorChallengeConfiguration : IEntityTypeConf
         builder.Property(challenge => challenge.ExpiresAt).HasConversion(InstantConverters.Instant);
         builder.Property(challenge => challenge.ConsumedAt).HasConversion(InstantConverters.NullableInstant);
 
-        // Stored as the integer the enum already is. A string would read better in a table nobody
-        // queries by hand and would cost a conversion on the one path that matters.
         builder.Property(challenge => challenge.Purpose).IsRequired();
 
-        // Null for a sign-in challenge, where there is no session yet. No foreign key: families are
-        // a column on the refresh token rather than a table of their own.
+        // No foreign key: families are a column on the refresh token, not a table.
         builder.Property(challenge => challenge.FamilyId);
 
-        // The same 128 the refresh token's own methods column uses, and required for the same
-        // reason: the property is a non-null string, empty when a step-up challenge has nothing to
-        // say here.
         builder.Property(challenge => challenge.AuthenticationMethods).HasMaxLength(128).IsRequired();
 
         // Nullable so rows written before the column existed stay readable; they expire in minutes.

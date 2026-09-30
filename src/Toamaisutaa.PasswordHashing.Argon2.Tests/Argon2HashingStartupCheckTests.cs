@@ -36,8 +36,6 @@ public class Argon2HashingStartupCheckTests
         await Assert.That(await RunAsync()).IsNull();
     }
 
-    /// <summary>OWASP publishes five configurations as equivalent, so the check cannot be a single
-    /// floor on memory: 46 MiB with one pass is one of them.</summary>
     [Test]
     [Arguments(47_104, 1)]
     [Arguments(19_456, 2)]
@@ -89,11 +87,6 @@ public class Argon2HashingStartupCheckTests
         await Assert.That(await RunAsync(options => options.DegreeOfParallelism = 0)).Contains("DegreeOfParallelism");
     }
 
-    /// <summary>
-    /// The hasher bounds what a stored row may ask this process for, so anything above those bounds
-    /// is written and then refused: the correct password comes back as a wrong one, and the lockout
-    /// counter treats it as an attempt.
-    /// </summary>
     [Test]
     [Arguments(47_104, 65, 1, "Iterations is 65")]
     [Arguments(47_104, 2, 65, "DegreeOfParallelism is 65")]
@@ -111,8 +104,6 @@ public class Argon2HashingStartupCheckTests
         await Assert.That(problems).Contains("would fail to verify");
     }
 
-    /// <summary>The bounds themselves are legal, and a check that refused them would be refusing a
-    /// row the hasher reads.</summary>
     [Test]
     public async Task AcceptsTheHighestParametersTheHasherReadsBack()
     {
@@ -126,11 +117,8 @@ public class Argon2HashingStartupCheckTests
         await Assert.That(problems).IsNull();
     }
 
-    /// <summary>
-    /// The loop this check exists to close: what it accepts has to survive a hash and a verify in
-    /// the same process. The memory is the smallest OWASP figure rather than the ceiling, because
-    /// these derivations are real.
-    /// </summary>
+    /// <summary>Uses the smallest OWASP memory rather than the ceiling, because these derivations
+    /// are real.</summary>
     [Test]
     [Arguments(7_168, 64, 1)]
     [Arguments(7_168, 5, 64)]
@@ -157,10 +145,6 @@ public class Argon2HashingStartupCheckTests
         await Assert.That(hasher.Verify(password, hasher.Hash(password))).IsEqualTo(PasswordVerificationResult.Succeeded);
     }
 
-    /// <summary>
-    /// The silent failure: the package is installed, configured and hashing nothing because
-    /// something else was registered after it.
-    /// </summary>
     [Test]
     public async Task RefusesWhenAnotherHasherIsRegisteredAfterIt()
     {
@@ -169,8 +153,6 @@ public class Argon2HashingStartupCheckTests
         await Assert.That(problems).Contains("Pbkdf2PasswordHasher");
     }
 
-    /// <summary>Weak parameters do not matter while nothing is hashed with them, and a startup
-    /// failure over an unused setting is a startup failure nobody can act on.</summary>
     [Test]
     public async Task VerifyOnlyIgnoresTheParameters()
     {

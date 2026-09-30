@@ -15,11 +15,6 @@ public static class ToamaisutaaTrustedDeviceEndpointExtensions
     /// <c>TrustedDevices:EndpointPrefix</c>. A trust the user cannot see or take back is a
     /// liability, so these are not optional alongside the feature.
     /// </summary>
-    /// <remarks>
-    /// The prefix composes onto the local login one, the same way <c>/2fa</c> does. It used to be a
-    /// full path defaulting to <c>/auth/devices</c>, which meant moving <c>LocalLogin</c> to
-    /// <c>/identity</c> moved sign-in and two-factor and silently left the devices behind.
-    /// </remarks>
     /// <param name="endpoints">The builder to map into. A <c>RouteGroupBuilder</c> is one.</param>
     /// <param name="endpointNamePrefix">
     /// Prepended to every endpoint name, so the same endpoints can be mapped into more than one
@@ -85,9 +80,6 @@ public static class ToamaisutaaTrustedDeviceEndpointExtensions
     {
         var user = await currentUser.GetOrProvisionAsync(cancellationToken);
 
-        // A caller who sends the device token they are holding gets IsCurrent on the matching row,
-        // so a UI can avoid inviting somebody to revoke the device they are sitting at. Optional,
-        // and read from a header rather than the body because this is a GET.
         if (devices is TrustedDeviceService concrete
             && context.Request.Headers.TryGetValue("X-Toamaisutaa-Device", out var presented)
             && !string.IsNullOrWhiteSpace(presented))

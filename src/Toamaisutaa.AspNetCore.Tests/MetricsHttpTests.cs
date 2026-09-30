@@ -5,14 +5,6 @@ using Toamaisutaa.Core;
 
 namespace Toamaisutaa.AspNetCore.Tests;
 
-/// <summary>
-/// The instruments as a real request produces them.
-/// </summary>
-/// <remarks>
-/// A meter published from a service the host never resolves records nothing, and the rejection
-/// counter in particular lives in an endpoint filter - which exists only because it was attached to
-/// a route. Neither is visible from the service suite.
-/// </remarks>
 public class MetricsHttpTests
 {
     [Test]
@@ -39,11 +31,6 @@ public class MetricsHttpTests
         await Assert.That(probe.Total).IsEqualTo(2);
     }
 
-    /// <summary>
-    /// Proves the wiring, not the counting: the service suite already asserts what a sign-in
-    /// records, and would go on passing if nothing in the container ever handed the endpoints a
-    /// meter to record it on.
-    /// </summary>
     [Test]
     public async Task A_sign_in_over_HTTP_reaches_the_meter()
     {
@@ -59,17 +46,7 @@ public class MetricsHttpTests
 }
 
 /// <summary>
-/// Counts one instrument on one host's meter.
-/// </summary>
-/// <remarks>
-/// Bound to the host's own <see cref="Meter"/> instance rather than to the name, because every
-/// <see cref="TestApp"/> in the suite publishes a meter called <c>Toamaisutaa</c> and two of them
-/// running at once would otherwise count each other.
-/// </remarks>
-/// <summary>
-/// The sign-in series says what the caller was told, and the caller is told the same thing for an
-/// unknown name, a wrong password and a locked account. Tagged apart, whoever could read the scrape
-/// endpoint learned which of their guesses named a real account.
+/// Distinct result tags would let anyone reading the scrape endpoint tell which guesses named a real account.
 /// </summary>
 public class SignInMetricTagHttpTests
 {
@@ -102,6 +79,7 @@ internal sealed class InstrumentProbe : IDisposable
 
         _listener.InstrumentPublished = (instrument, listener) =>
         {
+            // Matched by instance, not name, because every TestApp publishes a meter named Toamaisutaa and parallel hosts would count each other.
             if (ReferenceEquals(instrument.Meter, meter) && instrument.Name == instrumentName)
                 listener.EnableMeasurementEvents(instrument);
         };
@@ -134,7 +112,6 @@ internal sealed class InstrumentProbe : IDisposable
 
     internal long Total => Interlocked.Read(ref _total);
 
-    /// <summary>The <c>result</c> tag of every measurement, in order.</summary>
     internal System.Collections.Concurrent.ConcurrentQueue<string?> Results { get; } = new();
 
     public void Dispose() => _listener.Dispose();

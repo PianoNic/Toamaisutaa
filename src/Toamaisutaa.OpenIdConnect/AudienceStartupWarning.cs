@@ -6,16 +6,9 @@ using Toamaisutaa.Abstractions;
 namespace Toamaisutaa.OpenIdConnect;
 
 /// <summary>
-/// Says so at startup when provider tokens are checked against the client id rather than an API
-/// audience.
+/// A warning rather than a refusal, because many providers issue access tokens whose only audience
+/// is the client id, which is also the audience of every unmarked ID token.
 /// </summary>
-/// <remarks>
-/// The client id is the audience of every ID token the provider issues to that client, so under
-/// the fallback an ID token passes audience validation. The package refuses the ones that are marked
-/// as ID tokens; one that carries no marker cannot be told apart, and only a real API audience keeps
-/// it out. A warning rather than a refusal, because plenty of providers issue access tokens whose
-/// only audience is the client id, and refusing to start would break every one of them.
-/// </remarks>
 internal sealed class AudienceStartupWarning(
     IOptions<ToamaisutaaOidcOptions> options,
     ILogger<AudienceStartupWarning> logger) : IHostedService

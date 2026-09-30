@@ -2,10 +2,6 @@ using System.Net;
 
 namespace Toamaisutaa.AspNetCore.Tests;
 
-/// <summary>
-/// The current password a signed-in caller answers is a password check like any other, and a
-/// stolen access token is all it takes to ask it.
-/// </summary>
 public class CurrentPasswordLockoutHttpTests
 {
     /// <summary>The default <c>MaxFailedAttempts</c>.</summary>
@@ -28,7 +24,6 @@ public class CurrentPasswordLockoutHttpTests
         var right = await app.Client.PostJson(path, Body(account, account.Password), account.AccessToken);
         await Assert.That(right.StatusCode).IsEqualTo(HttpStatusCode.BadRequest);
 
-        // The same count the sign-in reads, so the guesses cost the guesser the front door too.
         await Assert.That((await account.LoginAsync()).StatusCode).IsEqualTo(HttpStatusCode.Unauthorized);
     }
 
@@ -56,10 +51,8 @@ public class CurrentPasswordLockoutHttpTests
         await Assert.That(statuses).Contains(HttpStatusCode.TooManyRequests);
     }
 
-    /// <summary>
-    /// A right second factor used to clear the whole count, and the count is the password's too: a
-    /// session holder with the codes could guess the password four times, prove a code, and go again.
-    /// </summary>
+    /// <summary>The count is shared with the password, so a second factor clearing it would let a
+    /// session holder guess, prove a code, and guess again.</summary>
     [Test]
     [Arguments("step-up")]
     [Arguments("/auth/2fa/recovery-codes")]

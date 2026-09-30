@@ -5,15 +5,10 @@ using Toamaisutaa.Core;
 
 namespace Toamaisutaa.AspNetCore.Tests;
 
-/// <summary>
-/// How recovery codes sit in the table. About fifty bits each, so what matters is whether a copy of
-/// the table is enough to recover them.
-/// </summary>
 public class RecoveryCodeStorageHttpTests
 {
     /// <summary>
-    /// Stored as plain SHA-256, every user's codes fell to one offline sweep of the whole code space.
-    /// Keyed, the table alone does not have what it takes to check a guess.
+    /// Codes carry about fifty bits, so a plain SHA-256 table falls to one offline sweep of the code space.
     /// </summary>
     [Test]
     public async Task A_recovery_code_is_not_stored_as_its_plain_hash()
@@ -43,10 +38,6 @@ public class RecoveryCodeStorageHttpTests
         await Assert.That(verify.StatusCode).IsEqualTo(HttpStatusCode.OK);
     }
 
-    /// <summary>
-    /// Codes printed before codes were keyed are still somebody's only way back in, so the old form
-    /// is still accepted until the set is regenerated.
-    /// </summary>
     [Test]
     public async Task A_code_stored_the_old_way_still_signs_in()
     {
@@ -75,10 +66,6 @@ public class RecoveryCodeStorageHttpTests
         await Assert.That(verify.StatusCode).IsEqualTo(HttpStatusCode.OK);
     }
 
-    /// <summary>
-    /// The unkeyed hash is what a copy of the table gives up to a sweep, so an operator has to be
-    /// able to stop accepting it once the stragglers have regenerated.
-    /// </summary>
     [Test]
     public async Task A_code_stored_the_old_way_is_refused_once_unkeyed_codes_are_turned_off()
     {
@@ -107,8 +94,6 @@ public class RecoveryCodeStorageHttpTests
         await Assert.That(verify.StatusCode).IsEqualTo(HttpStatusCode.Unauthorized);
     }
 
-    /// <summary>The unkeyed hash is tried only against rows stored that way, so a code is never
-    /// accepted as something its row never was.</summary>
     [Test]
     public async Task The_unkeyed_hash_is_not_tried_against_a_keyed_row()
     {
@@ -139,8 +124,7 @@ public class RecoveryCodeStorageHttpTests
     }
 
     /// <summary>
-    /// New codes are marked keyed, which is what lets the old ones be counted - both forms are the
-    /// same length, and nothing else in the row tells them apart.
+    /// Keyed and unkeyed hashes are the same length, so the version marker is the only way to tell old rows apart.
     /// </summary>
     [Test]
     public async Task A_new_code_is_marked_as_keyed()

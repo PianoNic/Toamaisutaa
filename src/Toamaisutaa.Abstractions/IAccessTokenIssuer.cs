@@ -1,8 +1,7 @@
 namespace Toamaisutaa.Abstractions;
 
 /// <summary>
-/// Mints the short-lived access token a successful local sign-in returns. Implemented outside
-/// <c>Core</c>, because signing a JWT needs a JWT library and Core carries no third-party packages.
+/// Mints the short-lived access token a successful local sign-in returns.
 /// </summary>
 public interface IAccessTokenIssuer
 {
@@ -10,16 +9,6 @@ public interface IAccessTokenIssuer
     /// The resulting token must be indistinguishable downstream from one the identity provider
     /// issued: same claim shape, validated by the same pipeline, understood by the same policies.
     /// </summary>
-    /// <remarks>
-    /// Asynchronous even though the shipped implementation signs in memory and never waits for
-    /// anything. Signing is exactly the operation that later moves to a key management service or an
-    /// HSM, and by then this is a published interface that cannot change shape.
-    /// <para>
-    /// The parameter is a record rather than an argument list for the same reason: everything a
-    /// token needs to carry has arrived here so far by widening the signature, which breaks every
-    /// implementer. Adding a property does not.
-    /// </para>
-    /// </remarks>
     Task<AccessToken> IssueAsync(AccessTokenRequest request, CancellationToken cancellationToken = default);
 }
 
@@ -34,16 +23,14 @@ public sealed record AccessTokenRequest
     /// has been verified. Null otherwise, and then the token carries no <c>email</c> at all.
     /// </summary>
     /// <remarks>
-    /// Not <see cref="ToamaisutaaUser.Email"/>. Registration writes whatever address it is typed,
-    /// and a token asserting it under the same claim an identity provider uses let anybody register
-    /// as someone else's address and pass every policy keyed on it.
+    /// Not <see cref="ToamaisutaaUser.Email"/>, which holds whatever was typed at registration and
+    /// would let anybody pass a policy keyed on someone else's address.
     /// </remarks>
     public string? VerifiedEmail { get; init; }
 
     /// <summary>
     /// RFC 8176 authentication method references, written to <c>amr</c>: <c>pwd</c> for a password,
     /// <c>otp</c> for a TOTP code, <c>mfa</c> whenever a second factor was actually presented.
-    /// Standard rather than invented, so anything that already reads <c>amr</c> keeps working.
     /// </summary>
     public IReadOnlyList<string> AuthenticationMethods { get; init; } = [];
 

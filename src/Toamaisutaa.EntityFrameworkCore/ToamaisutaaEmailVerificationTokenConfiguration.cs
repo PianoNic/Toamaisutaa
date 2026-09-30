@@ -15,8 +15,7 @@ public sealed class ToamaisutaaEmailVerificationTokenConfiguration : IEntityType
         builder.HasKey(token => token.Id);
         builder.Property(token => token.Id).ValueGeneratedNever();
 
-        // The same 256 the credential's own email column uses, so an address that fits on the
-        // account fits on the token that proves it.
+        // Matches the credential's email column, so any address that fits there fits here.
         builder.Property(token => token.Email).HasMaxLength(256).IsRequired();
 
         builder.Property(token => token.TokenHash).HasMaxLength(64).IsRequired();

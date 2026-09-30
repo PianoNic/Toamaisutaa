@@ -2,7 +2,6 @@ using Toamaisutaa.Abstractions;
 
 namespace Toamaisutaa.Core.Tests;
 
-/// <summary>Both stores in memory, with a switch for simulating a lost race on the unique index.</summary>
 internal sealed class FakeStore(TimeProvider timeProvider) : IUserStore, IExternalLoginStore
 {
     internal List<ToamaisutaaUser> Users { get; } = [];
@@ -17,8 +16,7 @@ internal sealed class FakeStore(TimeProvider timeProvider) : IUserStore, IExtern
 
     internal int SecurityStampWrites { get; private set; }
 
-    /// <summary>When set, the next link attempt loses: another request's row appears and the unique
-    /// index rejects ours.</summary>
+    /// <summary>When set, the next link attempt loses to this user's row on the unique index.</summary>
     internal ToamaisutaaUser? WinnerOfTheNextRace { get; set; }
 
     public Task<ToamaisutaaUser?> FindByIdAsync(Guid id, CancellationToken cancellationToken = default) =>

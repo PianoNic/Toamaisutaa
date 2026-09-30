@@ -2,21 +2,8 @@ using Toamaisutaa.Abstractions;
 
 namespace Toamaisutaa.Core.Tests;
 
-/// <summary>
-/// The one place a local session is minted, driven directly.
-/// </summary>
-/// <remarks>
-/// It stopped being private to the password path when passkeys arrived: a WebAuthn assertion ends
-/// in exactly this token pair, from a package Core cannot reference. What is asserted here is the
-/// part both callers depend on and neither owns - what the token claims, and what the refresh row
-/// keeps so that a rotation can claim it again.
-/// </remarks>
 public class LocalSessionIssuerTests
 {
-    /// <summary>
-    /// A passkey sign-in proves possession and verifies the person in one gesture, so telling that
-    /// user to go and enrol a second factor is telling the one who did the most work to do more.
-    /// </summary>
     [Test]
     public async Task A_session_that_presented_a_second_factor_is_never_told_to_enrol()
     {
@@ -32,8 +19,6 @@ public class LocalSessionIssuerTests
         await Assert.That(harness.Issuer.Issued[^1].TwoFactorEnrolmentRequired).IsFalse();
     }
 
-    /// <summary>The other half of the same rule: a session that proved nothing but a password is
-    /// still told to enrol, or the short circuit above would switch enforcement off entirely.</summary>
     [Test]
     public async Task A_session_with_no_second_factor_is_still_told_to_enrol()
     {
@@ -49,9 +34,8 @@ public class LocalSessionIssuerTests
     }
 
     /// <summary>
-    /// The rule this repository has been bitten by three times, asked of a fourth claim: the refresh
-    /// row has to carry what the token claims, or a rotation an access-token lifetime later reports
-    /// a passkey session as a password-only one.
+    /// The refresh row has to carry what the token claims, or a rotation an access-token lifetime
+    /// later reports a passkey session as a password-only one.
     /// </summary>
     [Test]
     public async Task The_refresh_row_carries_what_the_token_claimed()
@@ -70,8 +54,6 @@ public class LocalSessionIssuerTests
         await Assert.That(stored.FamilyId).IsEqualTo(issued.FamilyId);
     }
 
-    /// <summary>A refresh renewed something rather than proving it, and an audit table that counted
-    /// rotations as sign-ins would report one every access-token lifetime for an open tab.</summary>
     [Test]
     public async Task A_rotation_publishes_no_sign_in()
     {

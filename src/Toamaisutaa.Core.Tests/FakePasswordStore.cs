@@ -2,8 +2,7 @@ using Toamaisutaa.Abstractions;
 
 namespace Toamaisutaa.Core.Tests;
 
-/// <summary>In-memory credential, refresh-token and reset-token storage, including the unique
-/// identifier constraint the real store gets from its indexes.</summary>
+/// <summary>Enforces the unique identifier constraint the real store gets from its indexes.</summary>
 internal sealed class FakePasswordStore
     : IPasswordCredentialStore,
         IRefreshTokenStore,
@@ -23,8 +22,6 @@ internal sealed class FakePasswordStore
     internal List<ToamaisutaaEmailVerificationToken> EmailVerificationTokens { get; } = [];
 
     internal List<ToamaisutaaMagicLinkToken> MagicLinkTokens { get; } = [];
-
-    // ── Credentials ──
 
     public Task<ToamaisutaaPasswordCredential?> FindByUserIdAsync(Guid userId, CancellationToken cancellationToken = default) =>
         Task.FromResult(Credentials.FirstOrDefault(credential => credential.UserId == userId));
@@ -52,8 +49,6 @@ internal sealed class FakePasswordStore
 
     public Task UpdateAsync(ToamaisutaaPasswordCredential credential, CancellationToken cancellationToken = default) =>
         Task.CompletedTask;
-
-    // ── Refresh tokens ──
 
     public Task<ToamaisutaaRefreshToken?> FindByHashAsync(string tokenHash, CancellationToken cancellationToken = default) =>
         Task.FromResult(RefreshTokens.FirstOrDefault(token => token.TokenHash == tokenHash));
@@ -130,8 +125,6 @@ internal sealed class FakePasswordStore
     public Task<int> DeleteExpiredAsync(DateTimeOffset expiredBefore, CancellationToken cancellationToken = default) =>
         Task.FromResult(RefreshTokens.RemoveAll(token => token.ExpiresAt <= expiredBefore));
 
-    // ── Reset tokens ──
-
     public Task CreateAsync(ToamaisutaaPasswordResetToken token, CancellationToken cancellationToken = default)
     {
         ResetTokens.Add(token);
@@ -147,7 +140,6 @@ internal sealed class FakePasswordStore
         return Task.FromResult(Spend(() => token.ConsumedAt, value => token.ConsumedAt = value, consumedAt));
     }
 
-    /// <summary>What the real stores do in one conditional write: spend it only if nobody has.</summary>
     internal static bool Spend(Func<DateTimeOffset?> read, Action<DateTimeOffset> write, DateTimeOffset consumedAt)
     {
         if (read() is not null)
@@ -167,8 +159,6 @@ internal sealed class FakePasswordStore
 
     Task<int> IPasswordResetTokenStore.DeleteExpiredAsync(DateTimeOffset expiredBefore, CancellationToken cancellationToken) =>
         Task.FromResult(ResetTokens.RemoveAll(token => token.ExpiresAt <= expiredBefore));
-
-    // ── Invitation tokens ──
 
     public Task CreateAsync(ToamaisutaaInvitationToken token, CancellationToken cancellationToken = default)
     {
@@ -202,8 +192,6 @@ internal sealed class FakePasswordStore
         return Task.CompletedTask;
     }
 
-    // ── Email verification tokens ──
-
     public Task CreateAsync(ToamaisutaaEmailVerificationToken token, CancellationToken cancellationToken = default)
     {
         EmailVerificationTokens.Add(token);
@@ -229,8 +217,6 @@ internal sealed class FakePasswordStore
 
     Task<int> IEmailVerificationTokenStore.DeleteExpiredAsync(DateTimeOffset expiredBefore, CancellationToken cancellationToken) =>
         Task.FromResult(EmailVerificationTokens.RemoveAll(token => token.ExpiresAt <= expiredBefore));
-
-    // ── Magic-link tokens ──
 
     public Task CreateAsync(ToamaisutaaMagicLinkToken token, CancellationToken cancellationToken = default)
     {
@@ -274,8 +260,6 @@ internal sealed class FakePasswordResetNotifier : IPasswordResetNotifier
 {
     internal List<(Guid UserId, string Token)> Sent { get; } = [];
 
-    /// <summary>Set to make the next <see cref="SendAsync"/> throw, so a real notifier failure can
-    /// be simulated without a real SMTP server.</summary>
     internal Exception? ThrowOnSend { get; set; }
 
     public Task SendAsync(ToamaisutaaUser user, string resetToken, CancellationToken cancellationToken = default)
@@ -292,8 +276,6 @@ internal sealed class FakeAdminPasswordIssuedNotifier : IAdminPasswordIssuedNoti
 {
     internal List<(Guid UserId, string Password)> Issued { get; } = [];
 
-    /// <summary>Set to make the next <see cref="PasswordIssuedAsync"/> throw, so a real notifier
-    /// failure can be simulated without a real SMTP server.</summary>
     internal Exception? ThrowOnSend { get; set; }
 
     public Task PasswordIssuedAsync(ToamaisutaaUser user, string rawPassword, CancellationToken cancellationToken = default)
@@ -310,8 +292,6 @@ internal sealed class FakeInvitationNotifier : IInvitationNotifier
 {
     internal List<(Guid UserId, string Token)> Sent { get; } = [];
 
-    /// <summary>Set to make the next <see cref="SendAsync"/> throw, so a real notifier failure can
-    /// be simulated without a real SMTP server.</summary>
     internal Exception? ThrowOnSend { get; set; }
 
     public Task SendAsync(ToamaisutaaUser user, string invitationToken, CancellationToken cancellationToken = default)
@@ -328,8 +308,6 @@ internal sealed class FakeMagicLinkNotifier : IMagicLinkNotifier
 {
     internal List<(Guid UserId, string Token)> Sent { get; } = [];
 
-    /// <summary>Set to make the next <see cref="SendAsync"/> throw, so a real notifier failure can
-    /// be simulated without a real SMTP server.</summary>
     internal Exception? ThrowOnSend { get; set; }
 
     public Task SendAsync(ToamaisutaaUser user, string magicLinkToken, CancellationToken cancellationToken = default)
@@ -344,8 +322,6 @@ internal sealed class FakeMagicLinkNotifier : IMagicLinkNotifier
 
 internal sealed class FakeEmailVerificationNotifier : IEmailVerificationNotifier
 {
-    /// <summary>The address is recorded alongside the token, because where the link was sent is the
-    /// half of this that decides whether the flow is sound.</summary>
     internal List<(Guid UserId, string Email, string Token)> Sent { get; } = [];
 
     public Task SendAsync(ToamaisutaaUser user, string email, string verificationToken, CancellationToken cancellationToken = default)

@@ -3,28 +3,11 @@ using Toamaisutaa.Abstractions;
 
 namespace Toamaisutaa.AspNetCore.Tests;
 
-/// <summary>
-/// A token whose security stamp has moved, and the account-probe it must not become.
-/// </summary>
-/// <remarks>
-/// <para>
-/// Confirming an enrolment moves the stamp, so the access token that made the call is dead the
-/// moment it returns. Nothing mapped the exception, so the next request answered 500 - on the happy
-/// path of enrolment, for every client that ever enrolled.
-/// </para>
-/// <para>
-/// The pair of tests at the bottom is the one that matters most. A stale stamp and no token at all
-/// must not become the same response: if they did, an unauthenticated caller holding any token
-/// could tell an account that exists from one that does not by which body came back.
-/// </para>
-/// </remarks>
 public class SecurityStampHttpTests
 {
     private const string StaleDescription =
         "This token was issued before a credential on the account changed. Refresh, or sign in again.";
 
-    /// <summary>Every endpoint that resolves the caller, not only the one enrolment walks through.
-    /// There is a single throw site, so the exposure is every caller of it.</summary>
     [Test]
     [Arguments("GET", "/auth/2fa")]
     [Arguments("POST", "/auth/2fa/begin")]
@@ -37,7 +20,6 @@ public class SecurityStampHttpTests
 
         var stale = account.AccessToken;
 
-        // Changing the password moves the stamp, which is what makes `stale` stale.
         var changed = await app.Client.PostJson(
             "/auth/password",
             new { currentPassword = account.Password, newPassword = "an entirely different password" },
@@ -55,7 +37,6 @@ public class SecurityStampHttpTests
         await Assert.That(body.String("error_description")).IsEqualTo(StaleDescription);
     }
 
-    /// <summary>The reproduction from the issue, in the order a client meets it.</summary>
     [Test]
     public async Task Confirming_an_enrolment_leaves_the_calling_token_stale_and_the_next_call_answers_401()
     {
@@ -97,9 +78,6 @@ public class SecurityStampHttpTests
         await Assert.That(header).Contains("error=\"invalid_token\"");
     }
 
-    /// <summary>
-    /// The leak this suite exists to prevent. These two answers must stay different shapes.
-    /// </summary>
     [Test]
     public async Task No_token_at_all_answers_a_bare_401_with_no_body()
     {
@@ -127,15 +105,12 @@ public class SecurityStampHttpTests
         var withStaleToken = await app.Client.Get("/auth/2fa", stale);
         var withNoToken = await app.Client.Get("/auth/2fa");
 
-        // Same status, deliberately different bodies. Collapsing them would turn "does this account
-        // exist" into something an unauthenticated caller can ask.
+        // Collapsing these bodies would let an unauthenticated caller ask whether an account exists.
         await Assert.That(withStaleToken.StatusCode).IsEqualTo(withNoToken.StatusCode);
         await Assert.That(await withStaleToken.Content.ReadAsStringAsync())
             .IsNotEqualTo(await withNoToken.Content.ReadAsStringAsync());
     }
 
-    /// <summary>Endpoints the application owns get this from the documented exception handler
-    /// rather than from the package's endpoint filter, so it is worth proving separately.</summary>
     [Test]
     public async Task An_application_endpoint_answers_401_through_the_documented_handler()
     {
@@ -156,16 +131,8 @@ public class SecurityStampHttpTests
         await Assert.That((await response.Json()).String("error")).IsEqualTo("invalid_token");
     }
 
-    /// <summary>
-    /// The boundary, asserted so the documentation's claim is checkable rather than a promise.
-    /// </summary>
-    /// <remarks>
-    /// The package's endpoint filter covers the package's endpoints and nothing else. An
-    /// application endpoint calling <c>GetOrProvisionAsync</c> without the documented handler still
-    /// lets the exception escape - which is exactly why the docs tell you to add it. If this ever
-    /// starts failing because the package grew to cover consumer endpoints, delete this test and
-    /// the paragraph in Getting started with it.
-    /// </remarks>
+    /// <summary>Pins the boundary the Getting started handler paragraph relies on; if the package
+    /// grows to cover consumer endpoints, delete this test and that paragraph together.</summary>
     [Test]
     public async Task Without_the_handler_an_application_endpoint_does_not_get_this_for_free()
     {
@@ -182,11 +149,6 @@ public class SecurityStampHttpTests
             .Throws<SecurityStampChangedException>();
     }
 
-    /// <summary>
-    /// The challenge is opaque random bytes rather than a JWT, precisely so that it cannot be
-    /// presented as one. A signed challenge would be a valid bearer token held out of the API only
-    /// by a validation rule, and rules are configuration a consumer can loosen.
-    /// </summary>
     [Test]
     public async Task A_challenge_token_is_refused_as_a_bearer_token()
     {
@@ -201,7 +163,6 @@ public class SecurityStampHttpTests
         await Assert.That(response.StatusCode).IsEqualTo(HttpStatusCode.Unauthorized);
     }
 
-    /// <summary>A device token is not a bearer token either, and is checked for the same reason.</summary>
     [Test]
     public async Task A_device_token_is_refused_as_a_bearer_token()
     {

@@ -3,16 +3,10 @@ namespace Toamaisutaa.Abstractions;
 /// <summary>
 /// One thing that happened to an account, handed to every <see cref="IAuthenticationEventSink"/>.
 /// </summary>
-/// <remarks>
-/// A hierarchy rather than one record with nullable extras, so a sink that only cares about
-/// lockouts writes one <c>is</c> pattern instead of reading a discriminator and hoping the right
-/// fields are populated.
-/// </remarks>
 public abstract record AuthenticationEvent
 {
     /// <summary>
-    /// A stable name for this kind of event, for a sink that writes a column rather than switching
-    /// on a type. It never changes once shipped, which a type name cannot promise.
+    /// A stable name for this kind of event that never changes once shipped, unlike a type name.
     /// </summary>
     public abstract string Kind { get; }
 
@@ -49,9 +43,8 @@ public sealed record SignInSucceeded : AuthenticationEvent
 /// A sign-in did not issue anything.
 /// </summary>
 /// <remarks>
-/// <see cref="Reason"/> is the internal outcome, not what the caller was told: the endpoints
-/// collapse every failure into one response precisely so a caller cannot tell an unknown account
-/// from a wrong password. A sink is on the inside of that and gets the real answer.
+/// <see cref="Reason"/> is the internal outcome, not what the caller was told; never expose it, or
+/// callers can tell an unknown account from a wrong password.
 /// </remarks>
 public sealed record SignInFailed : AuthenticationEvent
 {
@@ -92,11 +85,8 @@ public sealed record PasswordReset : AuthenticationEvent
 /// link and magic link is sent to are now the ones that link named.
 /// </summary>
 /// <remarks>
-/// Both addresses are carried because the old one is the fact that cannot be recovered from the
-/// account afterwards, and an investigation asking when the recovery mailbox moved has this row and
-/// nothing else. <see cref="PreviousEmail"/> equal to <see cref="Email"/> is the first verification
-/// of an address already on file: that changed the account too, because it is what makes a magic
-/// link work.
+/// <see cref="PreviousEmail"/> equal to <see cref="Email"/> is the first verification of an address
+/// already on file.
 /// </remarks>
 public sealed record EmailChanged : AuthenticationEvent
 {
@@ -132,10 +122,6 @@ public sealed record TwoFactorFailed : AuthenticationEvent
 /// <summary>
 /// A recovery code was spent, which means the authenticator is gone or unreachable.
 /// </summary>
-/// <remarks>
-/// Worth an alert rather than a row. It is the one factor a person can hold on paper, so it is also
-/// the one an attacker can hold on paper.
-/// </remarks>
 public sealed record RecoveryCodeUsed : AuthenticationEvent
 {
     public override string Kind => "recovery-code-used";
@@ -209,9 +195,8 @@ public sealed record SessionRevoked : AuthenticationEvent
 /// not the account owner.
 /// </summary>
 /// <remarks>
-/// The single most alert-worthy event here. It is published alongside the <see cref="SessionRevoked"/>
-/// and <see cref="TrustedDeviceRevoked"/> that reuse detection triggers, because "a theft was
-/// detected" and "these things were taken away" are different facts and an audit table wants both.
+/// Published alongside the <see cref="SessionRevoked"/> and <see cref="TrustedDeviceRevoked"/> that
+/// reuse detection triggers.
 /// </remarks>
 public sealed record RefreshTokenReuseDetected : AuthenticationEvent
 {

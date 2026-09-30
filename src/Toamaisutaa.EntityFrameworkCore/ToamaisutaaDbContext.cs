@@ -4,8 +4,7 @@ using Toamaisutaa.Abstractions;
 namespace Toamaisutaa.EntityFrameworkCore;
 
 /// <summary>
-/// Carries the Toamaisutaa tables on its own, for consumers who would rather not touch their
-/// existing context. The alternative is
+/// Carries the Toamaisutaa tables on its own. The alternative is
 /// <see cref="ToamaisutaaModelBuilderExtensions.ApplyToamaisutaaConfiguration(ModelBuilder, Microsoft.EntityFrameworkCore.Infrastructure.DatabaseFacade)"/>
 /// inside a context you already have.
 /// </summary>
@@ -17,10 +16,9 @@ public class ToamaisutaaDbContext : DbContext
     }
 
     /// <summary>
-    /// For a derived context. Entity Framework hands a subclass its own
-    /// <c>DbContextOptions&lt;TDerived&gt;</c>, which the constructor above cannot accept.
-    /// Protected rather than public so it does not compete for constructor selection when this
-    /// context is registered directly.
+    /// For a derived context, which is handed its own <c>DbContextOptions&lt;TDerived&gt;</c>.
+    /// Protected so it does not compete for constructor selection when this context is registered
+    /// directly.
     /// </summary>
     protected ToamaisutaaDbContext(DbContextOptions options)
         : base(options)

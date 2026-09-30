@@ -62,13 +62,8 @@ internal sealed class TwoFactorService(
         {
             var wrapped = protector.Protect(secret);
 
-            // The second call replaces the first, so a page reload does not leave a trail of live
-            // unconfirmed secrets. It also means a user who scanned the earlier QR code is now
-            // holding a dead one, which is what ConfirmEnrolmentAsync's hint is for.
-            //
-            // Written onto the row already read, not a new instance of it: the store may be tracking
-            // that one, and a second instance with the same key answered every repeat with a 500.
-            // Its wrong-code count carries over too, so starting again cannot wipe it.
+            // Written onto the row already read: the store may be tracking it, and a second instance
+            // with the same key throws. Its wrong-code count carries over, so restarting cannot wipe it.
             var enrolment = existing ?? new ToamaisutaaUserTwoFactor { UserId = userId, CreatedAt = now };
 
             enrolment.SecretCiphertext = wrapped.Ciphertext;
@@ -81,8 +76,7 @@ internal sealed class TwoFactorService(
 
             await enrolments.UpsertAsync(enrolment, cancellationToken);
 
-            // Deliberately says nothing about what was handed out. This response carries the secret
-            // in plaintext, and a log line that quoted any part of it would outlive every rotation.
+            // Never log any part of the secret or URI: a log line outlives every rotation.
             logger.LogInformation("Started two-factor enrolment for user {UserId}. Nothing is enabled until it is confirmed.", userId);
 
             var issuer = settings.Issuer ?? "Toamaisutaa";
@@ -108,15 +102,14 @@ internal sealed class TwoFactorService(
         if (enrolment.IsEnabled)
             throw new TwoFactorEnrolmentException("This account already has a confirmed second factor.");
 
-        // Counted from the last begin, which is when this secret was handed out.
         if (timeProvider.GetUtcNow() - enrolment.UpdatedAt >= options.Value.EnrolmentLifetime)
         {
             logger.LogWarning("Two-factor confirmation refused for user {UserId}: the enrolment has expired.", userId);
             throw new TwoFactorEnrolmentException("This enrolment has expired. Begin again for a new secret, then confirm it.");
         }
 
-        // Counted like every other code, because confirming pays out too: a stolen token finding an
-        // abandoned enrolment could guess its way to switching two-factor on, unthrottled.
+        // Throttled like every other code, or a stolen token could guess its way to enabling
+        // two-factor on an abandoned enrolment.
         var (_, refusal) = await VerifyProofAsync(userId, code, timeProvider.GetUtcNow(), cancellationToken, requireConfirmed: false);
 
         if (refusal == LockedOutRefusal)
@@ -124,9 +117,7 @@ internal sealed class TwoFactorService(
 
         if (refusal is not null)
         {
-            // We cannot tell a wrong code from a stale one - the superseded secret is gone, so
-            // there is nothing left to check the code against. What we can tell is that the row was
-            // rewritten at least once, which makes the stale-QR-code case worth mentioning.
+            // The superseded secret is gone, so a rewritten row is the only hint of a stale QR code.
             var superseded = enrolment.UpdatedAt > enrolment.CreatedAt;
 
             throw new TwoFactorEnrolmentException(superseded
@@ -191,8 +182,8 @@ internal sealed class TwoFactorService(
     }
 
     /// <summary>
-    /// Whoever enrols is the only one who can answer the second factor afterwards, so a bearer token
-    /// alone must not be enough: the one lifted from a log would lock the owner out of their account.
+    /// A bearer token alone must not be enough, or one lifted from a log could enrol and lock the
+    /// owner out.
     /// </summary>
     private async Task RequireEnrolmentProofAsync(
         Guid userId,
@@ -235,15 +226,9 @@ internal sealed class TwoFactorService(
     }
 
     /// <summary>
-    /// The proof disabling and regenerating ask for, counted against the account exactly as a wrong
-    /// code at sign-in or step-up is. Without the count, whoever holds a stolen access token has an
-    /// unthrottled six-digit oracle whose prize is the second factor itself.
+    /// Counted like a wrong code at sign-in, or a stolen access token is an unthrottled six-digit
+    /// oracle whose prize is the second factor itself.
     /// </summary>
-    /// <remarks>
-    /// The count lives on the password credential, alongside wrong passwords, or on the enrolment
-    /// for an account that has no credential - one an identity provider owns, or a passkey-only one.
-    /// Either way it is reserved before the code is checked.
-    /// </remarks>
     private async Task<(TwoFactorVerification Verification, string? Refusal)> VerifyProofAsync(
         Guid userId,
         string proof,
@@ -254,13 +239,11 @@ internal sealed class TwoFactorService(
         var passwords = provider.GetService<IPasswordCredentialStore>();
         var credential = passwords is null ? null : await passwords.FindByUserIdAsync(userId, cancellationToken);
 
-        // The same thresholds a password counts under; defaults when password login is not registered.
         var localLogin = provider.GetService<IOptions<ToamaisutaaLocalLoginOptions>>()?.Value ?? new ToamaisutaaLocalLoginOptions();
 
-        // Counted before the code is looked at, so a locked account neither spends a recovery code nor
-        // learns whether a guess was right, and parallel guesses cannot each find it open. An account
-        // with no password keeps its count on the enrolment instead - an identity provider's account,
-        // or a passkey-only one - so a stolen token cannot guess it unthrottled either.
+        // Reserved before the code is checked, so a locked account neither spends a recovery code nor
+        // learns whether a guess was right, and parallel guesses cannot each find it open. Accounts
+        // without a password count on the enrolment instead.
         bool allowed;
         DateTimeOffset? lockedUntil;
         AttemptReservation? reservation = null;
@@ -291,8 +274,8 @@ internal sealed class TwoFactorService(
 
         if (verification.Succeeded)
         {
-            // The credential's count is the password's too, so only this code's reservation comes back,
-            // never the whole count - the reason step-up gives. An enrolment's count is codes alone.
+            // Only this reservation is refunded, never the whole count, because the credential's count
+            // also holds wrong passwords.
             if (reservation is { } spent)
                 await passwords!.RefundAsync(spent, now, cancellationToken);
             else
@@ -301,8 +284,7 @@ internal sealed class TwoFactorService(
             return (verification, null);
         }
 
-        // Right, but another request spent it first. Given back rather than counted, for the reason
-        // the sign-in path gives.
+        // Right code, but another request spent it first: not a wrong guess, so it is given back.
         if (verification.LostRace)
         {
             if (reservation is { } lost)
@@ -326,8 +308,8 @@ internal sealed class TwoFactorService(
                 credential.LockedOutUntil is { } until ? $"; locked out until {until:O}" : string.Empty);
         }
 
-        // Said once, by the attempt that set it, whichever row the count lives on. A passwordless
-        // account used to lock without an event or a metric, invisible to every audit sink.
+        // Published once, by the attempt that set it, for either counter, or passwordless lockouts
+        // are invisible to audit sinks.
         if (lockedUntil is { } lockedOutUntil)
         {
             provider.GetService<ToamaisutaaMetrics>()?.LockedOut();
@@ -350,8 +332,7 @@ internal sealed class TwoFactorService(
     {
         var plaintext = recoveryCodeProvider.Generate(options.Value.RecoveryCodeCount);
 
-        // Replaces the whole set rather than adding to it: regeneration has to invalidate every
-        // previous code, or a stolen printout stays good forever.
+        // Replaces the whole set, or a stolen printout stays good forever.
         await recoveryCodes.ReplaceAllAsync(
             userId,
             [.. plaintext.Select(code => new ToamaisutaaRecoveryCode
@@ -368,15 +349,9 @@ internal sealed class TwoFactorService(
     }
 
     /// <summary>
-    /// Moves the stamp, ends the sessions, and takes the trusted devices with it.
+    /// Devices are revoked explicitly because the stamp check is lazy and would leave dead devices
+    /// looking live in the user's list.
     /// </summary>
-    /// <remarks>
-    /// The device revocation is explicit rather than left to the stamp check on the next
-    /// presentation. The check is lazy by design - it fires when a token is offered - so a row that
-    /// can never be honoured again would still sit in the user's device list looking live until the
-    /// cleanup sweep. Revoking here keeps the list honest; the stamp check stays as the guarantee
-    /// that anything missed is never actually accepted.
-    /// </remarks>
     private async Task BumpSecurityStampAsync(Guid userId, string reason, DateTimeOffset now, CancellationToken cancellationToken)
     {
         await users.UpdateSecurityStampAsync(userId, SecureTokens.Create(), cancellationToken);
@@ -388,10 +363,6 @@ internal sealed class TwoFactorService(
             cancellationToken);
     }
 
-    /// <summary>
-    /// The proof these endpoints ask for can be a recovery code, and one spent to disable a second
-    /// factor is the same fact as one spent to sign in: the authenticator is gone.
-    /// </summary>
     private async Task PublishRecoveryCodeUseAsync(
         Guid userId,
         TwoFactorVerification verification,

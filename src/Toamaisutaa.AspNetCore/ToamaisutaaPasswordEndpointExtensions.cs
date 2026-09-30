@@ -16,16 +16,7 @@ public static class ToamaisutaaPasswordEndpointExtensions
     /// Maps the local sign-in endpoints under <c>LocalLogin:EndpointPrefix</c>.
     /// </summary>
     /// <remarks>
-    /// <para>
-    /// The anonymous endpoints throttle themselves through a limiter this package owns, so there is
-    /// no middleware for a consumer to remember to add.
-    /// </para>
-    /// <para>
-    /// Maps into whatever builder it is handed, so <c>app.MapGroup("/api/v1")</c> nests these under
-    /// that group and any conventions on it apply. <paramref name="endpointNamePrefix"/> is what
-    /// makes that work more than once: endpoint names are unique per application, so mapping the
-    /// same set into a second group needs distinct ones.
-    /// </para>
+    /// The anonymous endpoints throttle themselves, so there is no rate-limiting middleware to add.
     /// </remarks>
     /// <param name="endpoints">The builder to map into. A <c>RouteGroupBuilder</c> is one.</param>
     /// <param name="endpointNamePrefix">
@@ -50,10 +41,7 @@ public static class ToamaisutaaPasswordEndpointExtensions
             .AddEndpointFilter<PasswordRateLimitFilter>()
             .WithName($"{endpointNamePrefix}ToamaisutaaLogin")
             .WithSummary("Signs in with a password, or asks for a second factor.")
-            // Two different bodies share the 200 here, and OpenAPI keys a response on its status
-            // code, so only one schema can be declared. The token pair is declared because it is
-            // the common case; the challenge is spelled out here because a client that misses the
-            // branch breaks the moment any user enrols.
+            // OpenAPI declares one schema per status code, so the second 200 shape is spelled out in prose.
             .WithDescription(
                 "**Two success shapes, both 200.** Usually a token pair. For a user with a "
                 + "confirmed second factor it is instead a challenge and no tokens:\n\n"
@@ -65,17 +53,11 @@ public static class ToamaisutaaPasswordEndpointExtensions
             .Produces<ErrorResponse>(StatusCodes.Status401Unauthorized)
             .Produces(StatusCodes.Status429TooManyRequests);
 
-        // Not mapped at all when signing is symmetric, the same reasoning self-registration uses
-        // below. An HS256 deployment has no public half, and answering an empty set would tell a
-        // gateway that this issuer publishes nothing rather than that it was never asked to - which
-        // is a 200 and a silent refusal of every token afterwards.
+        // Not mapped under HS256: an empty key set would be a 200 that makes a gateway silently refuse every token.
         var signingKeys = endpoints.ServiceProvider.GetRequiredService<LocalSigningKeyRing>();
 
         if (signingKeys.HasPublicKeys)
         {
-            // Read once. The keys are fixed for the life of the process, and rebuilding the
-            // document per request would export the same parameters again on a route a gateway
-            // polls.
             var jwks = signingKeys.PublicKeys();
 
             group.MapGet(ToamaisutaaDefaults.JwksEndpointPattern, () => Results.Ok(jwks))
@@ -125,10 +107,8 @@ public static class ToamaisutaaPasswordEndpointExtensions
                 .Produces(StatusCodes.Status429TooManyRequests);
         }
 
-        // Explicitly authorised rather than relying on the fallback policy, which an application is
-        // free to turn off.
-        // Limited like the anonymous endpoints: it checks a password, and a stolen access token is
-        // all it takes to ask.
+        // Explicitly authorised because an application may turn the fallback policy off, and limited
+        // because it checks a password.
         group.MapPost("/password", ChangePasswordAsync)
             .RequireAuthorization()
             .AddEndpointFilter<PasswordRateLimitFilter>()
@@ -161,8 +141,6 @@ public static class ToamaisutaaPasswordEndpointExtensions
             .Produces(StatusCodes.Status204NoContent)
             .Produces<ValidationErrorResponse>(StatusCodes.Status400BadRequest);
 
-        // Same reasoning as the two blocks below: not mapped at all without an
-        // IEmailVerificationNotifier, because there is nowhere for the token to go.
         if (endpoints.ServiceProvider.GetService<IEmailVerificationNotifier>() is not null)
         {
             group.MapPost("/email", ChangeEmailAsync)
@@ -194,7 +172,6 @@ public static class ToamaisutaaPasswordEndpointExtensions
                 .Produces<ValidationErrorResponse>(StatusCodes.Status409Conflict);
         }
 
-        // Same reasoning again: no IMagicLinkNotifier, nowhere for the token to go, no endpoints.
         if (endpoints.ServiceProvider.GetService<IMagicLinkNotifier>() is not null)
         {
             group.MapPost("/magic-link", RequestMagicLink)
@@ -214,8 +191,6 @@ public static class ToamaisutaaPasswordEndpointExtensions
                 .AddEndpointFilter<PasswordRateLimitFilter>()
                 .WithName($"{endpointNamePrefix}ToamaisutaaVerifyMagicLink")
                 .WithSummary("Redeems a sign-in link for a token pair, or asks for a second factor.")
-                // The same two success shapes /auth/login has, and for the same reason: one status
-                // code can declare one schema, so the branch is spelled out here.
                 .WithDescription(
                     "**Two success shapes, both 200.** Usually a token pair, with `amr` carrying `email` rather than "
                     + "`pwd` - no password was typed. For a user with a confirmed second factor it is instead a "
@@ -229,11 +204,8 @@ public static class ToamaisutaaPasswordEndpointExtensions
                 .Produces(StatusCodes.Status429TooManyRequests);
         }
 
-        // What the three admin endpoints below are authorised by. They act on whichever account the
-        // route names rather than on the caller's own, so being signed in is not enough for them:
-        // the default policy is RequireAuthenticatedUser and nothing more, which would be every
-        // account that ever registered. Null when no admin role is configured, and then they are
-        // not mapped at all rather than mapped behind a policy that does not exist.
+        // The admin endpoints act on any account by id, so they need the admin policy, not the default,
+        // and are not mapped at all when no admin role is configured.
         var adminPolicy = AdminPolicyName(endpoints.ServiceProvider);
 
         var hasAdminPasswordNotifier = endpoints.ServiceProvider.GetService<IAdminPasswordIssuedNotifier>() is not null;
@@ -250,9 +222,6 @@ public static class ToamaisutaaPasswordEndpointExtensions
                     + "Oidc:AdminRole names a role.");
         }
 
-        // Not mapped at all when no IAdminPasswordIssuedNotifier is registered, the same reasoning
-        // as self-registration above: an application that never provisions accounts for someone else
-        // should not see endpoints that would only ever throw.
         if (hasAdminPasswordNotifier && adminPolicy is not null)
         {
             group.MapPost("/users", CreateUserAsync)
@@ -285,7 +254,6 @@ public static class ToamaisutaaPasswordEndpointExtensions
                 .Produces<ErrorResponse>(StatusCodes.Status502BadGateway);
         }
 
-        // Same reasoning: not mapped at all without an IInvitationNotifier.
         if (hasInvitationNotifier)
         {
             if (adminPolicy is not null)
@@ -318,9 +286,7 @@ public static class ToamaisutaaPasswordEndpointExtensions
                     .Produces(StatusCodes.Status404NotFound);
             }
 
-            // Mapped whether or not an admin role is configured, unlike the endpoint that issues the
-            // token: this one is redeemed by the invited person, and the invitation it completes may
-            // have been created by a worker calling CreateInvitationAsync rather than over HTTP.
+            // Mapped even without an admin role, because invitations may be created by a worker rather than over HTTP.
             group.MapPost("/invitations/complete", CompleteInvitationAsync)
                 .AllowAnonymous()
                 .WithName($"{endpointNamePrefix}ToamaisutaaCompleteInvitation")
@@ -338,10 +304,7 @@ public static class ToamaisutaaPasswordEndpointExtensions
     }
 
     /// <summary>
-    /// The admin policy's name when <c>AddToamaisutaaAuthorization</c> registered one, and null
-    /// otherwise. Read off the same condition that registers it - an admin role is configured - so
-    /// "there is a name" and "there is a policy" cannot come apart and leave a route asking for one
-    /// that was never added.
+    /// Uses the same condition that registers the policy, so a route can never require one that was never added.
     /// </summary>
     private static string? AdminPolicyName(IServiceProvider services)
     {
@@ -351,8 +314,7 @@ public static class ToamaisutaaPasswordEndpointExtensions
     }
 
     /// <summary>
-    /// One body for every way a sign-in can fail. Wrong password, no such account and locked out are
-    /// the same answer, because telling them apart tells a caller which user names are real.
+    /// One body for every failure, because telling them apart tells a caller which user names are real.
     /// </summary>
     private static IResult SignInFailed() =>
         Results.Json(
@@ -382,9 +344,6 @@ public static class ToamaisutaaPasswordEndpointExtensions
             },
             cancellationToken);
 
-        // A second shape on the success path, not a new status code: the password was right, and
-        // what comes back is what to do next rather than an error. Clients that assumed tokens do
-        // have to change, which is why this is a breaking release.
         if (result.Outcome == SignInOutcome.TwoFactorRequired && result.Challenge is { } challenge)
         {
             return Results.Ok(new TwoFactorChallengeResponse
@@ -397,10 +356,7 @@ public static class ToamaisutaaPasswordEndpointExtensions
         if (result.Succeeded)
             return SignInSucceeded(result);
 
-        // Every refusal takes at least as long as the floor. The bodies were already identical, but
-        // the clock was not: a wrong password wrote the failure count and an unknown name wrote
-        // nothing, and an old hash still on a slower algorithm took far longer than the dummy an
-        // unknown name is checked against. Either difference told a caller which accounts exist.
+        // Every refusal takes at least the floor, so response time cannot reveal which accounts exist.
         var remaining = options.Value.SignInRefusalFloor - Stopwatch.GetElapsedTime(started);
         if (remaining > TimeSpan.Zero)
             await Task.Delay(remaining, cancellationToken);
@@ -409,25 +365,9 @@ public static class ToamaisutaaPasswordEndpointExtensions
     }
 
     /// <summary>
-    /// The one place a successful sign-in is shaped, shared by <c>/auth/login</c>,
-    /// <c>/auth/refresh</c>, <c>/auth/register</c> and <c>/auth/2fa/verify</c>.
+    /// The one place a successful sign-in is shaped, so every endpoint returns the rotated device token;
+    /// dropping it leaves the caller a dead token whose reuse revokes the family.
     /// </summary>
-    /// <remarks>
-    /// <para>
-    /// Shared because it was not, and the device token this returns went missing: a device-trusted
-    /// sign-in rotates the token, and an endpoint that returned only the token pair left the caller
-    /// holding a dead one. The next sign-in then presented an already-rotated token, which is the
-    /// theft signal, and the family was revoked. One use and the device silently stopped working.
-    /// </para>
-    /// <para>
-    /// <b>snake_case, deliberately.</b> These are the RFC 6749 field names - <c>access_token</c>,
-    /// <c>token_type</c>, <c>expires_in</c> - so anything that already speaks OAuth token endpoints
-    /// reads this without a mapping. Endpoints that return this package's own shapes
-    /// (<c>/auth/2fa</c>, <c>/auth/devices</c>) stay camelCase, because they are not token responses
-    /// and no standard names them. <see cref="Toamaisutaa.Abstractions.TokenResponse"/> pins each
-    /// name, so the decision survives a rename and an application's own JSON naming policy alike.
-    /// </para>
-    /// </remarks>
     internal static IResult SignInSucceeded(SignInResult result) =>
         Tokens(result.Tokens!, result.RecoveryCodesRunningLow, result.TrustedDevice, StatusCodes.Status200OK);
 
@@ -444,8 +384,7 @@ public static class ToamaisutaaPasswordEndpointExtensions
                 ExpiresIn = tokens.ExpiresIn,
                 TokenType = tokens.TokenType,
 
-                // true or absent, never false: the shape 0.2.0 shipped, and clients read it as
-                // truthy rather than comparing it.
+                // True or absent, never false: clients read it as truthy.
                 RecoveryCodesRunningLow = recoveryCodesRunningLow ? true : null,
                 DeviceToken = trustedDevice?.Token,
                 DeviceExpiresIn = trustedDevice?.ExpiresIn,
@@ -473,7 +412,6 @@ public static class ToamaisutaaPasswordEndpointExtensions
         if (request is not null && !string.IsNullOrEmpty(request.RefreshToken))
             await signIn.SignOutAsync(request.RefreshToken, cancellationToken);
 
-        // Always the same answer: whether that token existed is not the caller's business.
         return Results.NoContent();
     }
 
@@ -490,8 +428,7 @@ public static class ToamaisutaaPasswordEndpointExtensions
         if (result.Succeeded)
             return Tokens(result.Tokens!, false, null, StatusCodes.Status201Created);
 
-        // Registration cannot hide whether an account exists without an email round trip, which
-        // this package does not do. Documented, and why it is off by default.
+        // 409 reveals the account exists, which is documented and why self-registration is off by default.
         return result.Conflict
             ? Results.Json(new ValidationErrorResponse { Errors = result.Errors }, statusCode: StatusCodes.Status409Conflict)
             : Results.BadRequest(new ValidationErrorResponse { Errors = result.Errors });
@@ -507,8 +444,6 @@ public static class ToamaisutaaPasswordEndpointExtensions
         if (request is null || string.IsNullOrEmpty(request.NewPassword))
             return Results.BadRequest();
 
-        // Resolves the local row for whoever is calling, including a caller holding an identity
-        // provider's token who is adding a password to their account for the first time.
         var user = await currentUser.GetOrProvisionAsync(cancellationToken);
 
         var result = await accounts.SetPasswordAsync(
@@ -528,8 +463,7 @@ public static class ToamaisutaaPasswordEndpointExtensions
         MailRequestQueue queue,
         MailRequestCooldown cooldown)
     {
-        // Queued rather than awaited, so an address with an account takes no longer to answer than
-        // one without: waiting on the mail server here told the clock what the body would not.
+        // Queued rather than awaited, so response time cannot reveal whether the address has an account.
         if (request is not null && !string.IsNullOrEmpty(request.Email) && cooldown.TryEnter("reset", request.Email))
         {
             var email = request.Email;
@@ -542,8 +476,6 @@ public static class ToamaisutaaPasswordEndpointExtensions
             }
         }
 
-        // Unknown address, no local credential, and a link on its way are one answer. The log tells
-        // them apart.
         return Results.NoContent();
     }
 
@@ -562,8 +494,6 @@ public static class ToamaisutaaPasswordEndpointExtensions
             : Results.BadRequest(new ValidationErrorResponse { Errors = result.Errors });
     }
 
-    /// <summary>The configured cooldown as a person reads it. "A minute" was hard-coded, and wrong
-    /// for any deployment that set a different one.</summary>
     private static string Spoken(TimeSpan period) => period.TotalSeconds < 60
         ? $"{Math.Ceiling(period.TotalSeconds)} seconds"
         : Math.Ceiling(period.TotalMinutes) is 1 ? "a minute" : $"{Math.Ceiling(period.TotalMinutes)} minutes";
@@ -581,10 +511,7 @@ public static class ToamaisutaaPasswordEndpointExtensions
         var user = await currentUser.GetOrProvisionAsync(cancellationToken);
         var account = user.Id.ToString();
 
-        // Per account rather than per recipient: the recipient is whatever the caller types, so a
-        // cooldown on it would only slow down somebody sending to one inbox. The account is the one
-        // thing they cannot change between requests. Answered openly, because the caller is signed
-        // in and asking about their own account.
+        // Per account, because the recipient is whatever the caller types; answered openly since it is their own account.
         if (!cooldown.TryEnter("email-change", account))
         {
             return Results.Json(
@@ -638,7 +565,7 @@ public static class ToamaisutaaPasswordEndpointExtensions
         MailRequestQueue queue,
         MailRequestCooldown cooldown)
     {
-        // Queued for the same reason as a reset: the answer must not wait on whether mail is sent.
+        // Queued so response time cannot reveal whether the address has an account.
         if (request is not null && !string.IsNullOrEmpty(request.Email) && cooldown.TryEnter("magic-link", request.Email))
         {
             var email = request.Email;
@@ -650,8 +577,6 @@ public static class ToamaisutaaPasswordEndpointExtensions
             }
         }
 
-        // Unknown address, no local credential, an unverified address and a link on its way are one
-        // answer. The log tells them apart.
         return Results.NoContent();
     }
 
@@ -673,7 +598,6 @@ public static class ToamaisutaaPasswordEndpointExtensions
             },
             cancellationToken);
 
-        // The same second success shape /auth/login has, finished at the same /auth/2fa/verify.
         if (result.Outcome == SignInOutcome.TwoFactorRequired && result.Challenge is { } challenge)
         {
             return Results.Ok(new TwoFactorChallengeResponse
@@ -716,8 +640,7 @@ public static class ToamaisutaaPasswordEndpointExtensions
     {
         var result = await accounts.AdminSetPasswordAsync(userId, request?.Password, cancellationToken);
 
-        // Not a 204: the password was set and the sessions are gone, but the value reached nobody,
-        // so a caller that read this as success would be leaving an account nobody can open.
+        // Not a 204: the password was set but reached nobody, so success would leave an account nobody can open.
         if (result.NotificationFailed)
         {
             return Results.Json(
@@ -759,8 +682,7 @@ public static class ToamaisutaaPasswordEndpointExtensions
 
         var result = await accounts.CreateInvitationAsync(request.Email, cancellationToken);
 
-        // Nothing the caller can correct, so not a 400: the reservation was rolled back and the
-        // same request will work once the notifier does.
+        // Not a 400: nothing the caller can correct, and the same request works once the notifier does.
         if (result.NotificationFailed)
         {
             return Results.Json(

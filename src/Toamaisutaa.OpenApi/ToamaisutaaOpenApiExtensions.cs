@@ -9,12 +9,6 @@ namespace Microsoft.Extensions.DependencyInjection;
 /// <summary>
 /// Declares Toamaisutaa's security schemes on a generated OpenAPI document.
 /// </summary>
-/// <remarks>
-/// The one public type in this package. A security scheme is a document-level declaration, so it
-/// used to be thirty-five lines every application pasted into its own <c>Program.cs</c> - and a
-/// pasted transformer drifts: one deployment hardcoded Keycloak's authorization URL into its copy
-/// while running Pocket ID, so its Authorize button pointed at an issuer that was not there.
-/// </remarks>
 public static class ToamaisutaaOpenApiExtensions
 {
     /// <summary>
@@ -23,9 +17,8 @@ public static class ToamaisutaaOpenApiExtensions
     /// <param name="services">The service collection.</param>
     /// <param name="configuration">Configuration root or section parent holding <paramref name="sectionName"/>.</param>
     /// <param name="documentName">Document name, matching <c>AddOpenApi</c>'s own default.</param>
-    /// <param name="configureOptions">Runs after the schemes are added, for an application that has
-    /// transformers of its own. Calling <c>AddOpenApi</c> a second time for the same document would
-    /// register everything twice.</param>
+    /// <param name="configureOptions">Runs after the schemes are added. Use it for your own transformers
+    /// instead of calling <c>AddOpenApi</c> again, which would register everything twice.</param>
     /// <param name="sectionName">Configuration section the OIDC settings are read from.</param>
     public static IServiceCollection AddToamaisutaaOpenApi(
         this IServiceCollection services,
@@ -39,9 +32,7 @@ public static class ToamaisutaaOpenApiExtensions
 
         services.AddOptions<ToamaisutaaOidcOptions>().Bind(configuration.GetSection(sectionName));
 
-        // The same named client the discovery health check uses, because it is the same document
-        // fetched from the same issuer: a proxy or a private certificate authority is configured
-        // once and both reach it.
+        // Shares the discovery health check's named client, so a proxy or private CA is configured once.
         services.AddHttpClient(ToamaisutaaDefaults.DiscoveryHttpClientName);
 
         services.AddOpenApi(documentName, options =>
@@ -59,18 +50,14 @@ public static class ToamaisutaaOpenApiExtensions
     /// </summary>
     /// <remarks>
     /// Reads <see cref="ToamaisutaaOidcOptions"/> from the container, which
-    /// <c>AddToamaisutaaBearer</c> and <c>AddToamaisutaaAuthorization</c> already bind. Where
-    /// nothing has bound them there is no authority to describe, and the document gets the bearer
-    /// scheme alone.
+    /// <c>AddToamaisutaaBearer</c> and <c>AddToamaisutaaAuthorization</c> bind. Unbound, the document
+    /// gets the bearer scheme alone.
     /// </remarks>
     public static OpenApiOptions AddToamaisutaaSecuritySchemes(this OpenApiOptions options)
     {
         ArgumentNullException.ThrowIfNull(options);
 
-        // One per document rather than one per request. The transformer below runs on every request
-        // for the document, and the discovery answer it needs changes about as often as the issuer
-        // is redeployed - so this is what keeps a reader of an anonymous /openapi/v1.json from
-        // setting the rate at which this process reaches for the issuer.
+        // One per document, not per request, so readers of the anonymous document cannot set the rate of issuer fetches.
         var metadata = new AuthorizationServerMetadataCache();
 
         options.AddDocumentTransformer((document, context, cancellationToken) =>
@@ -78,9 +65,7 @@ public static class ToamaisutaaOpenApiExtensions
 
         options.AddOperationTransformer((operation, context, _) =>
         {
-            // The document-level requirement would otherwise put a padlock on /auth/login too,
-            // which is exactly backwards: it is the endpoint you call because you have no token
-            // yet. An empty requirement list on an operation overrides the document's.
+            // An empty requirement list overrides the document's, so anonymous endpoints like /auth/login get no padlock.
             if (context.Description.ActionDescriptor.EndpointMetadata.OfType<IAllowAnonymous>().Any())
                 operation.Security = [];
 

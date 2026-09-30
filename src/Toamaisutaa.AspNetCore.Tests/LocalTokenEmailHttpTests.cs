@@ -1,15 +1,10 @@
 namespace Toamaisutaa.AspNetCore.Tests;
 
 /// <summary>
-/// A local token's <c>email</c> is the same claim an identity provider's carries, and everything
-/// downstream reads it as a proven address. So it only carries one that was.
+/// Downstream policies read a local token's <c>email</c> as a proven address, so it only carries a verified one.
 /// </summary>
 public class LocalTokenEmailHttpTests
 {
-    /// <summary>
-    /// Registration takes whatever address it is typed. The token it returned asserted that address,
-    /// so registering as somebody else's passed every policy keyed on their email.
-    /// </summary>
     [Test]
     public async Task A_token_carries_no_email_until_the_address_is_verified()
     {
@@ -36,7 +31,6 @@ public class LocalTokenEmailHttpTests
         await Assert.That(Account.DecodeClaims(refreshed.String("access_token")!).String("email")).IsEqualTo(account.Email);
     }
 
-    /// <summary>Step-up issues its token by a path of its own, and has to answer the same way.</summary>
     [Test]
     public async Task A_step_up_token_carries_the_verified_address_too()
     {

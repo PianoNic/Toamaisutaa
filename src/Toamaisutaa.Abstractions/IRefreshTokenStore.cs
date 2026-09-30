@@ -12,9 +12,8 @@ public interface IRefreshTokenStore
     /// - to rotated, in a single conditional write. False when another request got there first.
     /// </returns>
     /// <remarks>
-    /// The flow reads the row, sees it live, then calls this. Two requests between those two steps
-    /// both saw it live; an unconditional write let both through and forked the family without
-    /// either one being detected as reuse. The answer here is what decides which of them won.
+    /// Must be conditional: an unconditional write lets two concurrent refreshes both through and
+    /// forks the family without either being detected as reuse.
     /// </remarks>
     Task<bool> MarkRotatedAsync(Guid tokenId, DateTimeOffset rotatedAt, CancellationToken cancellationToken = default);
 
@@ -29,11 +28,7 @@ public interface IRefreshTokenStore
     /// the family has been signed out, revoked or never existed.
     /// </summary>
     /// <remarks>
-    /// Two jobs, one read: it answers "is this session still alive" for step-up, and it hands back
-    /// the <c>AuthenticationMethods</c> that the step-up has to union into rather than overwrite.
-    /// A family has at most one live row by construction - a rotation marks the old one rotated
-    /// before creating the next - and an implementation should treat more than one as a bug rather
-    /// than picking.
+    /// A family has at most one live row by construction; treat more than one as a bug rather than picking.
     /// </remarks>
     Task<ToamaisutaaRefreshToken?> FindLiveByFamilyAsync(Guid familyId, CancellationToken cancellationToken = default);
 
@@ -41,10 +36,7 @@ public interface IRefreshTokenStore
     /// The live row of every family this user has, which is what a user thinks of as "my sessions".
     /// </summary>
     /// <remarks>
-    /// <b>No default implementation, for the reason <see cref="UpdateSecondFactorAsync"/> has
-    /// none.</b> A default returning nothing would show a user an empty session list while their
-    /// sessions were live, and answer 404 to every attempt to revoke one - a feature that looks
-    /// implemented and protects nobody. A compile error is the cheaper failure.
+    /// No default implementation: an empty default would hide live sessions from their owner.
     /// </remarks>
     Task<IReadOnlyList<ToamaisutaaRefreshToken>> ListActiveAsync(Guid userId, CancellationToken cancellationToken = default);
 
@@ -54,21 +46,13 @@ public interface IRefreshTokenStore
     /// </summary>
     /// <remarks>
     /// <para>
-    /// <b>The one in-place mutation of a refresh row in this package.</b> Everything else rotates.
-    /// Reach for it only from the step-up path.
+    /// The one in-place mutation of a refresh row; call it only from the step-up path. Apply it to
+    /// the family's live row, not a token id, because the client may have refreshed since its access
+    /// token was minted and the freshness would otherwise vanish at the next refresh.
     /// </para>
     /// <para>
-    /// Keyed on the family and applied to its live row - the one with neither <c>RotatedAt</c> nor
-    /// <c>RevokedAt</c> set - rather than on a token id. A client may refresh between receiving its
-    /// access token and stepping up, so the row the token was minted alongside is already rotated;
-    /// updating that one would leave the live row stale and the freshness would vanish at the next
-    /// refresh. That is the bug this whole path exists to prevent, reintroduced by the fix for it.
-    /// </para>
-    /// <para>
-    /// <b>No default implementation, deliberately.</b> This breaks a consumer with a store of their
-    /// own, and a default that quietly did nothing would make step-up appear to succeed and expire
-    /// one access-token lifetime later with nothing failing in between. A compile error is the
-    /// cheaper failure.
+    /// No default implementation: a no-op would make step-up appear to succeed and silently expire
+    /// one access-token lifetime later.
     /// </para>
     /// </remarks>
     Task<bool> UpdateSecondFactorAsync(
@@ -82,9 +66,8 @@ public interface IRefreshTokenStore
     /// rotated or not. Nothing calls this unless the application opts into the cleanup service or
     /// schedules it itself.</summary>
     /// <remarks>
-    /// The cleanup service passes a cutoff well before now, so a family's rotated rows outlive their
-    /// own expiry for as long as the family could still be refreshed. They are what reuse detection
-    /// works from. A caller scheduling this itself should do the same rather than passing now.
+    /// Pass a cutoff well before now, as the cleanup service does: rotated rows are what reuse
+    /// detection works from while the family can still be refreshed.
     /// </remarks>
     Task<int> DeleteExpiredAsync(DateTimeOffset expiredBefore, CancellationToken cancellationToken = default);
 }

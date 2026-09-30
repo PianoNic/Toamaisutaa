@@ -2,15 +2,8 @@ using Toamaisutaa.Abstractions;
 
 namespace Toamaisutaa.Core.Tests;
 
-/// <summary>
-/// The emailed sign-in link. Two rules carry the whole feature: it only ever goes to an address
-/// somebody has proven, and it says <c>email</c> in <c>amr</c> rather than <c>pwd</c>, because no
-/// password was typed.
-/// </summary>
 public class MagicLinkTests
 {
-    // ── Asking for one ──
-
     [Test]
     public async Task AVerifiedAddressGetsALink()
     {
@@ -37,8 +30,7 @@ public class MagicLinkTests
         await Assert.That(harness.Passwords.MagicLinkTokens.Single().TokenHash).IsNotEqualTo(raw);
     }
 
-    // The rule the whole feature rests on: this link is a session, so it may not be sent to an
-    // address that could be a typo or could since have changed hands.
+    // The link is a session, so it may not go to an address that could be a typo or have changed hands.
     [Test]
     public async Task AnUnverifiedAddressGetsNothing()
     {
@@ -89,8 +81,7 @@ public class MagicLinkTests
         await Assert.That(outcome).IsEqualTo(MagicLinkRequestOutcome.NotificationFailed);
     }
 
-    // A relay that stops answering raises TaskCanceledException on its own timeout, which is not
-    // this request being cancelled and must not escape as one.
+    // HttpClient's own timeout raises TaskCanceledException, which is not this request being cancelled.
     [Test]
     public async Task ANotifierThatTimesOutIsReportedRatherThanRaised()
     {
@@ -132,8 +123,6 @@ public class MagicLinkTests
         await Assert.That(result.Outcome).IsEqualTo(SignInOutcome.InvalidMagicLink);
     }
 
-    // ── Redeeming one ──
-
     [Test]
     public async Task RedeemingIssuesATokenPair()
     {
@@ -147,8 +136,6 @@ public class MagicLinkTests
         await Assert.That(result.Tokens!.RefreshToken).IsNotEmpty();
     }
 
-    // The claim the issue asks for, and the one a policy reads. pwd is absent because no password
-    // was presented, which is the whole difference between this and /auth/login.
     [Test]
     public async Task TheIssuedTokenSaysEmailAndNotPwd()
     {
@@ -164,9 +151,8 @@ public class MagicLinkTests
     }
 
     /// <summary>
-    /// The rule that has been the bug three phases running: a claim that sign-in gets right and
-    /// refresh recomputes goes wrong one access-token lifetime later, where it reads as a policy
-    /// failure rather than a refresh failure.
+    /// A claim that refresh recomputes goes wrong one access-token lifetime after sign-in, where it
+    /// reads as a policy failure rather than a refresh failure.
     /// </summary>
     [Test]
     public async Task ARefreshedMagicLinkSessionStillSaysEmail()
@@ -222,8 +208,6 @@ public class MagicLinkTests
         await Assert.That(result.Outcome).IsEqualTo(SignInOutcome.InvalidMagicLink);
     }
 
-    // ── Two-factor enforcement ──
-
     [Test]
     public async Task AnEnrolledAccountIsChallengedRatherThanSignedIn()
     {
@@ -238,8 +222,6 @@ public class MagicLinkTests
         await Assert.That(result.Tokens).IsNull();
     }
 
-    // The first factor is carried on the challenge rather than assumed, so finishing one that a
-    // magic link started does not put pwd on the token.
     [Test]
     public async Task FinishingTheChallengeSaysEmailOtpMfa()
     {
@@ -263,8 +245,6 @@ public class MagicLinkTests
         await Assert.That(methods).DoesNotContain("pwd");
     }
 
-    // The other side of the same change: an ordinary password sign-in still says pwd, which is the
-    // thing carrying the methods on the challenge could quietly have broken.
     [Test]
     public async Task APasswordChallengeStillSaysPwdOtpMfa()
     {
@@ -285,8 +265,6 @@ public class MagicLinkTests
         await Assert.That(methods).DoesNotContain(ToamaisutaaDefaults.MagicLinkMethod);
     }
 
-    // A link spends itself on the way to the challenge. Anything else leaves a live credential in a
-    // mailbox that has already been read once.
     [Test]
     public async Task ALinkThatReachedAChallengeIsAlreadySpent()
     {
@@ -302,8 +280,7 @@ public class MagicLinkTests
         await Assert.That(again.Outcome).IsEqualTo(SignInOutcome.InvalidMagicLink);
     }
 
-    /// <summary>Proves the registered address, which is what a magic link requires. Re-verifying the
-    /// address an account already has is the documented way to do it.</summary>
+    /// <summary>Re-verifying the address an account already has is the documented way to prove it.</summary>
     private static async Task VerifyEmailAsync(PasswordHarness harness, ToamaisutaaUser user)
     {
         await harness.Accounts.RequestEmailChangeAsync(user.Id, user.Email!, "correct horse battery");

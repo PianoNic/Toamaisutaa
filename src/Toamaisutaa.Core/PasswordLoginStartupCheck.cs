@@ -5,10 +5,6 @@ using Toamaisutaa.Abstractions;
 
 namespace Toamaisutaa.Core;
 
-/// <summary>
-/// Refuses to start rather than failing on the first login. Everything here is a misconfiguration
-/// that is invisible until someone tries to sign in, which is the worst time to discover it.
-/// </summary>
 internal sealed class PasswordLoginStartupCheck(
     IServiceCollection services,
     IOptions<ToamaisutaaLocalLoginOptions> options,
@@ -35,8 +31,7 @@ internal sealed class PasswordLoginStartupCheck(
         if (problems.Count > 0)
             throw StartupProblems.Refusal("Toamaisutaa password login is registered but not usable:", problems);
 
-        // Compute the placeholder hash now, so the first sign-in against an unknown identifier is
-        // not the one request that pays for it and stands out on the clock.
+        // Warmed now so the first unknown-identifier sign-in does not stand out on the clock.
         dummy.Warm();
 
         return Task.CompletedTask;
@@ -92,11 +87,6 @@ internal sealed class PasswordLoginStartupCheck(
         }
     }
 
-    /// <summary>
-    /// The one combination that locks people out quietly: reset needs a verified address, and
-    /// nothing in the application can verify one. Every account then has exactly one route back into
-    /// a forgotten password, and it is an administrator doing it by hand.
-    /// </summary>
     private void CheckEmailVerification(ToamaisutaaLocalLoginOptions settings, List<string> problems)
     {
         if (settings.RequireVerifiedEmailForPasswordReset && !IsRegistered(typeof(IEmailVerificationNotifier)))
@@ -107,8 +97,6 @@ internal sealed class PasswordLoginStartupCheck(
                 + "turn the option off.");
         }
 
-        // The same shape, and it fails just as quietly: a magic link only ever goes to a verified
-        // address, so with no way to verify one the endpoint answers 204 forever and sends nothing.
         if (IsRegistered(typeof(IMagicLinkNotifier)) && !IsRegistered(typeof(IEmailVerificationNotifier)))
         {
             problems.Add(
@@ -133,9 +121,8 @@ internal sealed class PasswordLoginStartupCheck(
             return;
         }
 
-        // Checked whenever it is present, active or not. A symmetric key left in place alongside an
-        // asymmetric list is not dead weight - it is what keeps the HS256 tokens issued before the
-        // switch validating until they expire.
+        // Checked even when inactive: alongside an asymmetric list it still validates HS256 tokens
+        // issued before the switch.
         if (!hasSymmetric)
             return;
 
@@ -192,9 +179,6 @@ internal sealed class PasswordLoginStartupCheck(
         if (settings.HashSizeBytes < defaults.HashSizeBytes)
             problems.Add($"LocalLogin:HashSizeBytes is {settings.HashSizeBytes}; {defaults.HashSizeBytes} is the floor.");
 
-        // The ceilings are what the hashers refuse to read back out of a stored row. A value above
-        // one of them hashes without complaint and then fails to verify, which reads as a wrong
-        // password rather than as a configuration mistake.
         if (settings.Pbkdf2Iterations > Pbkdf2PasswordHasher.MaxIterations)
         {
             problems.Add(

@@ -2,13 +2,6 @@ using System.Net;
 
 namespace Toamaisutaa.AspNetCore.Tests;
 
-/// <summary>
-/// The shape of a sign-in on the wire, asserted by field name.
-/// </summary>
-/// <remarks>
-/// The casing here is the one thing about this API nobody can guess - requests are camelCase,
-/// token responses are the RFC 6749 names - so it is asserted rather than described.
-/// </remarks>
 public class SignInResponseTests
 {
     [Test]
@@ -35,11 +28,6 @@ public class SignInResponseTests
         await Assert.That(body.String("refresh_token")).IsNotNull();
     }
 
-    /// <summary>
-    /// The branch a client gets wrong. It does not exist until somebody enrols, and then it exists
-    /// forever - so a client reading access_token off a 200 works until the first person turns on
-    /// two-factor.
-    /// </summary>
     [Test]
     public async Task Login_returns_a_challenge_and_no_tokens_once_the_user_has_enrolled()
     {
@@ -84,10 +72,6 @@ public class SignInResponseTests
         await Assert.That(refreshed.String("refresh_token")).IsNotEqualTo(first.String("refresh_token"));
     }
 
-    /// <summary>
-    /// Wrong password, no such account and locked out are one answer, because telling them apart
-    /// tells a caller which user names are real.
-    /// </summary>
     [Test]
     [Arguments("ada", "wrong password")]
     [Arguments("nobody-at-all", "correct horse battery staple")]
@@ -104,8 +88,6 @@ public class SignInResponseTests
         await Assert.That(body.String("error_description")).IsEqualTo("The credentials are not valid.");
     }
 
-    /// <summary>Input the caller can correct is a different envelope, and camelCase, because no
-    /// standard names it.</summary>
     [Test]
     public async Task A_correctable_input_answers_the_errors_array()
     {

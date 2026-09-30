@@ -4,8 +4,6 @@ namespace Toamaisutaa.Core.Tests;
 
 public class EmailVerificationTests
 {
-    // ── Requesting a change ──
-
     [Test]
     public async Task RequestingAChangeSendsToTheNewAddressAndMovesNothingYet()
     {
@@ -16,7 +14,6 @@ public class EmailVerificationTests
 
         await Assert.That(result.Succeeded).IsTrue();
 
-        // The whole mechanism: the link goes where the account is not yet.
         var sent = harness.EmailVerificationNotifier.Sent.Single();
         await Assert.That(sent.Email).IsEqualTo("moved@example.com");
         await Assert.That(sent.UserId).IsEqualTo(user.Id);
@@ -104,8 +101,6 @@ public class EmailVerificationTests
         await Assert.That(harness.Passwords.Credentials.Single().Email).IsEqualTo("nic@example.com");
     }
 
-    // ── Redeeming ──
-
     [Test]
     public async Task RedeemingWritesTheAddressAndStampsItConfirmed()
     {
@@ -123,8 +118,7 @@ public class EmailVerificationTests
         await Assert.That(credential.EmailConfirmedAt).IsEqualTo(harness.Clock.GetUtcNow());
     }
 
-    // The profile field the notifiers address their mail to has to follow, or the next reset link
-    // goes to the address this person just moved away from.
+    // The notifiers address their mail from the user row, so it has to follow.
     [Test]
     public async Task RedeemingMovesTheEmailOnTheUserRowToo()
     {
@@ -191,8 +185,7 @@ public class EmailVerificationTests
         await Assert.That(result.Succeeded).IsFalse();
     }
 
-    // The link can sit in a mailbox for a day, and somebody else can take the address in the
-    // meantime. Checked again rather than left to the unique index.
+    // The link can wait a day, so the address is checked again rather than left to the unique index.
     [Test]
     public async Task AnAddressTakenWhileTheLinkWaitedIsAConflict()
     {
@@ -211,10 +204,6 @@ public class EmailVerificationTests
             .IsEqualTo("nic@example.com");
     }
 
-    /// <summary>
-    /// Registration takes whatever address it is typed. Holding one that nobody proved used to be
-    /// enough to refuse its real owner forever; proving it now takes it back.
-    /// </summary>
     [Test]
     public async Task ProvingAnAddressTakesItFromAnAccountThatNeverDid()
     {
@@ -240,8 +229,6 @@ public class EmailVerificationTests
         await harness.Accounts.VerifyEmailAsync(harness.EmailVerificationNotifier.Sent[^1].Token);
     }
 
-    // A password change is the moment someone is most likely reacting to a break-in, and a pending
-    // change of address is a credential in flight.
     [Test]
     public async Task ChangingThePasswordRetiresAnOutstandingVerificationLink()
     {
@@ -256,8 +243,6 @@ public class EmailVerificationTests
         await Assert.That(result.Succeeded).IsFalse();
         await Assert.That(harness.Passwords.Credentials.Single().Email).IsEqualTo("nic@example.com");
     }
-
-    // ── Requiring a verified address before a reset ──
 
     [Test]
     public async Task AnUnverifiedAddressIsSilentWhenTheOptionIsOn()

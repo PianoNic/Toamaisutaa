@@ -61,8 +61,7 @@ internal sealed class PasswordAccountService(
         }
         catch (PasswordIdentifierConflictException)
         {
-            // The user row is already written and now owns nothing. Leaving it would accumulate
-            // empty accounts on every collision, so take it back out.
+            // The user row already exists and now owns nothing; left behind, empty accounts accumulate.
             await users.DeleteAsync(user.Id, cancellationToken);
             logger.LogInformation("Registration refused: the user name or email is already in use.");
             return AccountResult.Taken("That user name or email address is already in use.");
@@ -97,8 +96,6 @@ internal sealed class PasswordAccountService(
 
         if (credential is null)
         {
-            // An account that arrived through an identity provider, adding a password for the first
-            // time. There is no current password to prove, because there is none.
             if (currentPassword is not null)
                 return AccountResult.Failure("This account has no password yet, so there is no current password to give.");
 
@@ -117,11 +114,8 @@ internal sealed class PasswordAccountService(
             if (userName is null)
                 return AccountResult.Failure(NoSignInName);
 
-            // No email on the credential. The address on the profile is whatever the identity
-            // provider asserted, and nothing here knows that anybody proved it: copied in, it became
-            // a login identifier and a reset address for a mailbox the account may not own, so the
-            // real owner's forgot-password adopted an account somebody else's provider login still
-            // opens. The address can be added through /auth/email, which proves it.
+            // No email on the credential: the provider's address is unproven, and copying it in would
+            // make it a login identifier and reset address for a mailbox the account may not own.
             try
             {
                 await credentials.CreateCheckedAsync(
@@ -154,8 +148,6 @@ internal sealed class PasswordAccountService(
             logger.LogInformation("Changed the password for user {UserId}.", userId);
         }
 
-        // A password change ends the other sessions. It is the one moment the account holder is
-        // most likely to be reacting to someone else having access.
         await users.UpdateSecurityStampAsync(userId, SecureTokens.Create(), cancellationToken);
         await RevokeAllSessionsAsync(userId, "password-changed", now, cancellationToken);
         await trustedDevices.RevokeAllAsync(userId, "password-changed", now, cancellationToken);
@@ -207,15 +199,12 @@ internal sealed class PasswordAccountService(
         }
         catch (PasswordIdentifierConflictException)
         {
-            // Same rule as self-registration: an account that ends up owning nothing accumulates
-            // forever if it is left behind.
             await users.DeleteAsync(user.Id, cancellationToken);
             logger.LogInformation("Admin account creation refused: the user name or email is already in use.");
             return AccountResult.Taken("That user name or email address is already in use.");
         }
 
-        // The only moment this password exists in the clear outside the hasher. Handed to the
-        // caller's own notifier, never returned from this call and never logged.
+        // The plaintext password goes only to the notifier: never returned and never logged.
         await adminNotifier.PasswordIssuedAsync(user, effectivePassword, cancellationToken);
 
         logger.LogInformation("Admin-created local account for user {UserId}.", user.Id);
@@ -239,15 +228,12 @@ internal sealed class PasswordAccountService(
         var now = timeProvider.GetUtcNow();
         var credential = await credentials.FindByUserIdAsync(userId, cancellationToken);
 
-        // The address the password goes to: the credential's and nothing else. The profile field is
-        // what an identity provider's sync writes, and falling back to it mailed a password in the
-        // clear to whoever controlled that - for an account with no credential, or one whose
-        // unproven address was released to the person who proved it.
+        // Only the credential's address: the profile field is written by an identity provider and
+        // falling back to it mails a plaintext password to whoever controls that.
         var mailTo = credential?.Email;
 
-        // The password travels in the clear to that address, so the rule a self-service reset
-        // follows applies here too, checked before anything is changed. With no address there is
-        // nothing to mail, and nothing for the rule to protect.
+        // The password travels in the clear, so the self-service reset rule applies, checked before
+        // anything is changed.
         if (mailTo is not null && options.Value.RequireVerifiedEmailForPasswordReset && credential!.EmailConfirmedAt is null)
         {
             logger.LogInformation(
@@ -268,8 +254,7 @@ internal sealed class PasswordAccountService(
 
             try
             {
-                // No email on the credential, for the reason a first password gets none: the
-                // provider's address is only what the provider asserted.
+                // No email on the credential: the provider's address is unproven.
                 await credentials.CreateCheckedAsync(BuildCredential(userId, identifier.Trim(), email: null, effectivePassword, now), cancellationToken);
             }
             catch (PasswordIdentifierConflictException)
@@ -279,16 +264,11 @@ internal sealed class PasswordAccountService(
         }
         else
         {
-            // Unconditional, unlike the self-service path: there is no current password to prove,
-            // because the caller here is acting on someone else's account, not their own.
             await ApplyNewPasswordAsync(credential, effectivePassword, now, cancellationToken);
         }
 
-        // Same reasoning as a self-service change: whoever is now holding this password should not
-        // find the account's other sessions still alive. Ahead of the notifier rather than behind
-        // it, because the hash is already committed by here and a notifier that throws would
-        // otherwise leave every one of these undone - the account reset in order to lock somebody
-        // out would keep their refresh family, their trusted devices and their reset tokens.
+        // Ahead of the notifier: the hash is already committed, and a throwing notifier must not
+        // leave the sessions, devices and links of the person being locked out alive.
         await users.UpdateSecurityStampAsync(userId, SecureTokens.Create(), cancellationToken);
         await RevokeAllSessionsAsync(userId, "admin-password-set", now, cancellationToken);
         await trustedDevices.RevokeAllAsync(userId, "admin-password-set", now, cancellationToken);
@@ -305,9 +285,8 @@ internal sealed class PasswordAccountService(
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            // Nothing to undo and nothing to retry here: the password is set and the sessions are
-            // gone. The caller is told instead, because a generated password that reached
-            // nobody leaves an account only another call to this method can open.
+            // The password is set and cannot be undone, so the caller is told: a generated password
+            // that reached nobody leaves the account unopenable.
             logger.LogError(
                 ex,
                 "Admin password notifier failed for user {UserId}. The password was set and all local sessions "
@@ -346,9 +325,6 @@ internal sealed class PasswordAccountService(
 
         if (credential is null)
         {
-            // No local credential means no local email to change: the address on the profile belongs
-            // to the identity provider that wrote it, and changing it here would be overwritten on
-            // the next sign-in.
             return AccountResult.Failure("This account has no local password, so its email address is not ours to change.");
         }
 
@@ -358,11 +334,8 @@ internal sealed class PasswordAccountService(
         var trimmed = newEmail.Trim();
         var normalized = Normalizer.Normalize(trimmed);
 
-        // Checked here as well as on redemption. Doing it only on redemption would mail a link that
-        // cannot work, and the person holding it has no way to tell that from a broken link. Against
-        // user names too: the sign-in box takes either, so they are one namespace. An address another
-        // account holds without having proven it is not refused: redeeming this link proves it, and
-        // releases theirs.
+        // Checked here as well as on redemption so no unusable link is mailed. An address held but
+        // unproven by another account is not refused: redeeming this link proves it and releases theirs.
         if (await IsHeldFirmlyByAnotherAsync(normalized, userId, cancellationToken))
         {
             logger.LogInformation("Email change refused for user {UserId}: another local account already uses that address.", userId);
@@ -371,8 +344,7 @@ internal sealed class PasswordAccountService(
 
         var now = timeProvider.GetUtcNow();
 
-        // Asking for a second address retires the link sent to the first, so only the most recent
-        // request can ever be redeemed.
+        // Only the most recent request can be redeemed.
         await emailVerificationTokens.InvalidateAllForUserAsync(userId, now, cancellationToken);
 
         var raw = SecureTokens.Create();
@@ -403,7 +375,7 @@ internal sealed class PasswordAccountService(
         var now = timeProvider.GetUtcNow();
         var stored = await emailVerificationTokens.FindByHashAsync(SecureTokens.HashToken(verificationToken), cancellationToken);
 
-        // One message for every way this can fail, the same reasoning ResetPasswordAsync uses.
+        // One message for every way this can fail, as in ResetPasswordAsync.
         if (stored is null || stored.ConsumedAt is not null || stored.ExpiresAt <= now)
         {
             logger.LogWarning("Email verification refused: the token is unknown, already used or expired.");
@@ -416,10 +388,8 @@ internal sealed class PasswordAccountService(
 
         var normalized = Normalizer.Normalize(stored.Email);
 
-        // Checked again, because the link may have sat in a mailbox for a day while somebody else
-        // took the address. The unique index would answer this too, as an exception rather than a
-        // sentence the person can read. Redeeming the link is proof of the mailbox, so an unproven
-        // hold on the address gives way to it rather than refusing it.
+        // Re-checked because someone may have taken the address while the link sat in a mailbox; an
+        // unproven hold gives way, since redeeming the link proves the mailbox.
         if (await IsHeldFirmlyByAnotherAsync(normalized, stored.UserId, cancellationToken))
         {
             logger.LogInformation("Email verification refused for user {UserId}: another local account now uses that address.", stored.UserId);
@@ -448,17 +418,12 @@ internal sealed class PasswordAccountService(
             },
             cancellationToken);
 
-        // The address moved, so every link mailed to the old one is retired: a reset or magic link
-        // sitting in a mailbox the owner just walked away from is still a way in.
+        // A reset or magic link in the old mailbox is still a way in.
         await RetireOutstandingLinksAsync(stored.UserId, now, cancellationToken);
 
-        // The profile field follows the login identifier, so the reset and invitation notifiers stop
-        // addressing mail to where this account used to be. Nothing else moves: sessions stay alive,
-        // because proving an address is not a credential change.
+        // Sessions stay alive: proving an address is not a credential change.
         await users.SetEmailAsync(stored.UserId, stored.Email, cancellationToken);
 
-        // The one account change that moves where a reset link goes, so an audit table gets a row
-        // for it rather than leaving the move to be inferred from the sign-ins that follow it.
         await events.PublishAsync(
             new EmailChanged
             {
@@ -488,8 +453,7 @@ internal sealed class PasswordAccountService(
 
         if (credential is null)
         {
-            // Told apart in the log and nowhere else, the same three cases password reset separates
-            // and for the same reason: a caller who can tell them apart can enumerate addresses.
+            // Told apart in the log only: a caller who can tell the cases apart can enumerate addresses.
             var known = await users.FindByEmailAsync(email.Trim(), cancellationToken);
 
             if (known is not null)
@@ -510,9 +474,8 @@ internal sealed class PasswordAccountService(
         if (user is null)
             return MagicLinkRequestOutcome.UnknownEmail;
 
-        // Not an option, unlike the password-reset rule this mirrors. A reset link leads to a form
-        // that asks for a new password; this one is exchanged for a session, so an address that is a
-        // typo or that somebody else now owns is an account handed over.
+        // Not optional, unlike for reset: this link is exchanged for a session, so an unproven
+        // address is an account handed over.
         if (credential.EmailConfirmedAt is null)
         {
             logger.LogInformation(
@@ -525,7 +488,6 @@ internal sealed class PasswordAccountService(
 
         var now = timeProvider.GetUtcNow();
 
-        // Asking for a new link retires the old ones, so a mailbox never holds two that work.
         await magicLinkTokens.InvalidateAllForUserAsync(credential.UserId, now, cancellationToken);
 
         var raw = SecureTokens.Create();
@@ -547,11 +509,8 @@ internal sealed class PasswordAccountService(
         }
         catch (Exception ex) when (ex is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
         {
-            // Same reasoning as the reset notifier: an unhandled exception here would answer 500 for
-            // a real address and 204 for an unknown one, which is exactly the distinction "always
-            // 204" was meant to erase. A relay that stops answering raises TaskCanceledException on
-            // its own timeout, so the filter asks whether this request was cancelled rather than
-            // reading a cancellation type as one.
+            // A 500 for a real address against 204 for an unknown one would enumerate accounts. The
+            // filter checks this request's token because a relay timeout also raises TaskCanceledException.
             logger.LogError(ex, "Magic-link notifier failed for user {UserId}. The token was issued; no email was sent.", credential.UserId);
             return MagicLinkRequestOutcome.NotificationFailed;
         }
@@ -573,14 +532,9 @@ internal sealed class PasswordAccountService(
         var invitationNotifier = ResolveInvitationNotifier();
         var now = timeProvider.GetUtcNow();
 
-        // Inviting an address that already has an open invitation reuses it and retires its earlier
-        // links, so only the newest one works. Each invitation used to reserve a fresh row with a
-        // fresh week-long token, and a link that leaked the first time stayed redeemable however
-        // many times the address was invited since.
+        // Reuses an open invitation and retires its earlier links, so a leaked earlier link stops working.
         var existing = await FindReservationAsync(email, now, cancellationToken);
 
-        // No user name and no credential - the row exists to be completed, not signed into. It is
-        // deliberately not a match for RegisterAsync's shape: nothing here is a finished account yet.
         var user = existing ?? await users.CreateAsync(
             new ToamaisutaaUser
             {
@@ -614,14 +568,11 @@ internal sealed class PasswordAccountService(
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            // Rolled back rather than reported and left, because nothing here found an existing
-            // reservation before creating this one: retrying against a relay that is still down
-            // would reserve the same address again, and again. The token is burnt before the row
-            // goes, so a store that does not cascade the delete still leaves nothing redeemable.
+            // Token burnt before the row goes, so a store that does not cascade the delete still
+            // leaves nothing redeemable.
             await invitationTokens.MarkConsumedAsync(tokenId, now, cancellationToken);
 
-            // Only a row this call created. A reservation that was already there stays, with its
-            // earlier links retired: the retry that follows finds it again rather than adding a row.
+            // Only a row this call created; an existing reservation stays for the retry to find.
             if (existing is null)
                 await users.DeleteAsync(user.Id, cancellationToken);
 
@@ -665,10 +616,8 @@ internal sealed class PasswordAccountService(
     }
 
     /// <summary>
-    /// The account an open invitation to this address reserved, found through the invitation token
-    /// itself. Never inferred from a user row's shape: an identity provider's account with no user
-    /// name and no password looks exactly like a reservation, and that inference let an invitation
-    /// adopt such an account and a revocation delete it.
+    /// Found through the invitation token, never inferred from a user row's shape: an identity
+    /// provider's account with no user name and no password looks exactly like a reservation.
     /// </summary>
     private async Task<ToamaisutaaUser?> FindReservationAsync(string email, DateTimeOffset now, CancellationToken cancellationToken)
     {
@@ -704,8 +653,7 @@ internal sealed class PasswordAccountService(
         var now = timeProvider.GetUtcNow();
         var stored = await invitationTokens.FindByHashAsync(SecureTokens.HashToken(invitationToken), cancellationToken);
 
-        // One message for every way this can fail, the same reasoning ResetPasswordAsync uses: an
-        // invalid token and a spent one are the same answer to whoever is holding it.
+        // One message for every way this can fail, as in ResetPasswordAsync.
         if (stored is null || stored.ConsumedAt is not null || stored.ExpiresAt <= now)
         {
             logger.LogWarning("Invitation completion refused: the token is unknown, already used or expired.");
@@ -722,18 +670,13 @@ internal sealed class PasswordAccountService(
 
         var trimmedUserName = userName.Trim();
 
-        // The address the invitation was sent to, off the token. The user row's profile email is
-        // what an identity provider's sync writes, and could have been pointed somewhere else between
-        // the invitation and now.
+        // Off the token: the profile email can be rewritten by an identity provider's sync.
         var invited = stored.Email ?? user.Email;
 
-        // The invitation went to this address and came back, which proves the mailbox. So it is
-        // verified from the start, and an unproven hold on it - a registration that got there
-        // first - gives way instead of turning every name the invitee tries into a 409.
+        // The returned invitation proves the mailbox, so it is verified and an unproven hold gives way.
         var credential = BuildCredential(user.Id, trimmedUserName, invited, password, now);
 
-        // Checked before the token is spent, so a taken name costs the invitee nothing: they pick
-        // another and the same link still works.
+        // Checked before the token is spent, so a taken name leaves the link usable.
         if (await credentials.IsTakenByAnotherAsync(user.Id, credential.NormalizedUserName, cancellationToken)
             || (credential.NormalizedEmail is { } address && await IsHeldFirmlyByAnotherAsync(address, user.Id, cancellationToken)))
         {
@@ -741,8 +684,7 @@ internal sealed class PasswordAccountService(
             return AccountResult.Taken("That user name or email address is already in use.");
         }
 
-        // Spent before the account is created, and only by whoever wins the write. Two completions
-        // of one link at once used to both reach the insert, and the second answered 500.
+        // Spent before the account is created, and only by whoever wins the write.
         if (!await invitationTokens.MarkConsumedAsync(stored.Id, now, cancellationToken))
         {
             logger.LogWarning("Invitation completion refused for user {UserId}: the link was spent by another request.", user.Id);
@@ -761,7 +703,6 @@ internal sealed class PasswordAccountService(
         }
         catch (PasswordIdentifierConflictException)
         {
-            // Taken in the moment since the check above. The link is spent by now, so say so.
             logger.LogInformation("Invitation completion for user {UserId} lost its user name to another account at the last moment.", user.Id);
             return AccountResult.Taken("That user name or email address was taken a moment ago. Ask for a new invitation.");
         }
@@ -789,9 +730,8 @@ internal sealed class PasswordAccountService(
 
         if (credential is null)
         {
-            // Told apart in the log and nowhere else. A person whose account is owned by an
-            // identity provider will otherwise sit waiting for an email that is never coming, and
-            // this line is the only way anyone diagnoses that.
+            // Told apart in the log and nowhere else; the log is how a provider-owned account waiting
+            // for a reset email gets diagnosed.
             var known = await users.FindByEmailAsync(email.Trim(), cancellationToken);
 
             if (known is not null)
@@ -814,9 +754,7 @@ internal sealed class PasswordAccountService(
 
         if (options.Value.RequireVerifiedEmailForPasswordReset && credential.EmailConfirmedAt is null)
         {
-            // Told apart in the log and nowhere else, the same as the two cases above. This is the
-            // one that looks like a bug from the outside: the account exists, it is local, and no
-            // mail arrives - so the line has to say which option did it.
+            // From outside this looks like a bug, so the log line names the option responsible.
             logger.LogInformation(
                 "Password reset requested for user {UserId}, whose email address has never been verified, and "
                 + "LocalLogin:RequireVerifiedEmailForPasswordReset is on. No email sent; the address has to be "
@@ -850,13 +788,8 @@ internal sealed class PasswordAccountService(
         }
         catch (Exception ex) when (ex is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
         {
-            // A real notifier can fail for reasons that have nothing to do with the account: a
-            // provider outage, a rate limit, an expired credential, a mail API that stops answering
-            // until HttpClient gives up on it. None of that may reach the caller as anything but
-            // 204 - an unhandled exception here would answer 500 for this address and 204 for an
-            // unknown one, which is exactly the distinction "always 204" was meant to erase. The
-            // timeout arrives as TaskCanceledException, so only this request's own cancellation is
-            // let through.
+            // A 500 for a real address against 204 for an unknown one would enumerate accounts. The
+            // filter checks this request's token because a relay timeout also raises TaskCanceledException.
             logger.LogError(ex, "Password reset notifier failed for user {UserId}. The token was issued; no email was sent.", credential.UserId);
             return PasswordResetRequestOutcome.NotificationFailed;
         }
@@ -872,8 +805,7 @@ internal sealed class PasswordAccountService(
         var now = timeProvider.GetUtcNow();
         var stored = await resetTokens.FindByHashAsync(SecureTokens.HashToken(resetToken), cancellationToken);
 
-        // One message for every way this can fail: an invalid token and a spent one are the same
-        // answer to whoever is holding it.
+        // One message for every way this can fail, so the answer reveals nothing about the token.
         if (stored is null || stored.ConsumedAt is not null || stored.ExpiresAt <= now)
         {
             logger.LogWarning("Password reset refused: the token is unknown, already used or expired.");
@@ -888,8 +820,8 @@ internal sealed class PasswordAccountService(
         if (credential is null)
             return AccountResult.Failure("That reset link is no longer valid. Request a new one.");
 
-        // Spent before the password moves, and only by whoever wins the write. The check above
-        // and this are two steps, and every request that landed between them used to set a password.
+        // Spent before the password moves, and only by whoever wins the write, so concurrent
+        // requests cannot each set a password.
         if (!await resetTokens.MarkConsumedAsync(stored.Id, now, cancellationToken))
         {
             logger.LogWarning("Password reset refused for user {UserId}: the link was spent by another request.", stored.UserId);
@@ -900,8 +832,6 @@ internal sealed class PasswordAccountService(
 
         await RetireOutstandingLinksAsync(stored.UserId, now, cancellationToken);
 
-        // Nothing on the external side is touched: the external logins stay linked, and a token the
-        // identity provider issued keeps working until it expires, because we cannot revoke it.
         await users.UpdateSecurityStampAsync(stored.UserId, SecureTokens.Create(), cancellationToken);
         await RevokeAllSessionsAsync(stored.UserId, "password-reset", now, cancellationToken);
         await trustedDevices.RevokeAllAsync(stored.UserId, "password-reset", now, cancellationToken);
@@ -914,21 +844,9 @@ internal sealed class PasswordAccountService(
     }
 
     /// <summary>
-    /// Deletes every passkey on the account, wherever the trusted devices go.
+    /// A passkey signs in on its own, so one registered by an intruder would outlive everything else
+    /// revoked here. Resolved lazily because the passkey package is optional.
     /// </summary>
-    /// <remarks>
-    /// <para>
-    /// A passkey signs in on its own, with no password and no code, so one registered by somebody
-    /// who should not have it is a way back into the account that outlives every other thing this
-    /// method's callers revoke. The person changing their password is doing the one thing the
-    /// package offers for exactly that, and it has to take the credentials with it.
-    /// </para>
-    /// <para>
-    /// Resolved through the provider rather than the constructor, the way the notifiers below are:
-    /// the passkey package is optional, and naming its store here would make Core require a package
-    /// that references FIDO2.
-    /// </para>
-    /// </remarks>
     private async Task RevokeAllPasskeysAsync(Guid userId, string reason, CancellationToken cancellationToken)
     {
         var passkeys = serviceProvider.GetService<IPasskeyCredentialStore>();
@@ -942,10 +860,6 @@ internal sealed class PasswordAccountService(
             logger.LogInformation("Deleted {Passkeys} passkey(s) for user {UserId} on {Reason}.", removed, userId, reason);
     }
 
-    /// <summary>
-    /// Ends every session and publishes it, so the reason written to the rows and the reason an
-    /// audit sink is handed are one string rather than two literals free to drift apart.
-    /// </summary>
     private async Task RevokeAllSessionsAsync(Guid userId, string reason, DateTimeOffset now, CancellationToken cancellationToken)
     {
         await refreshTokens.RevokeAllForUserAsync(userId, reason, now, cancellationToken);
@@ -955,9 +869,7 @@ internal sealed class PasswordAccountService(
             cancellationToken);
     }
 
-    // The sign-in box takes a user name or an email, and a user name shaped like an address sat in
-    // the one column no proof of the mailbox could ever release: whoever registered it first owned
-    // that address for sign-in, invitations and /auth/email, however the real owner proved it.
+    // An address-shaped user name would hold that address in a column proving the mailbox cannot release.
     private const string AddressShapedUserName = "A user name cannot contain @. An email address goes in the email field.";
 
     private const string NoSignInName =
@@ -966,8 +878,7 @@ internal sealed class PasswordAccountService(
 
     private static bool IsAddressShaped(string userName) => userName.Contains('@');
 
-    // An address with a display name in front - "any sentence at all" <victim@example.com> - parsed
-    // into a To header and a mail body that carried the sentence, from this domain, to any inbox.
+    // A display name in front of the address would carry arbitrary text from this domain to any inbox.
     private const string NotABareAddress = "Give just the email address, with nothing around it.";
 
     private static bool IsBareAddress(string email) =>
@@ -975,8 +886,7 @@ internal sealed class PasswordAccountService(
         && parsed.DisplayName.Length == 0
         && string.Equals(parsed.Address, email.Trim(), StringComparison.Ordinal);
 
-    // Never the email: that is only what an identity provider asserted, and in the user-name column
-    // it becomes a hold on the address that proving the mailbox cannot release.
+    // Never the email: it is only what an identity provider asserted.
     private static string? SignInName(ToamaisutaaUser user) =>
         string.IsNullOrWhiteSpace(user.UserName) || IsAddressShaped(user.UserName) ? null : user.UserName.Trim();
 
@@ -994,10 +904,7 @@ internal sealed class PasswordAccountService(
         };
 
     /// <summary>
-    /// Every link mailed out and not yet used: reset, magic and email verification. Called on each
-    /// change that is somebody reacting to another person having had access - a password set, reset
-    /// or changed, or the account moved to a new address. A magic link was left out of that list,
-    /// and one still sitting in a mailbox signed in after the account had been secured.
+    /// Every kind of mailed link must be here: one left out still signs in after the account has been secured.
     /// </summary>
     private async Task RetireOutstandingLinksAsync(Guid userId, DateTimeOffset now, CancellationToken cancellationToken)
     {
@@ -1007,9 +914,8 @@ internal sealed class PasswordAccountService(
     }
 
     /// <summary>
-    /// A proven claim to an address outranks an unproven hold on it. Registration takes whatever
-    /// address it is typed, so without this anybody could register a new hire's address first and
-    /// leave the real owner with a 409 on every way in and no way to put it right.
+    /// A proven claim outranks an unproven hold, or anybody could register someone else's address first
+    /// and lock the real owner out.
     /// </summary>
     private async Task ReleaseUnverifiedHoldAsync(
         string normalizedEmail,
@@ -1041,8 +947,7 @@ internal sealed class PasswordAccountService(
     }
 
     /// <summary>
-    /// Whether an address is held in a way a proven claim cannot take over: as another account's user
-    /// name, or as its verified email. An unverified email hold does not count - verifying releases it.
+    /// An unverified email hold does not count, because verifying releases it.
     /// </summary>
     private async Task<bool> IsHeldFirmlyByAnotherAsync(string normalizedEmail, Guid userId, CancellationToken cancellationToken)
     {
@@ -1055,16 +960,9 @@ internal sealed class PasswordAccountService(
     }
 
     /// <summary>
-    /// The user as a notifier should see them: addressed to the email on the credential, which is
-    /// the address the request was looked up by and, for a magic link, the one that was verified.
+    /// Addressed to the credential's email, not the profile field an identity provider's sync writes,
+    /// so links go to the address that was checked. A copy, so the profile is never written.
     /// </summary>
-    /// <remarks>
-    /// <see cref="ToamaisutaaUser.Email"/> is the profile field, and an identity provider's profile
-    /// sync writes it. Mailing that one meant the check applied to one address and the link went to
-    /// another - whoever could edit the provider profile received the victim's links, and a verified
-    /// move off a compromised mailbox was quietly undone by the next sync. A copy, so nothing here
-    /// writes the profile.
-    /// </remarks>
     private static ToamaisutaaUser AddressedTo(ToamaisutaaUser user, string? email) => new()
     {
         Id = user.Id,
@@ -1085,10 +983,8 @@ internal sealed class PasswordAccountService(
         CancellationToken cancellationToken) =>
         credentials.CheckCurrentPasswordAsync(credential, currentPassword, hasher, events, options.Value, logger, action, now, cancellationToken);
 
-    // replacing is the hash the caller's current password was checked against, for a change that
-    // proved one. A retry that finds another hash there has lost a race with a reset, and writing over
-    // it would leave the owner holding a reset password that no longer works. Null for a reset or an
-    // admin setting it, which replace whatever is there on purpose. False when it no longer matched.
+    // replacing is the hash the current password was checked against; a retry finding another hash
+    // lost a race with a reset and must not overwrite it. Null replaces unconditionally.
     private async Task<bool> ApplyNewPasswordAsync(
         ToamaisutaaPasswordCredential credential,
         string newPassword,
@@ -1096,8 +992,6 @@ internal sealed class PasswordAccountService(
         CancellationToken cancellationToken,
         string? replacing = null)
     {
-        // Hashed once, outside the retry: it is the expensive half, and the value does not depend on
-        // what the row held.
         var hash = hasher.Hash(newPassword);
         var replaced = true;
 
@@ -1113,7 +1007,6 @@ internal sealed class PasswordAccountService(
                 current.PasswordHash = hash;
                 current.UpdatedAt = now;
 
-                // Whoever just proved they own the account should not still be locked out of it.
                 LockoutPolicy.RegisterSuccess(current);
             },
             cancellationToken);
@@ -1122,11 +1015,7 @@ internal sealed class PasswordAccountService(
     }
 
     /// <summary>
-    /// Not a constructor dependency on purpose: <see cref="IAdminPasswordIssuedNotifier"/> is
-    /// optional, unlike <see cref="IPasswordResetNotifier"/>. An application that never provisions
-    /// accounts on someone else's behalf should not have to register one just to use local login at
-    /// all - so the failure, when it happens, happens here, at the one call site that actually needs
-    /// it, rather than at startup for everyone.
+    /// Resolved lazily because the notifier is optional; only the call site that needs it fails.
     /// </summary>
     private IAdminPasswordIssuedNotifier ResolveAdminPasswordNotifier() =>
         serviceProvider.GetService<IAdminPasswordIssuedNotifier>()
@@ -1135,24 +1024,18 @@ internal sealed class PasswordAccountService(
             + "and never returned from this call - register one before calling AdminCreateAccountAsync or "
             + "AdminSetPasswordAsync.");
 
-    /// <summary>Same reasoning as <see cref="ResolveAdminPasswordNotifier"/>: optional, resolved
-    /// lazily, and only required at the one call site that actually needs it.</summary>
     private IEmailVerificationNotifier ResolveEmailVerificationNotifier() =>
         serviceProvider.GetService<IEmailVerificationNotifier>()
         ?? throw new InvalidOperationException(
             $"No {nameof(IEmailVerificationNotifier)} is registered. A verification token is handed to it and never "
             + "returned from this call - register one before calling RequestEmailChangeAsync.");
 
-    /// <summary>Same reasoning as <see cref="ResolveAdminPasswordNotifier"/>: optional, resolved
-    /// lazily, and only required at the one call site that actually needs it.</summary>
     private IMagicLinkNotifier ResolveMagicLinkNotifier() =>
         serviceProvider.GetService<IMagicLinkNotifier>()
         ?? throw new InvalidOperationException(
             $"No {nameof(IMagicLinkNotifier)} is registered. A magic-link token is handed to it and never returned "
             + "from this call - register one before calling RequestMagicLinkAsync.");
 
-    /// <summary>Same reasoning as <see cref="ResolveAdminPasswordNotifier"/>: optional, resolved
-    /// lazily, and only required at the one call site that actually needs it.</summary>
     private IInvitationNotifier ResolveInvitationNotifier() =>
         serviceProvider.GetService<IInvitationNotifier>()
         ?? throw new InvalidOperationException(

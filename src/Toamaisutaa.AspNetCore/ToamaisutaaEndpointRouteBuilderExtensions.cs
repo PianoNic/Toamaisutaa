@@ -8,20 +8,12 @@ namespace Microsoft.AspNetCore.Builder;
 public static class ToamaisutaaEndpointRouteBuilderExtensions
 {
     /// <summary>
-    /// Serves the SPA's OIDC configuration at runtime, so the frontend build carries no
-    /// environment. Anonymous, because the fallback policy would otherwise make it unreachable
-    /// before sign-in - which is exactly when it is needed.
+    /// Serves the SPA's OIDC configuration at runtime, anonymously, since it is needed before sign-in.
+    /// To add fields of your own, inject <see cref="IToamaisutaaClientConfigurationProvider"/> into
+    /// your own endpoint instead.
     /// </summary>
-    /// <remarks>
-    /// Applications that serve their own fields from the same route should inject
-    /// <see cref="IToamaisutaaClientConfigurationProvider"/> into their own endpoint instead of
-    /// calling this.
-    /// </remarks>
     /// <param name="endpoints">The builder to map into. A <c>RouteGroupBuilder</c> is one.</param>
-    /// <param name="pattern">
-    /// Where to serve it. This is an application configuration endpoint rather than an auth one, so
-    /// it is the most likely of these to collide with a consumer's own route conventions.
-    /// </param>
+    /// <param name="pattern">Where to serve it.</param>
     /// <param name="endpointNamePrefix">
     /// Prepended to the endpoint name, so this can be mapped into more than one group. Endpoint
     /// names are unique per application.
@@ -34,8 +26,7 @@ public static class ToamaisutaaEndpointRouteBuilderExtensions
         ArgumentNullException.ThrowIfNull(endpoints);
 
         return endpoints
-            // The provider marks the response no-store: the redirect URIs can come from the request's
-            // own Host header, and that has to hold for every endpoint built on it, not only this one.
+            // No-store is set by the provider, so it also holds for consumers' own endpoints.
             .MapGet(pattern, (HttpContext context, IToamaisutaaClientConfigurationProvider provider) =>
                 Results.Ok(provider.GetConfiguration(context)))
             .AllowAnonymous()

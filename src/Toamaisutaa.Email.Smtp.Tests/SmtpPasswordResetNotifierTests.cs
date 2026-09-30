@@ -43,8 +43,6 @@ public class SmtpPasswordResetNotifierTests
         await Assert.That(message.To.Mailboxes.Single().Address).IsEqualTo("ada@example.com");
     }
 
-    /// <summary>The display name is whatever the account registered with, and this address may be
-    /// one nobody proved, so the name does not ride along in the To header.</summary>
     [Test]
     public async Task AddressesTheMailboxWithoutTheUsersDisplayName()
     {
@@ -68,8 +66,6 @@ public class SmtpPasswordResetNotifierTests
         await Assert.That(logger.Entries.Any(entry => entry.Level == LogLevel.Warning)).IsTrue();
     }
 
-    // The token is a long-lived credential the moment it exists in the clear - see the enrolment
-    // response rule this package follows everywhere else. Nothing here may log it.
     [Test]
     public async Task NeverLogsTheResetToken()
     {

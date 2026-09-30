@@ -3,11 +3,6 @@ using Toamaisutaa.Abstractions;
 
 namespace Toamaisutaa.EntityFrameworkCore;
 
-/// <summary>
-/// Credentials, refresh tokens, and the reset, invitation, email verification and magic-link tokens.
-/// One class because they share a <c>DbContext</c> and are always registered together; each
-/// interface is still separate, so an application can replace one of them without the others.
-/// </summary>
 internal sealed class EntityFrameworkPasswordStore<TContext>(TContext context)
     : IPasswordCredentialStore,
         IRefreshTokenStore,
@@ -17,12 +12,8 @@ internal sealed class EntityFrameworkPasswordStore<TContext>(TContext context)
         IMagicLinkTokenStore
     where TContext : DbContext
 {
-    // ── Credentials ──
-
-    // Every credential read is tracked explicitly, whatever the context's default. UpdateAsync writes
-    // what changed since the read and compares the concurrency tokens against it, and neither can
-    // happen for an instance the context never tracked: under a no-tracking default a password change
-    // or a lockout returned success and wrote nothing.
+    // Credential reads always track, because UpdateAsync relies on change tracking to write changes
+    // and compare concurrency tokens; under a no-tracking default it would silently write nothing.
 
     public async Task<ToamaisutaaPasswordCredential?> FindByUserIdAsync(Guid userId, CancellationToken cancellationToken = default) =>
         await context.Set<ToamaisutaaPasswordCredential>()
@@ -41,18 +32,15 @@ internal sealed class EntityFrameworkPasswordStore<TContext>(TContext context)
         if (matches.Count < 2)
             return matches.SingleOrDefault();
 
-        // One account's user name is another's address - written before creation checked across both
-        // columns, or by a race with it. Each unique index still holds, so one row matched each column.
-        // Chosen by what the identifier looks like rather than whichever row the database returns
-        // first, so a user name squatting somebody's address cannot take their email sign-ins.
+        // One account's user name is another's address. Chosen by the identifier's shape rather than
+        // row order, so a user name squatting somebody's address cannot take their email sign-ins.
         return normalizedIdentifier.Contains('@')
             ? matches.Single(credential => credential.NormalizedEmail == normalizedIdentifier)
             : matches.Single(credential => credential.NormalizedUserName == normalizedIdentifier);
     }
 
-    // Compared again once it is back, for the reason FindAsync gives: MySQL's default collation
-    // ignores accents, so VÍCTIM@ and VICTIM@ found the same row and every spelling mailed it past a
-    // cooldown that tells them apart.
+    // Re-compared ordinally because MySQL's default collation ignores accents, so VÍCTIM@ would match
+    // VICTIM@'s row and slip past a cooldown that tells them apart.
     public async Task<ToamaisutaaPasswordCredential?> FindByNormalizedEmailAsync(string normalizedEmail, CancellationToken cancellationToken = default) =>
         await context.Set<ToamaisutaaPasswordCredential>()
             .AsTracking()
@@ -74,8 +62,7 @@ internal sealed class EntityFrameworkPasswordStore<TContext>(TContext context)
             context.Entry(credential).State = EntityState.Detached;
 
             // Which index fired is provider-specific, so ask the database rather than parse an error
-            // code: if either identifier is taken now and we did not put it there, that is the
-            // conflict.
+            // code.
             if (!await IdentifierTakenAsync(credential, cancellationToken))
                 throw;
 
@@ -87,14 +74,8 @@ internal sealed class EntityFrameworkPasswordStore<TContext>(TContext context)
     {
         var entry = context.Entry(credential);
 
-        // Tracked is the normal case - the flows update the row they just read, and the reads above
-        // always track - and it is what makes this safe: only changed columns are written, and the
-        // concurrency tokens are compared against the values that were read. Update() would mark every
-        // column modified and write the whole stale row back.
-        //
-        // An instance this context never saw carries no record of what it was read as, so there is
-        // nothing to compare against: it is written over the current row, last write wins. Only a
-        // caller that built or cached a credential itself ends up here.
+        // Not Update(), which would mark every column modified and write a stale row back over the
+        // concurrency check. An untracked instance has nothing to compare against, so it is last write wins.
         if (entry.State == EntityState.Detached)
         {
             var tracked = await context.Set<ToamaisutaaPasswordCredential>()
@@ -112,7 +93,6 @@ internal sealed class EntityFrameworkPasswordStore<TContext>(TContext context)
         }
         catch (DbUpdateConcurrencyException exception)
         {
-            // So the caller's next read sees the row as it is now rather than this context's copy.
             await entry.ReloadAsync(cancellationToken);
             throw new CredentialConcurrencyException(exception);
         }
@@ -127,11 +107,8 @@ internal sealed class EntityFrameworkPasswordStore<TContext>(TContext context)
                         || (credential.NormalizedEmail != null && other.NormalizedEmail == credential.NormalizedEmail)),
                 cancellationToken);
 
-    // ── Refresh tokens ──
-
-    // Untracked, because every write to a refresh token is an ExecuteUpdate that never touches a
-    // tracked instance: tracked, a second read in the same request handed back the first one's
-    // values, and rotation re-reads to tell a revocation from a reuse.
+    // Untracked, because writes are ExecuteUpdate and rotation re-reads to tell a revocation from a
+    // reuse; a tracked read would hand back the first read's stale values.
     public async Task<ToamaisutaaRefreshToken?> FindByHashAsync(string tokenHash, CancellationToken cancellationToken = default) =>
         await context.Set<ToamaisutaaRefreshToken>()
             .AsNoTracking()
@@ -166,10 +143,6 @@ internal sealed class EntityFrameworkPasswordStore<TContext>(TContext context)
                     .SetProperty(token => token.RevokedReason, reason),
                 cancellationToken);
 
-    /// <summary>
-    /// The live row of each family: not rotated, not revoked. Rotated rows stay in the table because
-    /// reuse detection needs them, but they are not sessions anybody has.
-    /// </summary>
     public async Task<IReadOnlyList<ToamaisutaaRefreshToken>> ListActiveAsync(Guid userId, CancellationToken cancellationToken = default) =>
         await context.Set<ToamaisutaaRefreshToken>()
             .Where(token => token.UserId == userId && token.RotatedAt == null && token.RevokedAt == null)
@@ -181,11 +154,8 @@ internal sealed class EntityFrameworkPasswordStore<TContext>(TContext context)
                 token => token.FamilyId == familyId && token.RotatedAt == null && token.RevokedAt == null,
                 cancellationToken);
 
-    /// <summary>
-    /// The only place this package writes over a refresh row instead of rotating it. Scoped to the
-    /// family's live row, so a client that refreshed between receiving its token and stepping up
-    /// still has the row that matters updated rather than the one it was minted alongside.
-    /// </summary>
+    /// <summary>Scoped to the family's live row, so a client that refreshed before stepping up still
+    /// has the current row updated.</summary>
     public async Task<bool> UpdateSecondFactorAsync(
         Guid familyId,
         string authenticationMethods,
@@ -205,8 +175,6 @@ internal sealed class EntityFrameworkPasswordStore<TContext>(TContext context)
         await context.Set<ToamaisutaaRefreshToken>()
             .Where(token => token.ExpiresAt <= expiredBefore)
             .ExecuteDeleteAsync(cancellationToken);
-
-    // ── Reset tokens ──
 
     public async Task CreateAsync(ToamaisutaaPasswordResetToken token, CancellationToken cancellationToken = default)
     {
@@ -232,8 +200,6 @@ internal sealed class EntityFrameworkPasswordStore<TContext>(TContext context)
         await context.Set<ToamaisutaaPasswordResetToken>()
             .Where(token => token.ExpiresAt <= expiredBefore)
             .ExecuteDeleteAsync(cancellationToken);
-
-    // ── Invitation tokens ──
 
     public async Task CreateAsync(ToamaisutaaInvitationToken token, CancellationToken cancellationToken = default)
     {
@@ -269,8 +235,6 @@ internal sealed class EntityFrameworkPasswordStore<TContext>(TContext context)
             .Where(token => token.UserId == userId && token.ConsumedAt == null)
             .ExecuteUpdateAsync(setters => setters.SetProperty(token => token.ConsumedAt, consumedAt), cancellationToken);
 
-    // ── Email verification tokens ──
-
     public async Task CreateAsync(ToamaisutaaEmailVerificationToken token, CancellationToken cancellationToken = default)
     {
         context.Set<ToamaisutaaEmailVerificationToken>().Add(token);
@@ -295,8 +259,6 @@ internal sealed class EntityFrameworkPasswordStore<TContext>(TContext context)
         await context.Set<ToamaisutaaEmailVerificationToken>()
             .Where(token => token.ExpiresAt <= expiredBefore)
             .ExecuteDeleteAsync(cancellationToken);
-
-    // ── Magic-link tokens ──
 
     public async Task CreateAsync(ToamaisutaaMagicLinkToken token, CancellationToken cancellationToken = default)
     {

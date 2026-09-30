@@ -4,14 +4,9 @@ using Toamaisutaa.Abstractions;
 namespace Toamaisutaa.Passkeys;
 
 /// <summary>
-/// The two WebAuthn ceremonies and the credential list behind them.
+/// The two WebAuthn ceremonies and the credential list behind them. Inject this instead of mapping
+/// the endpoints to put your own routes, response shapes or audit trail around passkeys.
 /// </summary>
-/// <remarks>
-/// Public for the reason <see cref="ITrustedDeviceService"/> is: an application that wants its own
-/// routes, its own response shapes or its own audit trail around passkeys injects this instead of
-/// mapping the endpoints, and the alternative is reimplementing a ceremony that has to be exactly
-/// right to be worth anything.
-/// </remarks>
 public interface IPasskeyService
 {
     /// <summary>
@@ -21,8 +16,7 @@ public interface IPasskeyService
     /// <param name="userId">Whose account the credential would be added to.</param>
     /// <param name="proof">
     /// The current password, or a session that presented a second factor recently. Being signed in
-    /// is not enough on its own: a passkey signs in with no password and no code, so adding one is
-    /// adding a credential rather than changing a setting.
+    /// is not enough: a passkey signs in on its own, so adding one is adding a credential.
     /// </param>
     /// <param name="cancellationToken">Cancels the lookups.</param>
     /// <exception cref="PasskeyRegistrationException">The proof is missing or wrong.</exception>
@@ -38,9 +32,8 @@ public interface IPasskeyService
         CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Starts a sign-in. Takes no identifier: the browser finds a discoverable credential itself and
-    /// the assertion says who it belongs to, so there is nothing here to answer "does this account
-    /// exist" to whoever asked.
+    /// Starts a sign-in. Takes no identifier, so it cannot answer "does this account exist": the
+    /// browser finds a discoverable credential and the assertion says whose it is.
     /// </summary>
     Task<PasskeyCeremonyStarted> BeginAssertionAsync(CancellationToken cancellationToken = default);
 
@@ -56,9 +49,9 @@ public interface IPasskeyService
     /// answer, so this cannot be used to discover another account's credential ids.</summary>
     /// <remarks>
     /// Takes the same proof registering does, and throws <see cref="PasskeyRegistrationException"/>
-    /// without it: a bearer token alone let whoever held one delete every passkey on an account that
-    /// has no password, which is the owner locked out. Deleting one also moves the security stamp and
-    /// ends every session, since nothing records which of them the deleted key opened.
+    /// without it, since a bearer token alone could delete every passkey on a passwordless account and
+    /// lock the owner out. Deleting one also moves the security stamp and ends every session, since
+    /// nothing records which of them the deleted key opened.
     /// </remarks>
     Task<bool> DeleteAsync(Guid userId, Guid passkeyId, PasskeyRegistrationProof proof, CancellationToken cancellationToken = default);
 }
@@ -67,10 +60,8 @@ public interface IPasskeyService
 /// A ceremony the browser can now be handed.
 /// </summary>
 /// <remarks>
-/// <see cref="Challenge"/> names the server's half of it and is what comes back to complete it. It
-/// is opaque random bytes rather than the WebAuthn challenge itself: the options carry rules the
-/// completion step checks the authenticator against, so a client able to hand them back would be
-/// marking its own work.
+/// <see cref="Challenge"/> is opaque random bytes naming the server-held options, not the WebAuthn
+/// challenge itself: a client able to hand the options back would be marking its own work.
 /// </remarks>
 public sealed record PasskeyCeremonyStarted
 {
@@ -80,10 +71,8 @@ public sealed record PasskeyCeremonyStarted
     public required int ExpiresIn { get; init; }
 
     /// <summary>
-    /// The WebAuthn options, ready to be passed to <c>navigator.credentials</c> after the base64url
-    /// fields are decoded. Passed through as JSON rather than remodelled: this is a shape the
-    /// specification defines and every client library already knows, and a second model of it here
-    /// would be a translation that can drift.
+    /// The WebAuthn options, as the specification defines them, ready to be passed to
+    /// <c>navigator.credentials</c> after the base64url fields are decoded.
     /// </summary>
     public required JsonElement Options { get; init; }
 }
@@ -102,14 +91,12 @@ public sealed record PasskeySummary
     /// Empty when it did not say.</summary>
     public IReadOnlyList<string> Transports { get; init; } = [];
 
-    /// <summary>True for a passkey the user's provider is syncing across their devices. Worth
-    /// showing: it is the difference between losing the laptop and losing the account.</summary>
+    /// <summary>True for a passkey the user's provider is syncing across their devices.</summary>
     public required bool IsBackedUp { get; init; }
 
     public required DateTimeOffset CreatedAt { get; init; }
 
-    /// <summary>Null when it has never signed anything, which is the most useful thing a list can
-    /// say about a credential somebody is deciding whether to delete.</summary>
+    /// <summary>Null when it has never signed anything.</summary>
     public DateTimeOffset? LastUsedAt { get; init; }
 }
 
@@ -131,7 +118,7 @@ public sealed record PasskeySignInResult
 }
 
 /// <summary>
-/// A registration step that cannot proceed. The message reaches somebody already authenticated and
-/// working on their own account, so it can say exactly what is wrong.
+/// A registration step that cannot proceed. The message reaches the authenticated account owner, so
+/// it can say exactly what is wrong.
 /// </summary>
 public sealed class PasskeyRegistrationException(string message) : Exception(message);

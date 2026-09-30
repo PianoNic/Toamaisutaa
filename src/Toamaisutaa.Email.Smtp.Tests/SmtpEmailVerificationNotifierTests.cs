@@ -25,8 +25,6 @@ public class SmtpEmailVerificationNotifierTests
         return (notifier, sender, logger);
     }
 
-    // The whole mechanism of a change of address: the link goes to the mailbox being claimed, never
-    // to the one the account already has.
     [Test]
     public async Task SendsToTheAddressBeingVerifiedRatherThanTheOneOnTheAccount()
     {
@@ -42,8 +40,6 @@ public class SmtpEmailVerificationNotifierTests
         await Assert.That(message.To.Mailboxes.Single().Address).IsEqualTo("moved@example.com");
     }
 
-    // The display name is the user's to choose and this mailbox is not yet proven to be theirs, so
-    // their words do not ride along in the To header either.
     [Test]
     public async Task AddressesTheMailboxWithoutTheUsersDisplayName()
     {
@@ -56,8 +52,6 @@ public class SmtpEmailVerificationNotifierTests
         await Assert.That(sender.Sent!.To.Mailboxes.Single().Name ?? string.Empty).DoesNotContain("evil.example");
     }
 
-    // The token is a credential the moment it exists in the clear - see the enrolment response rule
-    // this package follows everywhere else. Nothing here may log it.
     [Test]
     public async Task NeverLogsTheVerificationToken()
     {

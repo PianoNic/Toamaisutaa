@@ -20,8 +20,6 @@ public sealed class ToamaisutaaTrustedDeviceConfiguration : IEntityTypeConfigura
         builder.Property(device => device.Label).HasMaxLength(128);
         builder.Property(device => device.UserAgent).HasMaxLength(256);
 
-        // Sized for an IPv6 address plus a prefix suffix. Null unless TrustedDevices:IpAddressStorage
-        // says otherwise, which is the default.
         builder.Property(device => device.IpAddress).HasMaxLength(64);
 
         builder.Property(device => device.RevokedReason).HasMaxLength(64);
@@ -36,7 +34,6 @@ public sealed class ToamaisutaaTrustedDeviceConfiguration : IEntityTypeConfigura
 
         builder.HasIndex(device => device.TokenHash).IsUnique();
 
-        // Every sign-in looks one up by hash; listing and revoking work by family and by user.
         builder.HasIndex(device => device.FamilyId);
         builder.HasIndex(device => device.UserId);
 

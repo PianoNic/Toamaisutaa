@@ -7,10 +7,8 @@ public interface IUserStore
     Task<ToamaisutaaUser?> FindByIdAsync(Guid id, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Best-effort lookup by email, case-insensitive. May match more than one row, because the
-    /// model is multi-provider and email is a profile field rather than an identity - the first
-    /// match is returned. Used to tell "no such person" apart from "that person is owned by an
-    /// identity provider" in the password-reset log, and for nothing that grants access.
+    /// Best-effort lookup by email, case-insensitive; returns the first of possibly several matches.
+    /// Email is a profile field, not an identity, so never use this to grant access.
     /// </summary>
     Task<ToamaisutaaUser?> FindByEmailAsync(string email, CancellationToken cancellationToken = default);
 
@@ -34,23 +32,19 @@ public interface IUserStore
     Task UpdateSecurityStampAsync(Guid userId, string securityStamp, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Sets the user name - and, alongside it, the display name - on an existing row. For completing
-    /// a reserved invitation: the row was created with only an email, and the person chooses their
-    /// own user name when they finish registering.
+    /// Sets the user name and display name on an existing row, when completing a reserved invitation.
     /// </summary>
     Task SetUserNameAsync(Guid userId, string userName, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Sets the email on an existing row. For a verified change of address: the credential holds the
-    /// login identifier, and this keeps the profile field the notifiers address their mail to from
-    /// pointing at the address the person just moved away from.
+    /// Sets the email on an existing row after a verified change of address, so notifiers mail the
+    /// new address.
     /// </summary>
     Task SetEmailAsync(Guid userId, string email, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Removes a user and everything that hangs off it. Used to take back a row created moments ago
-    /// for a registration that then lost a race on the credential's unique index, so a failed
-    /// attempt does not leave an account behind that nobody can sign in to.
+    /// Removes a user and everything that hangs off it. Used to undo a registration that lost a race
+    /// on the credential's unique index.
     /// </summary>
     Task DeleteAsync(Guid userId, CancellationToken cancellationToken = default);
 }

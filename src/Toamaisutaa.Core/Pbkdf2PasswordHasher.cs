@@ -9,24 +9,14 @@ namespace Toamaisutaa.Core;
 /// </summary>
 /// <remarks>
 /// <para>
-/// This is the hasher a deployment gets without asking for anything, and the reason is dependency
-/// policy rather than cryptographic preference: nothing third-party belongs in the credential path
-/// of a library other people consume by default, and .NET has no in-box Argon2 - the runtime
-/// delegates primitives to the platform and only OpenSSL implements it, so there is none coming.
+/// PBKDF2 is compute-hard, not memory-hard, so it is materially weaker than Argon2id against an
+/// attacker with GPUs. Install <c>Toamaisutaa.PasswordHashing.Argon2</c> or register your own
+/// <see cref="IPasswordHasher"/>; existing rows migrate through
+/// <see cref="PasswordVerificationResult.SucceededRehashNeeded"/>.
 /// </para>
 /// <para>
-/// Be clear about the cost: PBKDF2 is compute-hard, not memory-hard, so it is materially weaker
-/// than Argon2id against an attacker with GPUs. A consumer who would rather take the dependency
-/// installs <c>Toamaisutaa.PasswordHashing.Argon2</c>, or registers an <see cref="IPasswordHasher"/>
-/// of their own. Because every row names its own algorithm, the two interoperate and existing rows
-/// migrate themselves through <see cref="PasswordVerificationResult.SucceededRehashNeeded"/>.
-/// </para>
-/// <para>
-/// A configured pepper turns the stored value into
-/// <c>PBKDF2(HMAC-SHA256(pepper, password), salt)</c>, and the version that produced it is written
-/// into the algorithm name. That is what lets a pepper be introduced, or rotated, without a
-/// migration: rows made under the old arrangement still verify, and each one is rewritten under the
-/// new one the next time its owner logs in.
+/// A configured pepper stores <c>PBKDF2(HMAC-SHA256(pepper, password), salt)</c> with the pepper
+/// version in the algorithm name, so a pepper can be introduced or rotated without a migration.
 /// </para>
 /// </remarks>
 public sealed class Pbkdf2PasswordHasher(IOptions<ToamaisutaaLocalLoginOptions> options) : IPasswordHasher
@@ -35,11 +25,9 @@ public sealed class Pbkdf2PasswordHasher(IOptions<ToamaisutaaLocalLoginOptions> 
     internal const string PepperedAlgorithmPrefix = AlgorithmName + "-p";
     private const string IterationsParameter = "i";
 
-    // A stored row is ours, but a database an attacker can write is a database that can ask this
-    // process to spend a minute in a key derivation. Bound what a row may request.
-    //
-    // Internal because PasswordLoginStartupCheck refuses configured values above them: a length or
-    // an iteration count this hasher will write but not read back produces rows nothing can verify.
+    // Bounds what a stored row may request, so a writable database cannot make this process spend
+    // minutes in a derivation. PasswordLoginStartupCheck refuses configured values above them, or
+    // this hasher would write rows it cannot read back.
     internal const int MaxIterations = 50_000_000;
     internal const int MaxHashSizeBytes = 1024;
 
@@ -71,9 +59,8 @@ public sealed class Pbkdf2PasswordHasher(IOptions<ToamaisutaaLocalLoginOptions> 
         if (!TryResolveAlgorithm(stored.Algorithm, out var pepperVersion))
             return PasswordVerificationResult.Failed;
 
-        // A row peppered with a key this deployment no longer holds cannot be checked. Fail closed:
-        // the alternative is verifying it as though it were unpeppered, which would accept the bare
-        // password against a hash that was never made from it.
+        // Fails closed: verifying as unpeppered would accept the bare password against a hash never
+        // made from it.
         if (!PasswordPepper.TryResolve(options.Value, pepperVersion, out var pepper))
             return PasswordVerificationResult.Failed;
 
@@ -93,8 +80,6 @@ public sealed class Pbkdf2PasswordHasher(IOptions<ToamaisutaaLocalLoginOptions> 
             : PasswordVerificationResult.Succeeded;
     }
 
-    /// <summary>Recognises both the plain and the peppered algorithm names, and nothing else - a row
-    /// written by an Argon2 hasher is not ours to verify.</summary>
     private static bool TryResolveAlgorithm(string algorithm, out string? pepperVersion)
     {
         pepperVersion = null;
@@ -113,8 +98,6 @@ public sealed class Pbkdf2PasswordHasher(IOptions<ToamaisutaaLocalLoginOptions> 
         return true;
     }
 
-    /// <summary>Anything weaker than, or older than, what is configured now gets rewritten while the
-    /// plaintext is still in hand.</summary>
     private bool NeedsRehash(PhcString stored, int iterations, string? pepperVersion)
     {
         var settings = options.Value;

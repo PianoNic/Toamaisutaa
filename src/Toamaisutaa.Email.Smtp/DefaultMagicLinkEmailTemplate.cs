@@ -3,13 +3,8 @@ using Toamaisutaa.Abstractions;
 
 namespace Toamaisutaa.Email.Smtp;
 
-/// <summary>Plain, utilitarian wording, the same as the reset email - and one extra line, because
-/// this is the only message this package sends that signs somebody in by itself.</summary>
-/// <remarks>
-/// The expiry in the text is read from <see cref="ToamaisutaaLocalLoginOptions.MagicLinkTokenLifetime"/>
-/// rather than from a setting of its own. Two settings that have to agree eventually stop agreeing,
-/// and the one that would be wrong is the one in front of the person waiting for the link.
-/// </remarks>
+/// <summary>The expiry in the text is read from <see cref="ToamaisutaaLocalLoginOptions.MagicLinkTokenLifetime"/>
+/// rather than a setting of its own, so the two cannot disagree.</summary>
 internal sealed class DefaultMagicLinkEmailTemplate(
     IOptions<ToamaisutaaSmtpEmailOptions> options,
     IOptions<ToamaisutaaLocalLoginOptions> localLogin) : IMagicLinkEmailTemplate
@@ -22,11 +17,7 @@ internal sealed class DefaultMagicLinkEmailTemplate(
             magicLinkToken);
         var minutes = (int)Math.Ceiling(localLogin.Value.MagicLinkTokenLifetime.TotalMinutes);
 
-        // No name, for the reason the verification mail gives: it is whatever the account registered
-        // with, and the address this goes to is one its owner may never have proven.
-        //
-        // The "do not forward" line earns its place: every other link this package sends leads to a
-        // form that asks for something else first, and this one does not.
+        // No name: it is attacker-chosen text, and the address may never have been proven.
         return new MagicLinkEmailContent
         {
             Subject = "Your sign-in link",

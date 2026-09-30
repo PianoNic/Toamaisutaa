@@ -3,8 +3,6 @@ using Toamaisutaa.Abstractions;
 
 namespace Toamaisutaa.Email.Smtp;
 
-/// <summary>Plain, utilitarian wording - a password reset link is security mail, not the place for
-/// this package's usual voice.</summary>
 internal sealed class DefaultPasswordResetEmailTemplate(IOptions<ToamaisutaaSmtpEmailOptions> options) : IPasswordResetEmailTemplate
 {
     public PasswordResetEmailContent Build(ToamaisutaaUser user, string resetToken)
@@ -14,9 +12,7 @@ internal sealed class DefaultPasswordResetEmailTemplate(IOptions<ToamaisutaaSmtp
             nameof(ToamaisutaaSmtpEmailOptions.PasswordResetLinkTemplate),
             resetToken);
 
-        // No name. It is whatever the account registered with - a sentence and a URL, if they like -
-        // and unless LocalLogin:RequireVerifiedEmailForPasswordReset is on, the address this goes to
-        // is one nobody proved. Greeting by it mailed a stranger's words, from this domain, to anyone.
+        // No name: it is attacker-chosen text, and the address may never have been proven.
         return new PasswordResetEmailContent
         {
             Subject = "Reset your password",

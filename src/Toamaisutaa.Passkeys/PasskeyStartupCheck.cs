@@ -6,11 +6,6 @@ using Toamaisutaa.Core;
 
 namespace Toamaisutaa.Passkeys;
 
-/// <summary>
-/// Refuses to start rather than failing at the first ceremony. A relying party id that is wrong is
-/// invisible until a browser refuses to sign, and by then somebody is standing in front of a prompt
-/// that will not go away.
-/// </summary>
 internal sealed class PasskeyStartupCheck(
     IServiceCollection services,
     IOptions<ToamaisutaaPasskeyOptions> options) : IHostedService

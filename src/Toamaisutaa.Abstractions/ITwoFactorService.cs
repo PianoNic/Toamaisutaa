@@ -1,9 +1,8 @@
 namespace Toamaisutaa.Abstractions;
 
 /// <summary>
-/// Enrolment and its ceremony. Available to any authenticated user, whether they proved themselves
-/// with a password or with an identity provider's token: a second factor is a property of the
-/// person, not of how they proved the first one.
+/// Enrolment and its ceremony, for any authenticated user whether signed in locally or through an
+/// identity provider.
 /// </summary>
 public interface ITwoFactorService
 {
@@ -15,8 +14,7 @@ public interface ITwoFactorService
     /// </summary>
     /// <remarks>
     /// Refused without <paramref name="proof"/>: the current password, or a sign-in within
-    /// <c>TwoFactor:EnrolmentProofWindow</c>. Whoever enrols the second factor is the only one who can
-    /// answer it afterwards, so a bearer token alone would let a thief lock the owner out.
+    /// <c>TwoFactor:EnrolmentProofWindow</c>, so a stolen bearer token cannot lock the owner out.
     /// </remarks>
     Task<TwoFactorEnrolmentStarted> BeginEnrolmentAsync(
         Guid userId,
@@ -58,8 +56,7 @@ public sealed record TwoFactorEnrolmentStarted
     /// <summary>Base32, for someone typing it in by hand.</summary>
     public required string Secret { get; init; }
 
-    /// <summary>An <c>otpauth://</c> URI. Render it as a QR code yourself - drawing one would mean a
-    /// graphics dependency, and this package does not take dependencies it can avoid.</summary>
+    /// <summary>An <c>otpauth://</c> URI, to render as a QR code yourself.</summary>
     public required string Uri { get; init; }
 }
 
@@ -76,15 +73,13 @@ public sealed record TwoFactorResult
     public IReadOnlyList<string> Errors { get; init; } = [];
 
     /// <summary>Set when a recovery code was spent and few remain, so the application can prompt for
-    /// regeneration before somebody runs out and needs a support ticket.</summary>
+    /// regeneration.</summary>
     public bool RecoveryCodesRunningLow { get; init; }
 
     public static TwoFactorResult Failure(params string[] errors) => new() { Succeeded = false, Errors = errors };
 }
 
 /// <summary>
-/// An enrolment step that cannot proceed. The message reaches the person enrolling, who is already
-/// authenticated and working on their own account, so it can say exactly what is wrong without
-/// telling anyone something they did not already have.
+/// An enrolment step that cannot proceed. The message is safe to show the authenticated user enrolling.
 /// </summary>
 public sealed class TwoFactorEnrolmentException(string message) : Exception(message);

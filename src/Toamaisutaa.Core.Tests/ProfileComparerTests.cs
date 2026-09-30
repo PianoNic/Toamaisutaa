@@ -55,7 +55,6 @@ public class ProfileComparerTests
         await Assert.That(ProfileComparer.HasChanges(user, Profile())).IsTrue();
     }
 
-    // An issuer that sends an empty string is saying nothing, not saying "clear it".
     [Test]
     public async Task BlankAndAbsentAreTheSameValue()
     {

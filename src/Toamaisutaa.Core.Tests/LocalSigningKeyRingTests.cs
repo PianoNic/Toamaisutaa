@@ -6,15 +6,9 @@ using Toamaisutaa.Abstractions;
 namespace Toamaisutaa.Core.Tests;
 
 /// <summary>
-/// Reading <c>LocalLogin:SigningKeys</c>, and what gets published from it.
+/// The published set is asserted off raw JSON because deserialising it through the package's own
+/// record would agree with that record however wrong it was.
 /// </summary>
-/// <remarks>
-/// The keys are generated here rather than checked in, so nothing in the repository is a key
-/// anybody could mistake for one that matters. The published set is asserted off raw JSON for the
-/// same reason the HTTP suite is: it is a document other people's software parses, and
-/// deserialising it through this package's own record would agree with that record however wrong
-/// it was.
-/// </remarks>
 public class LocalSigningKeyRingTests
 {
     private static LocalSigningKeyRing Ring(params ToamaisutaaSigningKeyOptions[] keys) =>
@@ -35,10 +29,7 @@ public class LocalSigningKeyRingTests
     private static JsonElement PublishedKeys(LocalSigningKeyRing ring) =>
         JsonDocument.Parse(JsonSerializer.Serialize(ring.PublicKeys())).RootElement.Clone();
 
-    /// <summary>
-    /// The algorithm is read off the key rather than configured, so this is the assertion that the
-    /// reading is right. ES512 is the one that catches a careless mapping: its curve is P-521.
-    /// </summary>
+    /// <summary>ES512 is the one that catches a careless mapping: its curve is P-521.</summary>
     [Test]
     public async Task Names_the_algorithm_the_key_implies()
     {
@@ -57,11 +48,6 @@ public class LocalSigningKeyRingTests
         await Assert.That(published[1].GetProperty("crv").GetString()).IsEqualTo("P-521");
     }
 
-    /// <summary>
-    /// The one assertion in this file that is about a secret rather than a shape. This document is
-    /// served anonymously to anything that asks, and a private component reaching it hands over the
-    /// ability to mint tokens for every user.
-    /// </summary>
     [Test]
     public async Task Publishes_public_material_and_nothing_else()
     {
@@ -80,8 +66,6 @@ public class LocalSigningKeyRingTests
             await Assert.That(json).DoesNotContain(privateComponent);
     }
 
-    /// <summary>Rotation, which is the whole reason the option is a list: the new key goes in front
-    /// and the old one keeps validating what it signed.</summary>
     [Test]
     public async Task Publishes_every_key_and_signs_with_the_first()
     {
@@ -92,11 +76,6 @@ public class LocalSigningKeyRingTests
         await Assert.That(PublishedKeys(ring).GetProperty("keys").GetArrayLength()).IsEqualTo(2);
     }
 
-    /// <summary>
-    /// A public-only entry is a legitimate thing to configure - it is what a retired key becomes
-    /// once the private half is destroyed - so the mistake being caught is putting one first, where
-    /// it would be asked to sign.
-    /// </summary>
     [Test]
     public async Task Refuses_a_public_only_key_in_the_active_position()
     {
@@ -110,8 +89,6 @@ public class LocalSigningKeyRingTests
         await Assert.That(ring.Problems.Single()).Contains("only a public key");
     }
 
-    /// <summary>A public-only key further down is not a mistake, and refusing it would make
-    /// destroying a retired private half impossible.</summary>
     [Test]
     public async Task Accepts_a_public_only_key_behind_the_active_one()
     {
@@ -126,8 +103,6 @@ public class LocalSigningKeyRingTests
         await Assert.That(ring.Keys[1].CanSign).IsFalse();
     }
 
-    /// <summary>A kid is what picks the key a token is validated against. Two of them make that a
-    /// coin toss, and the failing token would be the one signed by whichever lost.</summary>
     [Test]
     public async Task Refuses_a_repeated_key_id()
     {
@@ -147,8 +122,6 @@ public class LocalSigningKeyRingTests
         await Assert.That(ring.Problems.Single()).Contains("has no Kid");
     }
 
-    /// <summary>A JWK names itself, so configuring the kid twice is not required - and a key
-    /// exported from a vault arrives with one already set.</summary>
     [Test]
     public async Task Reads_a_JWK_and_takes_the_key_id_from_it()
     {
@@ -173,10 +146,8 @@ public class LocalSigningKeyRingTests
     }
 
     /// <summary>
-    /// secp256k1 is one letter away from the <c>prime256v1</c> the docs hand out, imports from a PEM
-    /// exactly as readily, and is 256 bits - so a ring reading the algorithm off the key size alone
-    /// called it ES256 and published its point under <c>crv: P-256</c>, a point on a curve nothing
-    /// that reads the document is on. The JWK path has always refused it; this is the PEM path.
+    /// secp256k1 is 256 bits and imports from a PEM as readily as P-256, so a ring reading the
+    /// algorithm off the key size alone would publish it as ES256 under <c>crv: P-256</c>.
     /// </summary>
     [Test]
     public async Task Refuses_an_EC_key_on_a_curve_no_JWS_algorithm_names()
@@ -189,9 +160,7 @@ public class LocalSigningKeyRingTests
         await Assert.That(ring.Active).IsNull();
         await Assert.That(ring.Problems.Single()).Contains("no JWS algorithm names");
 
-        // Which curve, because that is the whole answer for whoever is holding the key file. Matched
-        // on the tail: the platform's crypto backend decides whether it is spelled secP256k1 or
-        // secp256k1.
+        // The platform's crypto backend decides whether it is spelled secP256k1 or secp256k1.
         await Assert.That(ring.Problems.Single()).Contains("256k1");
     }
 
@@ -204,8 +173,6 @@ public class LocalSigningKeyRingTests
         await Assert.That(ring.Problems.Single()).Contains("1024-bit RSA");
     }
 
-    /// <summary>The symmetric key already carries this id, and two keys answering to one kid is the
-    /// ambiguity the duplicate check exists to prevent - it just spans two options here.</summary>
     [Test]
     public async Task Refuses_the_key_id_the_symmetric_key_reserves()
     {

@@ -3,16 +3,10 @@ using Toamaisutaa.Abstractions;
 
 namespace Toamaisutaa.EntityFrameworkCore;
 
-/// <summary>
-/// Enrolments, recovery codes and challenges. One class for the same reason the password stores
-/// share one: a single <c>DbContext</c>, registered together, three separate interfaces.
-/// </summary>
 internal sealed class EntityFrameworkTwoFactorStore<TContext>(TContext context)
     : ITwoFactorStore, IRecoveryCodeStore, ITwoFactorChallengeStore
     where TContext : DbContext
 {
-    // ── Enrolments ──
-
     public async Task<ToamaisutaaUserTwoFactor?> FindAsync(Guid userId, CancellationToken cancellationToken = default) =>
         await context.Set<ToamaisutaaUserTwoFactor>()
             .FirstOrDefaultAsync(enrolment => enrolment.UserId == userId, cancellationToken);
@@ -23,9 +17,8 @@ internal sealed class EntityFrameworkTwoFactorStore<TContext>(TContext context)
 
         var set = context.Set<ToamaisutaaUserTwoFactor>();
 
-        // Add or Update rather than the provider's own upsert, because there is no portable one.
-        // The tracked-instance check matters: BeginEnrolmentAsync reads the row first, so the
-        // context may already be tracking the very entity being written back.
+        // The context may already track this entity (BeginEnrolmentAsync reads it first), so check
+        // the tracker before the database.
         var tracked = context.Entry(enrolment).State != EntityState.Detached
             || await set.AnyAsync(existing => existing.UserId == enrolment.UserId, cancellationToken);
 
@@ -39,8 +32,7 @@ internal sealed class EntityFrameworkTwoFactorStore<TContext>(TContext context)
 
     public async Task DeleteAsync(Guid userId, CancellationToken cancellationToken = default)
     {
-        // Detach first: ExecuteDelete goes straight to the database, and a tracked instance left
-        // behind would be written back by the next SaveChanges on this request.
+        // Detach first, or the next SaveChanges on this request writes the deleted row back.
         var tracked = context.ChangeTracker.Entries<ToamaisutaaUserTwoFactor>()
             .FirstOrDefault(entry => entry.Entity.UserId == userId);
 
@@ -81,9 +73,8 @@ internal sealed class EntityFrameworkTwoFactorStore<TContext>(TContext context)
                     .SetProperty(enrolment => enrolment.LockedOutUntil, lockedOutUntil),
                 cancellationToken) == 1;
 
-        // The write went past the change tracker, so a copy this context already holds is stale
-        // either way. Reloaded, so the caller's next read sees the row as it is, and so a later
-        // whole-row write of that copy cannot put an old count back.
+        // The write bypassed the change tracker; reload so a later whole-row write cannot put an old
+        // count back.
         var tracked = context.ChangeTracker.Entries<ToamaisutaaUserTwoFactor>()
             .FirstOrDefault(entry => entry.Entity.UserId == userId);
 
@@ -93,14 +84,11 @@ internal sealed class EntityFrameworkTwoFactorStore<TContext>(TContext context)
         return written;
     }
 
-    // ── Recovery codes ──
-
     public async Task ReplaceAllAsync(Guid userId, IReadOnlyList<ToamaisutaaRecoveryCode> codes, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(codes);
 
-        // Deleted outright rather than marked consumed. A spent code and a superseded one are both
-        // dead, and keeping the old rows would only make CountUnusedAsync lie.
+        // Deleted rather than marked consumed, or CountUnusedAsync would count superseded codes.
         await context.Set<ToamaisutaaRecoveryCode>()
             .Where(code => code.UserId == userId)
             .ExecuteDeleteAsync(cancellationToken);
@@ -126,8 +114,6 @@ internal sealed class EntityFrameworkTwoFactorStore<TContext>(TContext context)
     public async Task<int> CountUnusedAsync(Guid userId, CancellationToken cancellationToken = default) =>
         await context.Set<ToamaisutaaRecoveryCode>()
             .CountAsync(code => code.UserId == userId && code.ConsumedAt == null, cancellationToken);
-
-    // ── Challenges ──
 
     public async Task CreateAsync(ToamaisutaaTwoFactorChallenge challenge, CancellationToken cancellationToken = default)
     {

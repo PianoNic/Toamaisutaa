@@ -6,22 +6,9 @@ using System.Text.Json;
 namespace Toamaisutaa.AspNetCore.Tests;
 
 /// <summary>
-/// A WebAuthn authenticator in software: an EC P-256 key, a credential id, and the two structures a
-/// real one produces.
+/// Built from the WebAuthn specification rather than anything in the package, because a generator
+/// borrowed from the code under test agrees with that code even when both are wrong.
 /// </summary>
-/// <remarks>
-/// <para>
-/// Written out here rather than driven through anything in the package, for the reason
-/// <c>Totp</c> next door is: a generator borrowed from the code under test agrees with that code
-/// even when both are wrong. Everything below is built from the specification - the CBOR attestation
-/// object, the flags byte, the concatenation that gets signed - so a change to how the package
-/// verifies an assertion has something independent to disagree with.
-/// </para>
-/// <para>
-/// It is also the only way to test any of this without a browser and a physical key, which is
-/// exactly the gap that let three previous bugs reach the wire.
-/// </para>
-/// </remarks>
 internal sealed class SoftwareAuthenticator : IDisposable
 {
     private const byte UserPresent = 0x01;
@@ -32,30 +19,16 @@ internal sealed class SoftwareAuthenticator : IDisposable
 
     private readonly ECDsa _key = ECDsa.Create(ECCurve.NamedCurves.nistP256);
 
-    /// <summary>All zero, which is what a platform authenticator that declines to identify its model
-    /// reports - and the common case.</summary>
     private readonly byte[] _aaGuid = new byte[16];
 
     public byte[] CredentialId { get; } = RandomNumberGenerator.GetBytes(32);
 
-    /// <summary>Taken from the registration options, and handed back on every assertion - which is
-    /// the only thing that says who is signing in when no identifier was typed.</summary>
     public byte[] UserHandle { get; private set; } = [];
 
-    /// <summary>What the authenticator claims it has signed so far. A real one only ever increases
-    /// it; setting it by hand is how the clone-detection test misbehaves on purpose.</summary>
     public uint SignCount { get; set; }
 
-    /// <summary>Whether this authenticator reports the credential as synced to the user's provider.
-    /// Off by default, matching a key that is bound to the hardware.</summary>
     public bool Synced { get; set; }
 
-    /// <summary>
-    /// What <c>navigator.credentials.create()</c> would return, as the endpoint takes it.
-    /// </summary>
-    /// <param name="begin">The body of <c>/register/begin</c>, opaque challenge and options both.</param>
-    /// <param name="origin">The page the ceremony is happening on.</param>
-    /// <param name="userVerified">False to act as an authenticator that only checked for a touch.</param>
     public object Create(JsonElement begin, string origin, bool userVerified = true)
     {
         var options = begin.GetProperty("options");
@@ -77,10 +50,6 @@ internal sealed class SoftwareAuthenticator : IDisposable
         };
     }
 
-    /// <summary>What <c>navigator.credentials.get()</c> would return, signature and all.</summary>
-    /// <param name="begin">The body of <c>/assertion/begin</c>, opaque challenge and options both.</param>
-    /// <param name="origin">The page the ceremony is happening on.</param>
-    /// <param name="userVerified">False to act as an authenticator that only checked for a touch.</param>
     public object Get(JsonElement begin, string origin, bool userVerified = true)
     {
         var options = begin.GetProperty("options");
@@ -92,8 +61,7 @@ internal sealed class SoftwareAuthenticator : IDisposable
         var clientData = ClientData("webauthn.get", challenge, origin);
         var authenticatorData = AuthenticatorData(rpId, userVerified, withCredential: false);
 
-        // Exactly what WebAuthn says is signed: the authenticator data, then the hash of the client
-        // data. Nothing else, and in that order.
+        // WebAuthn signs exactly the authenticator data followed by the client data hash, in that order.
         var signed = new byte[authenticatorData.Length + 32];
         authenticatorData.CopyTo(signed, 0);
         SHA256.HashData(clientData).CopyTo(signed, authenticatorData.Length);
@@ -124,11 +92,6 @@ internal sealed class SoftwareAuthenticator : IDisposable
         Encoding.UTF8.GetBytes(
             $$"""{"type":"{{type}}","challenge":"{{challenge}}","origin":"{{origin}}","crossOrigin":false}""");
 
-    /// <summary>
-    /// The relying party hash, the flags, the counter, and - at registration - the credential
-    /// itself. Laid out by hand, because getting this layout wrong is precisely the failure the
-    /// package's verification exists to catch.
-    /// </summary>
     private byte[] AuthenticatorData(string rpId, bool userVerified, bool withCredential)
     {
         var data = new List<byte>(37);
@@ -140,8 +103,7 @@ internal sealed class SoftwareAuthenticator : IDisposable
         if (userVerified)
             flags |= UserVerified;
 
-        // Backed up is only meaningful for a credential that is eligible for it, and an
-        // authenticator reporting the second without the first is refused - correctly.
+        // Backed up without backup eligible is refused, so the two flags are always set together.
         if (Synced)
             flags |= BackupEligible | BackedUp;
 
@@ -189,9 +151,6 @@ internal sealed class SoftwareAuthenticator : IDisposable
         return writer.Encode();
     }
 
-    /// <summary>Attestation format <c>none</c>: no statement, no certificate, nothing to verify
-    /// beyond the authenticator data itself. What every platform authenticator produces by default,
-    /// and what this package asks for.</summary>
     private static byte[] AttestationObject(byte[] authenticatorData)
     {
         var writer = new CborWriter(CborConformanceMode.Ctap2Canonical);

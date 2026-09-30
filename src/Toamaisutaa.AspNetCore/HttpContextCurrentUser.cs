@@ -7,10 +7,8 @@ using Toamaisutaa.Abstractions;
 namespace Toamaisutaa.AspNetCore;
 
 /// <summary>
-/// Scoped, so the provisioned row is resolved once per request no matter how many callers ask for
-/// it. The provisioner is resolved lazily rather than injected, because <see cref="ICurrentUser"/>
-/// is useful for <see cref="Subject"/> and <see cref="Name"/> alone in an application that has no
-/// local user table.
+/// The provisioner is resolved lazily rather than injected, because an application with no local
+/// user table still uses <see cref="Subject"/> and <see cref="Name"/>.
 /// </summary>
 internal sealed class HttpContextCurrentUser(
     IHttpContextAccessor accessor,
@@ -34,13 +32,8 @@ internal sealed class HttpContextCurrentUser(
         ?? Find(ClaimTypes.Email);
 
     /// <summary>
-    /// The configured claim first, then whatever each identity names as its own role claim type.
-    /// That second read is what <c>RequireRole</c> makes, so the two answer alike: it is
-    /// <see cref="ClaimTypes.Role"/> for a principal that did not come from this package's bearer
-    /// pipeline, and the configured claim for one that did. Reading the .NET type unconditionally
-    /// instead reports a role on this pipeline's own principals that the authorization layer
-    /// refuses, and being permissive where <c>[Authorize]</c> is not is the worse of the two
-    /// disagreements.
+    /// Reads each identity's own role claim type, as <c>RequireRole</c> does, so this never reports a
+    /// role that <c>[Authorize]</c> would refuse.
     /// </summary>
     public IReadOnlyList<string> Roles
     {
@@ -82,9 +75,7 @@ internal sealed class HttpContextCurrentUser(
 
         var user = await provisioner.ProvisionAsync(principal, cancellationToken);
 
-        // The second of the two places the stamp is enforced, and again only because the read has
-        // already happened. The claim is only on locally issued tokens; a token from an identity
-        // provider carries no stamp, and there is nothing to check.
+        // Only locally issued tokens carry a stamp; an identity-provider token has nothing to check.
         var presented = Find(ToamaisutaaDefaults.SecurityStampClaim);
 
         if (presented is not null && !string.Equals(presented, user.SecurityStamp, StringComparison.Ordinal))
@@ -99,8 +90,6 @@ internal sealed class HttpContextCurrentUser(
     private string? Find(string claimType) =>
         Principal?.FindAll(claimType).FirstOrDefault(claim => !string.IsNullOrWhiteSpace(claim.Value))?.Value;
 
-    // Deduplicated because the claim types can name the same thing - a role claim type that is the
-    // configured claim, or a principal enriched from userinfo with what the token already carried.
     private static void Collect(List<string> roles, IEnumerable<Claim> claims)
     {
         foreach (var claim in claims)

@@ -5,10 +5,8 @@ using Toamaisutaa.Abstractions;
 namespace Toamaisutaa.Core;
 
 /// <summary>
-/// Provisioning without stores resolves fine and then fails on the first authenticated request,
-/// which is the worst time to find out. Fail at startup instead, naming the call that is missing.
-/// The check runs against the registrations rather than resolving the services, because the stores
-/// are scoped and the root provider cannot hand those out.
+/// Checks the registrations rather than resolving the services, because the stores are scoped and
+/// the root provider cannot hand those out.
 /// </summary>
 internal sealed class ProvisioningStartupCheck(IServiceCollection services) : IHostedService
 {

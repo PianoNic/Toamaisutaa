@@ -7,16 +7,9 @@ using Toamaisutaa.Abstractions;
 namespace Toamaisutaa.OpenIdConnect;
 
 /// <summary>
-/// Signs the short-lived access token a local sign-in returns.
+/// Uses the claim names the claims mapper reads from an identity provider's token, so a local token
+/// is indistinguishable to policies, <c>ICurrentUser</c> and provisioning.
 /// </summary>
-/// <remarks>
-/// The claim names are the same ones the claims mapper reads from an identity provider's token, so
-/// a locally issued token is indistinguishable to everything downstream: same policies, same
-/// <c>ICurrentUser</c>, same provisioning. HS256 from <c>LocalLogin:SigningKey</c> by default,
-/// because the only thing that validates these is usually the process that signed them; asymmetric
-/// from <c>LocalLogin:SigningKeys</c> when something else has to validate them without being handed
-/// the ability to mint them.
-/// </remarks>
 internal sealed class LocalAccessTokenIssuer(
     IOptions<ToamaisutaaLocalLoginOptions> localOptions,
     IOptions<ToamaisutaaOidcOptions> oidcOptions,
@@ -37,9 +30,7 @@ internal sealed class LocalAccessTokenIssuer(
         var now = timeProvider.GetUtcNow();
         var expires = now + local.AccessTokenLifetime;
 
-        // The subject is the local user id. That, together with the issuer, is what lets
-        // provisioning recognise its own token instead of treating it as a stranger and creating a
-        // second user for the same person.
+        // The local user id with the local issuer is what stops provisioning creating a second user for this token.
         var claims = new List<Claim> { new(names.Subject, user.Id.ToString()) };
 
         Add(claims, names.UserName, user.UserName);
@@ -50,12 +41,10 @@ internal sealed class LocalAccessTokenIssuer(
         foreach (var role in request.Roles)
             Add(claims, oidcOptions.Value.RoleClaim, role);
 
-        // The stamp travels with the token so the two places that do enforce it - refresh, and
-        // ICurrentUser - have something to compare without a second lookup.
+        // Refresh and ICurrentUser compare this against the stored stamp.
         Add(claims, ToamaisutaaDefaults.SecurityStampClaim, user.SecurityStamp);
 
-        // RFC 8176. One claim per method, which is how a JWT carries a string array, and how
-        // anything that already reads amr expects to find it.
+        // RFC 8176 amr: one claim per method, which is how a JWT carries a string array.
         foreach (var method in request.AuthenticationMethods)
             Add(claims, ToamaisutaaDefaults.AuthenticationMethodClaim, method);
 
@@ -64,13 +53,11 @@ internal sealed class LocalAccessTokenIssuer(
 
         Add(claims, ToamaisutaaDefaults.TwoFactorSourceClaim, request.TwoFactorSource);
 
-        // The refresh family, which is what "session" means here. Step-up reads it to find the row
-        // to elevate - and to elevate that one rather than every session the user has open.
+        // The refresh family: step-up reads it to elevate this session rather than every one the user has open.
         if (request.SessionId is { } sessionId)
             Add(claims, ToamaisutaaDefaults.SessionIdClaim, sessionId.ToString());
 
-        // Unix seconds, so a policy can subtract it from now without parsing a date format. For a
-        // device-trusted sign-in this is the original live challenge, which is the whole point.
+        // For a device-trusted sign-in this is the original live challenge, not now.
         if (request.SecondFactorAt is { } secondFactorAt)
         {
             Add(
@@ -90,7 +77,6 @@ internal sealed class LocalAccessTokenIssuer(
             SigningCredentials = keys.Signing
                 ?? throw new InvalidOperationException(
                     "Neither LocalLogin:SigningKey nor LocalLogin:SigningKeys is configured, so no token can be signed."),
-            // A unique id per token, so a future revocation list has something to name.
             TokenType = "at+jwt",
         };
 

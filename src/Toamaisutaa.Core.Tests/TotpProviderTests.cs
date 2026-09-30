@@ -6,7 +6,6 @@ namespace Toamaisutaa.Core.Tests;
 
 public class TotpProviderTests
 {
-    /// <summary>The RFC 6238 test key: the ASCII string "12345678901234567890".</summary>
     private static readonly byte[] RfcSecret = Encoding.ASCII.GetBytes("12345678901234567890");
 
     private static TotpProvider Provider(Action<ToamaisutaaTwoFactorOptions>? configure = null)
@@ -18,8 +17,8 @@ public class TotpProviderTests
     }
 
     /// <summary>
-    /// RFC 6238 Appendix B, the SHA-1 rows. Published vectors rather than our own output, so an
-    /// implementation that is wrong in a way it agrees with itself about cannot pass.
+    /// RFC 6238 Appendix B vectors rather than our own output, so an implementation that is wrong in
+    /// a way it agrees with itself about cannot pass.
     /// </summary>
     [Test]
     [Arguments(59L, "94287082")]
@@ -32,10 +31,8 @@ public class TotpProviderTests
     {
         var at = DateTimeOffset.FromUnixTimeSeconds(unixSeconds);
 
-        // The RFC publishes eight digits. Truncating to six is not a shortcut: the algorithm ends in
-        // "modulo ten to the digits", and taking the last six of an eight-digit value is the same
-        // arithmetic. So this asserts the full published value, then checks that the six-digit
-        // provider - the shape every authenticator app actually uses - agrees with it.
+        // The RFC publishes eight digits, and the last six of those are the six-digit code because
+        // the algorithm ends in "modulo ten to the digits".
         var eight = TotpCodes.Compute(RfcSecret, at, TimeSpan.FromSeconds(30), 8);
         await Assert.That(eight).IsEqualTo(expected);
 
@@ -68,10 +65,6 @@ public class TotpProviderTests
         await Assert.That(provider.TryVerify(RfcSecret, previous, now, null, out _)).IsFalse();
     }
 
-    /// <summary>
-    /// Without this, an observed code stays usable for the rest of its drift window - ninety seconds
-    /// at the default - which is long enough for a phishing proxy to replay it.
-    /// </summary>
     [Test]
     public async Task Refuses_a_code_from_a_step_already_accepted()
     {

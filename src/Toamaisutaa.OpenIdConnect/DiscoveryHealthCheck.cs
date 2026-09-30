@@ -6,32 +6,12 @@ using Toamaisutaa.Abstractions;
 namespace Toamaisutaa.OpenIdConnect;
 
 /// <summary>
-/// Fetches the discovery document the bearer handler validates against, so a wrong
-/// <c>Oidc:Authority</c> or an unreachable <c>Oidc:InternalAuthority</c> fails a probe at deploy
-/// time instead of answering 401 on every request afterwards.
+/// A singleton, because the last successful fetch must outlive a probe: a handler that loaded the
+/// document keeps validating after a failed refresh, which is degraded rather than unhealthy.
 /// </summary>
 /// <remarks>
-/// <para>
-/// A singleton, because the last successful fetch has to outlive a single probe. A handler that has
-/// loaded the document keeps validating tokens against it when a refresh fails, so "this process
-/// fetched it minutes ago" is a different answer from "it was never reached at all" - the first is
-/// degraded, the second cannot be anything but unhealthy. Telling those apart is why this holds
-/// state, and <c>Oidc:HealthCheck:DegradedFor</c> is what stops the first answer outliving its own
-/// evidence.
-/// </para>
-/// <para>
-/// What is reported is what this check fetched, never what the bearer handler holds. The handler's
-/// document lives in <c>JwtBearerOptions.ConfigurationManager</c>, on its own refresh interval, and
-/// is loaded lazily on the first request carrying a token - so a process that has only served
-/// anonymous traffic has none. Nothing here can see it, and a message that claimed to would be
-/// read at 2am as fact.
-/// </para>
-/// <para>
-/// A plaintext metadata address under <c>Oidc:RequireHttpsMetadata</c> is deliberately not reported
-/// here. JwtBearer refuses one while it is building the handler's options, which happens before any
-/// request reaches an endpoint, so the process already answers 500 everywhere and this check never
-/// gets asked.
-/// </para>
+/// Messages describe only what this check fetched, never what the bearer handler holds, which is
+/// loaded lazily and invisible from here.
 /// </remarks>
 internal sealed class DiscoveryHealthCheck(
     IOptions<ToamaisutaaOidcOptions> options,
@@ -40,15 +20,11 @@ internal sealed class DiscoveryHealthCheck(
 {
     private volatile Fetch? _lastSuccess;
 
-    /// <summary>The last failed probe, answered from until it is as old as a success would be. The
-    /// endpoint is anonymous, and without this every probe while the issuer was failing went out to
-    /// it again - the moment it could least take the traffic.</summary>
+    /// <summary>Cached like a success so a failing issuer is not hit by every probe.</summary>
     private volatile Failure? _lastFailure;
 
-    /// <summary>One probe at a time, shared. The ones that arrive while it runs wait for its answer
-    /// instead of each sending their own, and it runs to the end whoever stops waiting - a caller
-    /// that gave up used to take the probe down with it, so nothing was cached and the next probe
-    /// asked again.</summary>
+    /// <summary>One shared probe, run to the end whoever stops waiting, so a cancelled caller cannot
+    /// prevent its result being cached.</summary>
     private readonly Lock _gate = new();
     private Task<HealthCheckResult>? _probe;
 
@@ -76,8 +52,6 @@ internal sealed class DiscoveryHealthCheck(
 
         lock (_gate)
         {
-            // A finished probe stands for as long as Answered says it does, so one that has finished
-            // here is one whose answer has run out.
             if (_probe is null || _probe.IsCompleted)
                 _probe = ProbeAndRememberAsync(address, settings);
 
@@ -87,7 +61,7 @@ internal sealed class DiscoveryHealthCheck(
         return await probe.WaitAsync(cancellationToken);
     }
 
-    /// <summary>Bounded by <c>Oidc:HealthCheck:Timeout</c> and by nothing a caller holds.</summary>
+    /// <summary>Takes no caller token on purpose: bounded only by <c>Oidc:HealthCheck:Timeout</c>.</summary>
     private async Task<HealthCheckResult> ProbeAndRememberAsync(string address, ToamaisutaaOidcOptions settings)
     {
         var now = time.GetUtcNow();
@@ -106,8 +80,7 @@ internal sealed class DiscoveryHealthCheck(
     }
 
     /// <summary>
-    /// The last result, when it is recent enough to stand. A readiness probe runs every few seconds
-    /// across every replica, and the issuer would otherwise carry all of it - succeeding or not.
+    /// Cached so readiness probes across every replica do not all land on the issuer.
     /// </summary>
     private HealthCheckResult? Answered(string address, ToamaisutaaOidcOptions settings, DateTimeOffset now)
     {
@@ -173,8 +146,7 @@ internal sealed class DiscoveryHealthCheck(
 
             var issuer = Text(document.RootElement, "issuer");
 
-            // A 200 is not a discovery document. A proxy that has lost its route answers the sign-in
-            // page with one, and the handler needs the keys rather than the status.
+            // A proxy that has lost its route can answer 200 with a sign-in page.
             if (issuer is null || Text(document.RootElement, "jwks_uri") is null)
                 return (null, "it answered 200 without an 'issuer' and 'jwks_uri' pair, so that is not a discovery document");
 
@@ -214,7 +186,6 @@ internal sealed class DiscoveryHealthCheck(
         return data;
     }
 
-    /// <summary>Whole units. A health report is read in a hurry, and ticks are noise there.</summary>
     private static string Elapsed(TimeSpan span) => span.TotalHours >= 1
         ? $"{(int)span.TotalHours}h{span.Minutes:D2}m"
         : span.TotalMinutes >= 1

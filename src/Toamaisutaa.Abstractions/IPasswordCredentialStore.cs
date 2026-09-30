@@ -4,8 +4,7 @@ public interface IPasswordCredentialStore
 {
     Task<ToamaisutaaPasswordCredential?> FindByUserIdAsync(Guid userId, CancellationToken cancellationToken = default);
 
-    /// <summary>Looks up by normalised user name, then normalised email. One call, because the
-    /// login form takes one box.</summary>
+    /// <summary>Looks up by normalised user name, then normalised email.</summary>
     Task<ToamaisutaaPasswordCredential?> FindByIdentifierAsync(string normalizedIdentifier, CancellationToken cancellationToken = default);
 
     /// <summary>Email only, for password reset, where matching a user name would send a link to an
@@ -22,9 +21,8 @@ public interface IPasswordCredentialStore
     /// and leaves the next <see cref="FindByUserIdAsync"/> answering with what the row holds now.
     /// </summary>
     /// <remarks>
-    /// A store that writes blindly instead still works, but loses whatever the other writer did:
-    /// failed-attempt counts that never reach the lockout, and a sign-in that read the row before a
-    /// reset writing the old hash back over the new one.
+    /// A store that writes blindly loses concurrent changes: failed-attempt counts that never reach
+    /// the lockout, and a stale sign-in writing an old hash back over a reset.
     /// </remarks>
     Task UpdateAsync(ToamaisutaaPasswordCredential credential, CancellationToken cancellationToken = default);
 }
@@ -42,8 +40,7 @@ public sealed class CredentialConcurrencyException : Exception
 }
 
 /// <summary>
-/// The normalised user name or email is taken. Translated by the store from whatever its unique
-/// index raised, so the flows above it never see a storage-specific exception.
+/// The normalised user name or email is taken. Stores translate their unique-index violation into this.
 /// </summary>
 public sealed class PasswordIdentifierConflictException : Exception
 {

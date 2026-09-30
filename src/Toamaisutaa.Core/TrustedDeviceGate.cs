@@ -6,28 +6,15 @@ using Toamaisutaa.Abstractions;
 namespace Toamaisutaa.Core;
 
 /// <summary>
-/// What the sign-in path is allowed to know about trusted devices.
+/// Stores are resolved through the provider rather than the constructor so password login without
+/// device trust registered does not crash at the first sign-in.
 /// </summary>
-/// <remarks>
-/// Resolved through the provider rather than the constructor, for the same reason as
-/// <see cref="TwoFactorGate"/>: password login works with no device trust registered, and a
-/// constructor dependency would turn "did not call AddToamaisutaaTrustedDevices" into a crash at the
-/// first sign-in. Absent, every method here answers no.
-/// </remarks>
 internal sealed class TrustedDeviceGate(
     IServiceProvider provider,
     AuthenticationEventPublisher events,
     IOptions<ToamaisutaaTrustedDeviceOptions> options,
     ILogger<TrustedDeviceGate> logger)
 {
-    /// <summary>
-    /// Whether this device token stands in for a live second factor.
-    /// </summary>
-    /// <remarks>
-    /// Every rejection path deletes the row rather than leaving it: a trust that failed its stamp
-    /// check is never going to pass one, and leaving it would show the user a device in their list
-    /// that does nothing.
-    /// </remarks>
     internal async Task<DeviceTrustResult> TryRedeemAsync(
         ToamaisutaaUser user,
         string? deviceToken,
@@ -48,8 +35,8 @@ internal sealed class TrustedDeviceGate(
 
         if (stored.RotatedAt is not null)
         {
-            // Already exchanged, so two parties hold the chain and one of them is not the account
-            // owner. There is no way to tell which, so neither keeps it.
+            // Two parties hold the chain and there is no way to tell which is the owner, so neither
+            // keeps it.
             logger.LogWarning(
                 "Trusted-device token reuse detected for user {UserId}. Device {DeviceId} was already rotated at "
                 + "{RotatedAt}; revoking family {FamilyId}. Treat this as a possible captured token.",
@@ -65,8 +52,7 @@ internal sealed class TrustedDeviceGate(
         if (stored.RevokedAt is not null)
             return DeviceTrustResult.NotTrusted;
 
-        // Absolute, from when the family started. Rotation never moved it, so a device used every
-        // week still lands here eventually.
+        // Absolute from when the family started, so a device used every week still expires.
         if (stored.ExpiresAt <= now || stored.FamilyStartedAt + options.Value.Lifetime <= now)
         {
             logger.LogInformation(
@@ -78,8 +64,7 @@ internal sealed class TrustedDeviceGate(
             return DeviceTrustResult.NotTrusted;
         }
 
-        // The check that makes every credential change revoke device trust without each of them
-        // having to remember to.
+        // This is what makes every credential change revoke device trust without each remembering to.
         if (!string.Equals(stored.SecurityStamp, user.SecurityStamp, StringComparison.Ordinal))
         {
             logger.LogWarning(
@@ -92,8 +77,7 @@ internal sealed class TrustedDeviceGate(
             return DeviceTrustResult.NotTrusted;
         }
 
-        // The enrolment can be gone without the stamp moving only if something revoked it without
-        // bumping - belt and braces, and cheap.
+        // Guards against an enrolment removed without bumping the stamp.
         var enrolments = provider.GetService<ITwoFactorStore>();
         if (enrolments is not null)
         {
@@ -106,8 +90,8 @@ internal sealed class TrustedDeviceGate(
             }
         }
 
-        // The checks above and this write are not one step. Whoever loses it presented a token that
-        // another request is exchanging right now, which is reuse, and is answered as reuse.
+        // Conditional write: the loser of a concurrent exchange presented a token already being
+        // rotated, which is reuse.
         if (!await devices.MarkRotatedAsync(stored.Id, now, cancellationToken))
         {
             logger.LogWarning(
@@ -132,8 +116,8 @@ internal sealed class TrustedDeviceGate(
                 TokenHash = SecureTokens.HashToken(rotated),
                 SecurityStamp = user.SecurityStamp,
 
-                // Carried, never refreshed. This is what a device-trusted token reports as
-                // toa_2fa_at, and moving it here would make every sign-in look freshly verified.
+                // Carried, never refreshed: this is toa_2fa_at, and moving it would make every
+                // sign-in look freshly verified.
                 SecondFactorAt = stored.SecondFactorAt,
 
                 Label = stored.Label,
@@ -141,8 +125,7 @@ internal sealed class TrustedDeviceGate(
                 IpAddress = stored.IpAddress,
                 CreatedAt = now,
 
-                // Likewise carried. If this moved, presenting a device token would buy another full
-                // lifetime and the absolute limit would never be reached.
+                // Carried, or each presentation would buy another full lifetime.
                 FamilyStartedAt = stored.FamilyStartedAt,
 
                 ExpiresAt = stored.FamilyStartedAt + options.Value.Lifetime,
@@ -163,8 +146,8 @@ internal sealed class TrustedDeviceGate(
     }
 
     /// <summary>
-    /// Starts a new family. Called only after a <b>live</b> second factor - never from a
-    /// device-trusted sign-in, which is what stops a family renewing itself forever.
+    /// Call only after a live second factor, never from a device-trusted sign-in, or a family
+    /// renews itself forever.
     /// </summary>
     internal async Task<TrustedDeviceToken?> IssueAsync(
         ToamaisutaaUser user,
@@ -228,8 +211,8 @@ internal sealed class TrustedDeviceGate(
     }
 
     /// <summary>
-    /// Explicit revocation, for the two places the security stamp cannot do the job: redeeming a
-    /// recovery code, and detecting refresh-token reuse.
+    /// For the two places the security stamp cannot do the job: redeeming a recovery code, and
+    /// detecting refresh-token reuse.
     /// </summary>
     internal async Task RevokeAllAsync(Guid userId, string reason, DateTimeOffset now, CancellationToken cancellationToken)
     {
@@ -244,15 +227,11 @@ internal sealed class TrustedDeviceGate(
 
         logger.LogWarning("Revoked {Count} trusted device(s) for user {UserId}: {Reason}.", revoked, userId, reason);
 
-        // One event for the lot, with no device named: what happened is that this account stopped
-        // trusting anything, not that some number of individual devices each went.
         await events.PublishAsync(
             new TrustedDeviceRevoked { OccurredAt = now, UserId = userId, Reason = reason },
             cancellationToken);
     }
 
-    /// <summary>Oldest family out. Every live device is a second factor somebody is not being asked
-    /// for, and one accumulates per browser otherwise.</summary>
     private async Task EnforceDeviceCapAsync(ITrustedDeviceStore devices, Guid userId, DateTimeOffset now, CancellationToken cancellationToken)
     {
         var cap = options.Value.MaxDevicesPerUser;
@@ -270,10 +249,6 @@ internal sealed class TrustedDeviceGate(
         }
     }
 
-    /// <summary>
-    /// Revokes one family and publishes it, so the reason written to the row and the reason an
-    /// audit sink is handed are one string rather than two literals free to drift apart.
-    /// </summary>
     private async Task RevokeFamilyAsync(
         ITrustedDeviceStore devices,
         ToamaisutaaTrustedDevice stored,

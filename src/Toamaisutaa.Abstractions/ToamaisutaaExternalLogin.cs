@@ -2,8 +2,7 @@ namespace Toamaisutaa.Abstractions;
 
 /// <summary>
 /// One (provider, subject) pair pointing at a local user. The pair is unique; the issuer is stored
-/// alongside it but is not part of the key, so a later move to issuer-based identity has the data
-/// it needs without a backfill.
+/// but not part of the key.
 /// </summary>
 public class ToamaisutaaExternalLogin
 {

@@ -3,8 +3,8 @@ using Toamaisutaa.Abstractions;
 namespace Toamaisutaa.Core.Tests;
 
 /// <summary>
-/// Enough of the credential store for the one thing Core does with it: taking every passkey off an
-/// account whose password has just been set.
+/// Only the one thing Core does with the store: taking every passkey off an account whose password
+/// has just been set.
 /// </summary>
 internal sealed class FakePasskeyStore : IPasskeyCredentialStore
 {

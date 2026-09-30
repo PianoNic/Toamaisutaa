@@ -6,23 +6,17 @@ using Toamaisutaa.Abstractions;
 namespace Toamaisutaa.Core;
 
 /// <summary>
-/// What the sign-in path is allowed to know about two-factor authentication.
+/// Stores are resolved through the provider rather than the constructor so password login without
+/// two-factor registered does not crash at the first sign-in.
 /// </summary>
-/// <remarks>
-/// Everything is resolved through the provider rather than the constructor because password login
-/// works perfectly well with no second factor registered at all, and a constructor dependency would
-/// turn "did not call AddToamaisutaaTwoFactor" into an unresolvable-service crash at the first
-/// sign-in. Absent, every method here answers "no".
-/// </remarks>
 internal sealed class TwoFactorGate(
     IServiceProvider provider,
     IOptions<ToamaisutaaTwoFactorOptions> options,
     ILogger<TwoFactorGate> logger)
 {
     /// <summary>
-    /// True when this sign-in has to stop and ask for a second factor. Enrolment alone decides it:
-    /// <see cref="TwoFactorEnforcement"/> governs who is pushed into enrolling, never whether an
-    /// already-enrolled user is challenged. Someone who turned it on gets it in every mode.
+    /// Enrolment alone decides it: <see cref="TwoFactorEnforcement"/> governs who must enrol, never
+    /// whether an enrolled user is challenged.
     /// </summary>
     internal async Task<bool> RequiresChallengeAsync(Guid userId, CancellationToken cancellationToken)
     {
@@ -34,8 +28,6 @@ internal sealed class TwoFactorGate(
         return enrolment is { ConfirmedAt: not null };
     }
 
-    /// <summary>True when the user must enrol and has not, which the token says out loud so an
-    /// application can let them reach the enrolment endpoints and nothing else.</summary>
     internal async Task<bool> MustEnrolAsync(Guid userId, CancellationToken cancellationToken)
     {
         if (options.Value.Enforcement != TwoFactorEnforcement.RequiredForAll)
@@ -49,10 +41,8 @@ internal sealed class TwoFactorGate(
         return enrolment is not { ConfirmedAt: not null };
     }
 
-    // authenticationMethods is what the caller has already proved, replayed into the finished
-    // sign-in's amr. Step-up leaves it empty: it takes its methods from the session it is elevating.
-    // securityStamp is the stamp the first factor was checked under, when the caller read it first:
-    // read here instead, it can be the stamp of a reset that landed while the password was hashing.
+    // Pass securityStamp as read before the first factor was checked; read here, it can be the stamp
+    // of a reset that landed while the password was hashing.
     internal async Task<TwoFactorChallenge> IssueChallengeAsync(
         Guid userId,
         DateTimeOffset now,
@@ -85,25 +75,12 @@ internal sealed class TwoFactorGate(
         return new TwoFactorChallenge(raw, (int)lifetime.TotalSeconds);
     }
 
-    /// <summary>Spends a challenge, if it is the right kind and belongs to whoever is holding it.</summary>
-    /// <param name="challengeToken">The raw challenge as the caller presented it.</param>
-    /// <param name="code">A TOTP code or a recovery code.</param>
-    /// <param name="now">The current instant, from the caller's clock.</param>
-    /// <param name="cancellationToken">Cancels the lookups.</param>
-    /// <param name="purpose">
-    /// What the redeeming endpoint is for. A challenge minted for the other one is refused, so a
-    /// step-up challenge cannot be spent anonymously at the sign-in endpoint for a whole token pair.
-    /// </param>
-    /// <param name="familyId">
-    /// The session presenting it, for <see cref="TwoFactorChallengePurpose.StepUp"/>. A challenge
-    /// bound to a different family belongs to another of this user's sessions and is refused.
-    /// </param>
-    /// <param name="refuseAttempt">
-    /// Called once the challenge names its user and before the code is checked. It counts the attempt
-    /// and answers true to refuse it, so a locked account neither spends a recovery code nor learns
-    /// whether a guess was right - and parallel guesses cannot each be checked against an account that
-    /// only locks once they have all been answered.
-    /// </param>
+    /// <summary>
+    /// A challenge minted for another purpose is refused, so a step-up challenge cannot be spent
+    /// anonymously at the sign-in endpoint. <paramref name="refuseAttempt"/> runs before the code is
+    /// checked so a locked account neither spends a recovery code nor learns whether a guess was
+    /// right, and parallel guesses cannot all be checked before the lock lands.
+    /// </summary>
     internal async Task<ChallengeRedemption> RedeemChallengeAsync(
         string challengeToken,
         string code,
@@ -119,8 +96,8 @@ internal sealed class TwoFactorGate(
         if (stored is null)
             return ChallengeRedemption.Failed(SignInOutcome.InvalidChallenge);
 
-        // Same answer as a challenge that never existed, and on purpose: which ceremony a token
-        // belongs to is not something an endpoint should confirm to whoever is holding it.
+        // Same answer as an unknown challenge, so the endpoint does not confirm which ceremony a
+        // token belongs to.
         if (stored.Purpose != purpose)
         {
             logger.LogWarning(
@@ -150,9 +127,8 @@ internal sealed class TwoFactorGate(
         if (stored.ExpiresAt <= now)
             return ChallengeRedemption.Failed(SignInOutcome.ChallengeExpired, stored.UserId);
 
-        // Issued before the account's credentials last changed. A reset is the owner locking somebody
-        // out, and a sign-in that person had half finished must not be finishable afterwards with a
-        // code they also hold.
+        // A reset is the owner locking somebody out, so a sign-in they half finished before it must
+        // not be finishable afterwards.
         if (stored.SecurityStamp is not null
             && await Required<IUserStore>().FindByIdAsync(stored.UserId, cancellationToken) is { } user
             && !string.Equals(user.SecurityStamp, stored.SecurityStamp, StringComparison.Ordinal))
@@ -165,9 +141,8 @@ internal sealed class TwoFactorGate(
             return ChallengeRedemption.Failed(SignInOutcome.InvalidChallenge, stored.UserId);
         }
 
-        // The challenge can outlive what it was challenging: disabling requires proof, so an
-        // attacker cannot do this, but the account holder can - from a second device, while this
-        // one still holds an unspent challenge. Checking the row is unconsumed is not enough.
+        // The challenge can outlive its enrolment if the owner disabled two-factor from another
+        // device, so an unconsumed row is not enough.
         var enrolments = Required<ITwoFactorStore>();
         var enrolment = await enrolments.FindAsync(stored.UserId, cancellationToken);
 
@@ -186,10 +161,9 @@ internal sealed class TwoFactorGate(
 
         var verifier = Required<TwoFactorVerifier>();
 
-        // Spent the moment the code checks out, and only then: consuming it on a wrong code would
-        // mean one mistyped digit sends the person back to the login form. And only by whoever wins
-        // the write - every request holding the same right code used to get a session each. Before
-        // the code itself is spent, so losing here does not also cost a recovery code.
+        // Spent only once the code checks out (a typo must not restart the login), only by whoever
+        // wins the conditional write (one session per challenge), and before the code itself is
+        // spent so losing the race does not also cost a recovery code.
         var verification = await verifier.VerifyAsync(
             stored.UserId,
             code,
@@ -216,8 +190,6 @@ internal sealed class TwoFactorGate(
         };
     }
 
-    /// <summary>For an account with no password credential, whose wrong-code count lives on the
-    /// enrolment rather than on a credential it does not have.</summary>
     internal Task<EnrolmentReservation> ReserveEnrolmentAttemptAsync(
         Guid userId,
         ToamaisutaaLocalLoginOptions localLogin,
@@ -241,16 +213,13 @@ internal readonly record struct ChallengeRedemption
 {
     internal SignInOutcome Outcome { get; init; }
 
-    /// <summary>Null only when the challenge itself was unknown, which is the one failure here that
-    /// names nobody. Every other one is attributable, and an audit sink is told who.</summary>
     internal Guid? UserId { get; init; }
 
     internal bool UsedRecoveryCode { get; init; }
 
     internal bool RecoveryCodesRunningLow { get; init; }
 
-    /// <summary>What the challenge said had already been proved. Empty or absent means <c>pwd</c>:
-    /// every row written before a magic link could reach a challenge was a password sign-in.</summary>
+    /// <summary>Empty or absent means <c>pwd</c>, because older rows predate magic-link challenges.</summary>
     internal string? AuthenticationMethods { get; init; }
 
     internal static ChallengeRedemption Failed(SignInOutcome outcome, Guid? userId = null) =>

@@ -84,7 +84,6 @@ public class DefaultProvisioningPolicyTests
     [Test]
     [Arguments(ProfileSyncMode.Never, false)]
     [Arguments(ProfileSyncMode.FirstSignInOnly, false)]
-    // The whole point of OnChange: an unchanged profile is not a write.
     [Arguments(ProfileSyncMode.OnChange, false)]
     [Arguments(ProfileSyncMode.EveryRequest, true)]
     public async Task UnchangedProfileUpdatesOnlyOnEveryRequest(ProfileSyncMode mode, bool expected)

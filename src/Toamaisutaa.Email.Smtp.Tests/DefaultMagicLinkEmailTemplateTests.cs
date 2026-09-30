@@ -54,8 +54,6 @@ public class DefaultMagicLinkEmailTemplateTests
         await Assert.That(content.PlainTextBody).DoesNotContain("token=a token/with+chars");
     }
 
-    // The expiry comes from the lifetime that actually governs the token, not from a second setting
-    // that would eventually disagree with it.
     [Test]
     public async Task ReadsTheExpiryFromTheConfiguredLifetime()
     {
@@ -63,13 +61,10 @@ public class DefaultMagicLinkEmailTemplateTests
 
         await Assert.That(content.PlainTextBody).Contains("40 minutes");
 
-        // The default, spelled out: "5 minutes" would also match "15 minutes", which is how an
-        // assertion agrees with a hardcoded number it was written to catch.
+        // The full default, because "5 minutes" would also match "15 minutes".
         await Assert.That(content.PlainTextBody).DoesNotContain("15 minutes");
     }
 
-    // Every other link this package sends leads to a form that asks for something else first. This
-    // one does not, and the wording has to say so.
     [Test]
     public async Task WarnsThatTheLinkSignsAnyoneIn()
     {

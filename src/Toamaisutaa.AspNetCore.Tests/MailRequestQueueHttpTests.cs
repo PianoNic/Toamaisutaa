@@ -3,15 +3,10 @@ using Toamaisutaa.Abstractions;
 
 namespace Toamaisutaa.AspNetCore.Tests;
 
-/// <summary>
-/// The queue reset and magic-link requests wait in after their 204 has gone.
-/// </summary>
 public class MailRequestQueueHttpTests
 {
     /// <summary>
-    /// One reader drained at the speed of one SMTP conversation, so anyone asking about enough
-    /// addresses kept the queue full and every real request behind them was dropped. Two jobs where
-    /// the first waits on the second only finish if more than one runs at once.
+    /// The first job waits on the second, so both finish only if more than one reader runs at once.
     /// </summary>
     [Test]
     public async Task Queued_requests_run_side_by_side()
@@ -33,10 +28,6 @@ public class MailRequestQueueHttpTests
         await Assert.That(await firstSawSecond.Task).IsTrue();
     }
 
-    /// <summary>
-    /// A notifier that never answers used to hold its reader until the host stopped. Given a
-    /// deadline, the job is abandoned and the reader goes back to work.
-    /// </summary>
     [Test]
     public async Task A_job_that_never_finishes_is_abandoned_at_its_deadline()
     {
@@ -49,10 +40,6 @@ public class MailRequestQueueHttpTests
         await queue.WhenIdleAsync().WaitAsync(TimeSpan.FromSeconds(10));
     }
 
-    /// <summary>
-    /// A request dropped from a full queue sent nothing, but its address had already taken the
-    /// cooldown, so the owner's retry a moment later was turned away too - two requests, no mail.
-    /// </summary>
     [Test]
     [Arguments("/auth/password/forgot")]
     [Arguments("/auth/magic-link")]
@@ -77,7 +64,7 @@ public class MailRequestQueueHttpTests
             return gate.Task;
         }
 
-        // Every reader holding a job first, so none of them frees a slot after the queue is full.
+        // Every reader holds a job first, so none frees a slot after the queue is full.
         for (var i = 0; i < MailRequestQueue.Readers; i++)
             queue.Enqueue(Held);
 
@@ -92,7 +79,7 @@ public class MailRequestQueueHttpTests
 
         using var dropped = new InstrumentProbe(app, "toamaisutaa.mail_requests.dropped");
 
-        // Raw, because the usual client waits for the queue to drain, and this one is held full.
+        // Raw, because the usual client waits for the queue to drain and this one is held full.
         await app.RawClient.PostJson(path, new { email = account.Email });
         await Assert.That(dropped.Total).IsEqualTo(1);
 

@@ -3,8 +3,6 @@ using Microsoft.Extensions.Options;
 
 namespace Toamaisutaa.PasswordValidation.Hibp;
 
-/// <summary>Refuses to start rather than failing on the first password anybody chooses, the same
-/// reasoning <c>PasswordLoginStartupCheck</c> uses for local login.</summary>
 internal sealed class HibpStartupCheck(IOptions<ToamaisutaaHibpOptions> options) : IHostedService
 {
     public Task StartAsync(CancellationToken cancellationToken)
@@ -15,8 +13,8 @@ internal sealed class HibpStartupCheck(IOptions<ToamaisutaaHibpOptions> options)
         if (settings.BreachThreshold < 1)
             problems.Add($"PasswordValidation:Hibp:BreachThreshold is {settings.BreachThreshold}. It counts appearances in the corpus, so the lowest value that refuses anything real is 1.");
 
-        // An absolute URI is not enough: file: and ftp: parse, and then every lookup fails on a
-        // scheme HttpClient will not send, which fails open and reads as the corpus being down.
+        // file: and ftp: parse as absolute, and every lookup would then fail open on a scheme
+        // HttpClient will not send.
         if (string.IsNullOrWhiteSpace(settings.ApiBaseAddress)
             || !Uri.TryCreate(settings.ApiBaseAddress, UriKind.Absolute, out var apiBaseAddress)
             || (apiBaseAddress.Scheme != Uri.UriSchemeHttp && apiBaseAddress.Scheme != Uri.UriSchemeHttps))

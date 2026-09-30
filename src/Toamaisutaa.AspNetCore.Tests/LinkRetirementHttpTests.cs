@@ -4,11 +4,6 @@ using Toamaisutaa.Abstractions;
 
 namespace Toamaisutaa.AspNetCore.Tests;
 
-/// <summary>
-/// Links already mailed out, and the account changes that should kill them. Somebody changing a
-/// password or moving to a new address is reacting to another person having had access, and a link
-/// still sitting in a mailbox is exactly that access.
-/// </summary>
 public class LinkRetirementHttpTests
 {
     [Test]
@@ -51,7 +46,6 @@ public class LinkRetirementHttpTests
         await Assert.That(redeemed.StatusCode).IsEqualTo(HttpStatusCode.Unauthorized);
     }
 
-    /// <summary>The account moved off a mailbox; whatever was mailed there stops working.</summary>
     [Test]
     public async Task Moving_to_a_new_address_retires_an_outstanding_reset_link()
     {

@@ -15,24 +15,9 @@ using Microsoft.IdentityModel.Tokens;
 namespace Toamaisutaa.AspNetCore.Tests;
 
 /// <summary>
-/// The path the whole package is for: an access token the identity provider issued, presented to an
-/// application that also registers password login.
+/// Uses a <c>StaticConfigurationManager</c> because, like the discovery-backed manager, it is a
+/// <c>BaseConfigurationManager</c>, whose keys the handler never merges into <c>IssuerSigningKeys</c>.
 /// </summary>
-/// <remarks>
-/// <para>
-/// No identity provider is run and nothing is fetched. A <c>StaticConfigurationManager</c> stands in
-/// for one, which is not a shortcut but the point: it is a <c>BaseConfigurationManager</c>, exactly
-/// like the manager the handler builds for an <c>Oidc:Authority</c> once discovery has answered, and
-/// that is the distinction that matters. For one of those the handler hands the issuer's keys to the
-/// validator as the configuration and never merges them into <c>IssuerSigningKeys</c>.
-/// </para>
-/// <para>
-/// Nothing here presented an identity-provider token before, so a key resolver that could only read
-/// <c>IssuerSigningKeys</c> refused every one of them in the package's primary configuration while
-/// the suite stayed green. The two refusals below are the other half: the resolver still has to keep
-/// each issuer to its own keys.
-/// </para>
-/// </remarks>
 public class IdentityProviderTokenHttpTests
 {
     private const string IdentityProvider = "https://idp.example";
@@ -40,11 +25,7 @@ public class IdentityProviderTokenHttpTests
     private const string LocalKeyId = "local-2026-09";
     private const string LocalIssuer = "toamaisutaa-tests";
 
-    /// <summary>
-    /// A host that trusts <see cref="IdentityProvider"/> for its RSA key and itself for a local EC
-    /// key, which is the deployment shape the break needed: with no local keys configured the bearer
-    /// options are left exactly as the handler wrote them and the resolver is never installed.
-    /// </summary>
+    /// <summary>Local keys are configured because without them the key resolver under test is never installed.</summary>
     private static Task<TestApp> StartAsync(
         RSA identityProviderKey,
         ECDsa localKey,
@@ -65,8 +46,7 @@ public class IdentityProviderTokenHttpTests
             {
                 settings["Oidc:Authority"] = IdentityProvider;
 
-                // Off unless asked for: most of these tests are about which key validates a
-                // signature, and the stand-in has no userinfo endpoint to answer on.
+                // The stand-in issuer has no userinfo endpoint to answer on.
                 settings["Oidc:FetchClaimsFromUserInfo"] = fetchUserInfo ? "true" : "false";
 
                 settings.Remove("LocalLogin:SigningKey");
@@ -85,10 +65,7 @@ public class IdentityProviderTokenHttpTests
             mapExtra: mapExtra);
     }
 
-    /// <summary>
-    /// Minted rather than doctored, for the reason <c>TestApp.MintTokenWithoutSession</c> gives:
-    /// editing a real token breaks its signature, so the request never reaches the code under test.
-    /// </summary>
+    /// <summary>Minted rather than doctored, because editing a real token breaks its signature before the code under test runs.</summary>
     private static string Mint(TestApp app, SecurityKey key, string algorithm, string issuer, string subject, params Claim[] extra) =>
         new JsonWebTokenHandler().CreateToken(new SecurityTokenDescriptor
         {
@@ -127,11 +104,6 @@ public class IdentityProviderTokenHttpTests
         await Assert.That((await response.Json()).String("userName")).IsEqualTo("grace");
     }
 
-    /// <summary>
-    /// The first half of the defence the resolver exists for. A token claiming the identity
-    /// provider and signed with a key this package owns is somebody who reached our signing key
-    /// trying to pass as the issuer, and the local keys must never be offered for it.
-    /// </summary>
     [Test]
     public async Task Refuses_an_identity_provider_token_signed_with_the_local_key()
     {
@@ -153,9 +125,7 @@ public class IdentityProviderTokenHttpTests
     }
 
     /// <summary>
-    /// The other half, and the worse of the two: a token claiming the local issuer carries a local
-    /// user id as its subject, so accepting one signed by the identity provider's key would hand
-    /// whoever can mint an IdP token any account in the database.
+    /// A local token's subject is a local user id, so accepting the provider's key here would let anyone who can mint an IdP token pick any account.
     /// </summary>
     [Test]
     public async Task Refuses_a_local_token_signed_with_the_identity_provider_key()
@@ -177,10 +147,6 @@ public class IdentityProviderTokenHttpTests
         await Assert.That(response.StatusCode).IsEqualTo(HttpStatusCode.Unauthorized);
     }
 
-    /// <summary>
-    /// A first password has no current one to prove, so a bare access token used to be enough to add
-    /// a permanent way into an identity-provider account - one that survives the provider disabling it.
-    /// </summary>
     [Test]
     public async Task A_first_password_is_refused_without_a_recent_sign_in_at_the_identity_provider()
     {
@@ -221,11 +187,6 @@ public class IdentityProviderTokenHttpTests
         await Assert.That(login.StatusCode).IsEqualTo(HttpStatusCode.OK);
     }
 
-    /// <summary>
-    /// The provider's email is only what the provider asserted. A first password used to copy it
-    /// onto the credential as a login identifier and a reset address, for a mailbox nobody had shown
-    /// this account owns.
-    /// </summary>
     [Test]
     public async Task A_first_password_does_not_make_the_providers_email_a_login_identifier()
     {
@@ -255,9 +216,7 @@ public class IdentityProviderTokenHttpTests
     }
 
     /// <summary>
-    /// A provider's handle is often an address - a UPN is one. Copied into the user-name column by a
-    /// first password, it became a hold on that address that proving the mailbox could never release,
-    /// and it answered sign-ins for that address with this account.
+    /// A provider's handle is often an address (a UPN is one), and as a user name it would answer sign-ins for that unproven address.
     /// </summary>
     [Test]
     public async Task A_first_password_does_not_take_an_address_shaped_user_name_from_the_provider()
@@ -284,10 +243,6 @@ public class IdentityProviderTokenHttpTests
         await Assert.That(byAddress.StatusCode).IsEqualTo(HttpStatusCode.Unauthorized);
     }
 
-    /// <summary>
-    /// An account an identity provider owns has no password to give, so a recent sign-in there is
-    /// the proof enrolment takes instead.
-    /// </summary>
     [Test]
     public async Task Enrolling_an_identity_provider_account_needs_a_recent_sign_in_there()
     {
@@ -308,19 +263,8 @@ public class IdentityProviderTokenHttpTests
     }
 
     /// <summary>
-    /// A user who once enrolled locally, signing in through a provider that asked for nothing more
-    /// than a password. The transformation used to write <c>amr=mfa</c> for them, and the
-    /// second-factor policy let a phished provider password straight through.
+    /// Covers a non-default provider key and a provider-sent <c>amr</c> (as Entra, Okta, Auth0 and Keycloak send), each of which once hid the local enrolment.
     /// </summary>
-    /// <remarks>
-    /// Run under the default provider key and a configured one. The transformation used to look the
-    /// login up under the default constant, so with any other key it found no enrolment at all.
-    /// </remarks>
-    /// <remarks>
-    /// And with the provider's own <c>amr</c> on the token, as Entra, Okta, Auth0 and Keycloak send
-    /// it: any <c>amr</c> used to be read as "a local token", so none of these ever learned about
-    /// the local enrolment, and an unenrolled one was never told it had to.
-    /// </remarks>
     [Test]
     [Arguments(null, false)]
     [Arguments("keycloak", false)]
@@ -357,7 +301,6 @@ public class IdentityProviderTokenHttpTests
         var confirm = await app.Client.PostJson("/auth/2fa/confirm", new { code = Totp.Code(secret, app.Time.Now) }, fresh);
         await Assert.That(confirm.StatusCode).IsEqualTo(HttpStatusCode.OK);
 
-        // A later sign-in at the provider, which proved a password and nothing more.
         var later = providerSendsAmr
             ? Mint(app, key, SecurityAlgorithms.RsaSha256, IdentityProvider, "grace-subject", new Claim("amr", "pwd"))
             : Mint(app, key, SecurityAlgorithms.RsaSha256, IdentityProvider, "grace-subject");
@@ -371,21 +314,12 @@ public class IdentityProviderTokenHttpTests
 
         await Assert.That(claims).Contains((ToamaisutaaDefaults.TwoFactorEnrolledClaim, "true"));
 
-        // Whatever the provider said, and nothing this package made up.
         await Assert.That(claims.Where(claim => claim.Type == ToamaisutaaDefaults.AuthenticationMethodClaim).Select(claim => claim.Value))
             .IsEquivalentTo(providerSendsAmr ? ["pwd"] : Array.Empty<string?>());
     }
 
     /// <summary>
-    /// A local token carries no role until an application supplies one, which is exactly what used
-    /// to send it to the provider's userinfo endpoint - a credential this package minted, handed to a
-    /// third party as a bearer token on every request. A provider token still goes, which is what
-    /// shows the call is wired at all.
-    /// </summary>
-    /// <summary>
-    /// A token this package issued already says what its enrolment is, so the claims transformation
-    /// leaves it alone. Nothing in its claims shows whether it did - a local subject never matches an
-    /// external login - so what is counted is the lookup it would otherwise make on every request.
+    /// A local subject never matches an external login, so the claims cannot show a skipped lookup and the lookup itself is counted.
     /// </summary>
     [Test]
     public async Task A_local_token_costs_the_two_factor_claims_no_lookup()
@@ -433,8 +367,9 @@ public class IdentityProviderTokenHttpTests
         }
     }
 
-    /// <remarks>Under the legacy validators too, where the validated token is a JwtSecurityToken
-    /// rather than a JsonWebToken, and a check on the one type let every local token through.</remarks>
+    /// <summary>
+    /// Also under the legacy validators, where the validated token is a JwtSecurityToken rather than a JsonWebToken; the provider token proves the call is wired at all.
+    /// </summary>
     [Test]
     [Arguments(false)]
     [Arguments(true)]
@@ -476,9 +411,7 @@ public class IdentityProviderTokenHttpTests
     }
 
     /// <summary>
-    /// With no API audience configured, the accepted audience is the client id - which is what every
-    /// ID token for that client carries. ID tokens leak further than access tokens do, through
-    /// logout URLs and components that were handed one, and a leaked one signed its subject in.
+    /// With no API audience configured the accepted audience is the client id, which every ID token for that client also carries.
     /// </summary>
     [Test]
     [Arguments("nonce", "n-0S6_WzA2Mj")]
@@ -505,9 +438,7 @@ public class IdentityProviderTokenHttpTests
     }
 
     /// <summary>
-    /// An account the identity provider owns has no password credential, which is where the wrong-code
-    /// count lived. A stolen provider token could guess the code at these endpoints as fast as the
-    /// per-address limiter allowed, and a right guess paid out the second factor itself.
+    /// Such an account has no password credential to hold the wrong-code count, yet must still lock.
     /// </summary>
     [Test]
     [Arguments("/auth/2fa/disable")]
@@ -543,10 +474,6 @@ public class IdentityProviderTokenHttpTests
         await Assert.That((await app.Client.Get("/auth/2fa", token)).Json().Result.Bool("enabled")).IsTrue();
     }
 
-    /// <summary>
-    /// The same, raced. Written back unconditionally, parallel wrong proofs all read the same count
-    /// and wrote the same count plus one, and the lock never arrived.
-    /// </summary>
     [Test]
     public async Task Parallel_wrong_proofs_on_an_account_without_a_password_still_lock_it()
     {
@@ -579,9 +506,7 @@ public class IdentityProviderTokenHttpTests
     }
 
     /// <summary>
-    /// Keycloak before version 25 put <c>nonce</c> into access tokens as well as ID tokens, and labels
-    /// both with a <c>typ</c> claim. Refusing on <c>nonce</c> refused every access token those servers
-    /// issued; the label says which kind a token is, and decides.
+    /// Keycloak before version 25 puts <c>nonce</c> into access tokens too, so the <c>typ</c> label must decide.
     /// </summary>
     [Test]
     public async Task A_keycloak_access_token_carrying_nonce_is_accepted_by_its_bearer_label()
@@ -648,8 +573,7 @@ public class IdentityProviderTokenHttpTests
         }
     }
 
-    /// <summary>A provider token with an email and no <c>preferred_username</c> - Google's shape - which
-    /// provisions a row with no user name and no password: exactly what a reservation used to look like.</summary>
+    /// <summary>Google's shape, which provisions a row with no user name and no password, the same shape as an invitation reservation.</summary>
     private static string MintWithoutUserName(TestApp app, SecurityKey key, string subject, string email) =>
         new JsonWebTokenHandler().CreateToken(new SecurityTokenDescriptor
         {
@@ -662,10 +586,6 @@ public class IdentityProviderTokenHttpTests
             SigningCredentials = new SigningCredentials(key, SecurityAlgorithms.RsaSha256),
         });
 
-    /// <summary>
-    /// Revoking read "no user name, no password" as "an open invitation", so it deleted an identity
-    /// provider's account that happened to have that shape - along with its logins and sessions.
-    /// </summary>
     [Test]
     public async Task Revoking_an_invitation_never_deletes_an_identity_provider_account()
     {
@@ -686,10 +606,6 @@ public class IdentityProviderTokenHttpTests
         await Assert.That((await after.Json()).String("id")).IsEqualTo(before.String("id"));
     }
 
-    /// <summary>
-    /// Inviting the address of such an account reused its row, so the invitee's new password was
-    /// attached to an account somebody else's provider login still opened.
-    /// </summary>
     [Test]
     public async Task An_invitation_never_adopts_an_identity_provider_account()
     {

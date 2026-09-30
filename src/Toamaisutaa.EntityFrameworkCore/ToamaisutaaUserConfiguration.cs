@@ -16,8 +16,6 @@ public sealed class ToamaisutaaUserConfiguration : IEntityTypeConfiguration<Toam
 
         builder.HasKey(user => user.Id);
 
-        // The store assigns a UUIDv7, so the two providers behave identically and a user and its
-        // external login can be inserted in one round trip.
         builder.Property(user => user.Id).ValueGeneratedNever();
 
         builder.Property(user => user.UserName).HasMaxLength(256);
@@ -29,16 +27,8 @@ public sealed class ToamaisutaaUserConfiguration : IEntityTypeConfiguration<Toam
         builder.Property(user => user.CreatedAt).HasConversion(InstantConverters.Instant);
         builder.Property(user => user.UpdatedAt).HasConversion(InstantConverters.Instant);
 
-        // NOT UNIQUE, permanently, and not an oversight to be tidied up later.
-        //
-        // This model is multi-provider: one person with accounts at two identity providers is two
-        // rows, legitimately sharing an address, and plenty of providers do not enforce uniqueness
-        // in the first place. Email here is a profile field that OIDC provisioning rewrites whenever
-        // the token's claim changes - making it unique would mean an administrator editing a
-        // directory could collide two rows and throw out of an unrelated request.
-        //
-        // Local login does need a unique email, and it has one: ToamaisutaaPasswordCredentials owns
-        // that constraint, scoped to accounts that actually sign in with a password.
+        // Deliberately not unique: one person at two identity providers is two rows sharing an
+        // address. Local login's unique email lives on ToamaisutaaPasswordCredentials.
         builder.HasIndex(user => user.Email);
     }
 }

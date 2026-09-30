@@ -19,14 +19,13 @@ public static class ToamaisutaaPasskeyEndpointExtensions
     /// <c>LocalLogin:EndpointPrefix</c> + <c>Passkeys:EndpointPrefix</c>.
     /// </summary>
     /// <remarks>
-    /// The assertion pair is anonymous, because a passkey is the first credential rather than a
-    /// second one - there is no token yet. Both halves are throttled by the same limiter as
-    /// <c>/auth/login</c>, and so is <c>/register/begin</c>, which writes a row on every call.
+    /// The assertion pair is anonymous. It, <c>/register/begin</c> and the delete are throttled by
+    /// the same limiter as <c>/auth/login</c>.
     /// </remarks>
     /// <param name="endpoints">The builder to map into. A <c>RouteGroupBuilder</c> is one.</param>
     /// <param name="endpointNamePrefix">
-    /// Prepended to every endpoint name, so the same endpoints can be mapped into more than one
-    /// group. Endpoint names are unique per application, so a second group needs distinct ones.
+    /// Prepended to every endpoint name. Endpoint names are unique per application, so mapping into
+    /// a second group needs a distinct prefix.
     /// </param>
     public static IEndpointConventionBuilder MapToamaisutaaPasskeyEndpoints(
         this IEndpointRouteBuilder endpoints,
@@ -178,8 +177,7 @@ public static class ToamaisutaaPasskeyEndpointExtensions
     {
         var user = await currentUser.GetOrProvisionAsync(cancellationToken);
 
-        // The second factor comes off the caller's own token rather than the body. It is the one
-        // half of the proof a caller could otherwise assert about themselves.
+        // The second factor comes off the caller's own token, never the body, or a caller could vouch for themselves.
         var presented = (proof ?? new PasskeyRegistrationProof()) with { SecondFactorAt = SecondFactorAt(context.User) };
 
         try
@@ -193,13 +191,9 @@ public static class ToamaisutaaPasskeyEndpointExtensions
     }
 
     /// <summary>
-    /// When this session last presented a live second factor, from <c>toa_2fa_at</c>.
+    /// Read from <c>toa_2fa_at</c>, the claim <c>RequireFreshSecondFactor</c> reads, so a
+    /// device-trusted sign-in does not count as a fresh second factor.
     /// </summary>
-    /// <remarks>
-    /// The same claim <c>RequireFreshSecondFactor</c> reads, so "fresh" means one thing across the
-    /// package: a device-trusted sign-in reports the original challenge rather than now, and a
-    /// session that cached its way in does not count as having proved anything just now.
-    /// </remarks>
     private static DateTimeOffset? SecondFactorAt(ClaimsPrincipal principal) =>
         long.TryParse(
             principal.FindFirst(ToamaisutaaDefaults.SecondFactorAtClaim)?.Value,
@@ -224,9 +218,7 @@ public static class ToamaisutaaPasskeyEndpointExtensions
         {
             var registered = await passkeys.CompleteRegistrationAsync(user.Id, request, cancellationToken);
 
-            // No Location, matching every other 201 in the package. There is no route that serves
-            // one credential - the id in this body is for the delete and for the list - and a header
-            // naming a path nothing maps is worse than no header at all.
+            // No Location header: no route serves a single credential.
             return Results.Json(registered, statusCode: StatusCodes.Status201Created);
         }
         catch (PasskeyRegistrationException exception)
@@ -255,9 +247,7 @@ public static class ToamaisutaaPasskeyEndpointExtensions
             },
             cancellationToken);
 
-        // Possession without user verification, on an account that has enrolled. The same second
-        // shape /auth/login answers with, for the same reason the body below is the same one: a
-        // client that had to learn a second way of being asked for a code would have two of them.
+        // Both bodies below match /auth/login exactly, so clients handle one sign-in contract.
         if (result.Outcome == SignInOutcome.TwoFactorRequired && result.Challenge is { } challenge)
         {
             return Results.Ok(new TwoFactorChallengeResponse
@@ -267,8 +257,6 @@ public static class ToamaisutaaPasskeyEndpointExtensions
             });
         }
 
-        // The same body /auth/login returns, deliberately: both end a sign-in, and a client that had
-        // to parse one casing here and another there would be carrying our history rather than an API.
         return result.Succeeded
             ? ToamaisutaaPasswordEndpointExtensions.Tokens(
                 result.Tokens!,
@@ -287,9 +275,8 @@ public static class ToamaisutaaPasskeyEndpointExtensions
         });
 
     /// <summary>
-    /// One body for a wrong signature, an expired challenge, a spent one and a credential nobody has
-    /// registered. They are the same answer to whoever presented it, and telling them apart would
-    /// say whether the credential was ever real.
+    /// One body for every assertion failure, since telling them apart would reveal whether the
+    /// credential was ever real.
     /// </summary>
     private static IResult Unauthorized() =>
         Results.Json(

@@ -3,12 +3,8 @@ using Toamaisutaa.Abstractions;
 
 namespace Toamaisutaa.EntityFrameworkCore;
 
-/// <summary>
-/// Both stores in one class, registered once per request and exposed under both interfaces. They
-/// share a <c>DbContext</c> anyway, and one object can tell whether the user it is linking was
-/// created moments ago by this same request - which is what makes the concurrent first sign-in
-/// clean up after itself instead of leaving a user row with no login attached.
-/// </summary>
+/// <summary>Both stores in one per-request instance, so a lost first-sign-in race can tell whether
+/// this request created the user and remove the orphan.</summary>
 internal sealed class EntityFrameworkStore<TContext>(TContext context, TimeProvider timeProvider)
     : IUserStore, IExternalLoginStore
     where TContext : DbContext
@@ -20,9 +16,8 @@ internal sealed class EntityFrameworkStore<TContext>(TContext context, TimeProvi
 
     public async Task<ToamaisutaaUser?> FindByEmailAsync(string email, CancellationToken cancellationToken = default)
     {
-        // Upper-cased on both sides rather than trusting the database's collation, and unindexed by
-        // design: the column is not unique, so this can match several rows and is only ever used to
-        // decide what to write in a log line.
+        // Upper-cased on both sides rather than trusting the collation; unindexed by design, since it
+        // only decides what to write in a log line.
         var normalized = email.Trim().ToUpperInvariant();
 
         return await context.Set<ToamaisutaaUser>()
@@ -35,7 +30,6 @@ internal sealed class EntityFrameworkStore<TContext>(TContext context, TimeProvi
 
         var user = new ToamaisutaaUser
         {
-            // Sequential, so the primary-key index does not fragment the way random Guids do.
             Id = Guid.CreateVersion7(now),
             UserName = profile.UserName,
             Email = profile.Email,
@@ -88,9 +82,8 @@ internal sealed class EntityFrameworkStore<TContext>(TContext context, TimeProvi
 
         var now = timeProvider.GetUtcNow();
 
-        // Only the profile columns. The row was read at the start of the request, and writing it back
-        // whole put its security stamp back too - so a sync that read before a password change and
-        // saved after it undid the stamp bump, and a stolen token revived until it expired.
+        // Only the profile columns: writing the row back whole could restore a stale security stamp
+        // and revive revoked tokens.
         await context.Set<ToamaisutaaUser>()
             .Where(stored => stored.Id == user.Id)
             .ExecuteUpdateAsync(
@@ -102,7 +95,6 @@ internal sealed class EntityFrameworkStore<TContext>(TContext context, TimeProvi
                     .SetProperty(stored => stored.UpdatedAt, now),
                 cancellationToken);
 
-        // Kept in step with what was written, for the caller still holding this instance.
         user.UserName = profile.UserName;
         user.Email = profile.Email;
         user.DisplayName = profile.DisplayName;
@@ -141,8 +133,6 @@ internal sealed class EntityFrameworkStore<TContext>(TContext context, TimeProvi
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(email);
 
-        // The display name is left alone, unlike SetUserNameAsync: an address is not a name, and
-        // overwriting one somebody chose with their mailbox would be a surprise.
         await context.Set<ToamaisutaaUser>()
             .Where(user => user.Id == userId)
             .ExecuteUpdateAsync(
@@ -152,12 +142,8 @@ internal sealed class EntityFrameworkStore<TContext>(TContext context, TimeProvi
                 cancellationToken);
     }
 
-    /// <summary>
-    /// Every user gets one from the moment the row exists, including one provisioned from an
-    /// identity provider that will never have a password. A null stamp compares equal to nothing
-    /// and would make the refresh check either always pass or always fail, depending on which side
-    /// was missing.
-    /// </summary>
+    /// <summary>Every user gets one on creation, because a null stamp would make the refresh check
+    /// always pass or always fail.</summary>
     private static string NewSecurityStamp() =>
         Convert.ToBase64String(System.Security.Cryptography.RandomNumberGenerator.GetBytes(32))
             .TrimEnd('=')
@@ -173,9 +159,8 @@ internal sealed class EntityFrameworkStore<TContext>(TContext context, TimeProvi
             .Where(login => login.ProviderKey == providerKey && login.Subject == subject)
             .ToListAsync(cancellationToken);
 
-        // Compared again here, exactly. The database compares under the column's collation, and the
-        // default ones on SQL Server and MySQL ignore case - MySQL's ignores accents too - while an
-        // OpenID Connect subject is case-sensitive. Left to the database, "Alice" signed in as "alice".
+        // Re-compared ordinally: SQL Server's and MySQL's default collations ignore case (MySQL's also
+        // accents), but an OpenID Connect subject is case-sensitive, so "Alice" would sign in as "alice".
         return candidates.FirstOrDefault(login =>
             string.Equals(login.ProviderKey, providerKey, StringComparison.Ordinal)
             && string.Equals(login.Subject, subject, StringComparison.Ordinal));
@@ -212,7 +197,7 @@ internal sealed class EntityFrameworkStore<TContext>(TContext context, TimeProvi
             context.Entry(login).State = EntityState.Detached;
 
             // Which constraint fired is provider-specific, so ask the database instead of parsing
-            // an error code: if the pair is there now and we did not put it there, we lost a race.
+            // an error code.
             var existing = await context.Set<ToamaisutaaExternalLogin>()
                 .AsNoTracking()
                 .FirstOrDefaultAsync(
@@ -236,11 +221,7 @@ internal sealed class EntityFrameworkStore<TContext>(TContext context, TimeProvi
                 cancellationToken);
     }
 
-    /// <summary>
-    /// The losing side of a concurrent first sign-in has just created a user that will never get a
-    /// login, because the winner's row owns the subject now. Remove it - but only when this request
-    /// is the one that created it, so a pre-existing user someone else owns is never touched.
-    /// </summary>
+    /// <summary>Only deletes a user this request created, so a pre-existing user is never touched.</summary>
     private async Task DiscardOrphanedUserAsync(Guid userId, CancellationToken cancellationToken)
     {
         if (!_createdHere.Remove(userId))

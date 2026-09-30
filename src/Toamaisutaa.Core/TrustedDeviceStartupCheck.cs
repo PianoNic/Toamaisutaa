@@ -5,10 +5,6 @@ using Toamaisutaa.Abstractions;
 
 namespace Toamaisutaa.Core;
 
-/// <summary>
-/// Refuses to start rather than failing at the first sign-in. Everything here is invisible until
-/// somebody tries to be remembered, which is the worst moment to find out.
-/// </summary>
 internal sealed class TrustedDeviceStartupCheck(
     IServiceCollection services,
     IOptions<ToamaisutaaTrustedDeviceOptions> options) : IHostedService

@@ -4,8 +4,8 @@ using Microsoft.EntityFrameworkCore.Design;
 namespace Toamaisutaa.EntityFrameworkCore.Migrations.Sqlite;
 
 /// <summary>
-/// Exists so <c>dotnet ef migrations add</c> can build a model without a host. Public because the
-/// EF tools reflect over it.
+/// Lets <c>dotnet ef migrations add</c> build a model without a host. Public because the EF tools
+/// reflect over it.
 /// </summary>
 public sealed class ToamaisutaaDesignTimeDbContextFactory : IDesignTimeDbContextFactory<ToamaisutaaDbContext>
 {

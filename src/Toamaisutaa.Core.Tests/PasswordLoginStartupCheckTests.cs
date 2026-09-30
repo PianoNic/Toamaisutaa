@@ -5,14 +5,9 @@ using Toamaisutaa.Abstractions;
 namespace Toamaisutaa.Core.Tests;
 
 /// <summary>
-/// The hashing parameters, from both ends. The floors are about strength; the ceilings are about
-/// whether the row can be read back at all, and only the second kind produces a wrong-password
-/// answer to the correct password.
+/// The check reports every problem at once, and a service collection with no stores has plenty, so
+/// these assert on the parameter message rather than on the exception being thrown.
 /// </summary>
-/// <remarks>
-/// The check reports every problem it finds at once, and a service collection with no stores in it
-/// has plenty, so these assert on the parameter message rather than on the exception being thrown.
-/// </remarks>
 public class PasswordLoginStartupCheckTests
 {
     private static string Run(Action<ToamaisutaaLocalLoginOptions> configure)
@@ -41,11 +36,6 @@ public class PasswordLoginStartupCheckTests
         }
     }
 
-    /// <summary>
-    /// The hasher refuses a stored row longer than this, so a larger setting writes credentials the
-    /// same process cannot verify - and the only symptom is a failed sign-in against the correct
-    /// password.
-    /// </summary>
     [Test]
     public async Task RefusesAHashSizeAboveWhatAStoredRowMayCarry()
     {
@@ -64,8 +54,6 @@ public class PasswordLoginStartupCheckTests
         await Assert.That(problems).Contains("would fail to verify");
     }
 
-    /// <summary>The bound itself is legal: refusing it would be refusing a row the hasher
-    /// reads.</summary>
     [Test]
     public async Task AcceptsTheHighestHashSizeAStoredRowMayCarry()
     {

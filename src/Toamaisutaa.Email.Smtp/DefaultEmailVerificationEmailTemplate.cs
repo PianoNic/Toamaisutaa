@@ -3,8 +3,6 @@ using Toamaisutaa.Abstractions;
 
 namespace Toamaisutaa.Email.Smtp;
 
-/// <summary>Plain, utilitarian wording, the same as the reset email - a link that decides which
-/// mailbox owns an account is security mail, not the place for this package's usual voice.</summary>
 internal sealed class DefaultEmailVerificationEmailTemplate(IOptions<ToamaisutaaSmtpEmailOptions> options) : IEmailVerificationEmailTemplate
 {
     public EmailVerificationEmailContent Build(ToamaisutaaUser user, string email, string verificationToken)
@@ -14,13 +12,8 @@ internal sealed class DefaultEmailVerificationEmailTemplate(IOptions<Toamaisutaa
             nameof(ToamaisutaaSmtpEmailOptions.EmailVerificationLinkTemplate),
             verificationToken);
 
-        // No name, deliberately. This goes to an address nobody has proven yet, chosen by whoever is
-        // signed in, and the name is whatever they registered with - a sentence and a URL, if they
-        // like. Greeting by it would let anyone mail their own words, from this domain, to any
-        // inbox they choose.
-        //
-        // Naming the address is the whole point of the next line: the person reading it is the only
-        // one who can tell whether the account should be pointing here at all.
+        // No name: it is attacker-chosen text, and this goes to an unproven address, so greeting by it
+        // would let anyone mail their own words from this domain to any inbox.
         return new EmailVerificationEmailContent
         {
             Subject = "Verify your email address",

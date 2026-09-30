@@ -9,10 +9,7 @@ internal sealed class TrustedDeviceService(
     TimeProvider timeProvider,
     ILogger<TrustedDeviceService> logger) : ITrustedDeviceService
 {
-    /// <summary>
-    /// Set by the endpoint from the request's own device token, so the list can mark one entry as
-    /// "this device". Never returned to the caller and never logged.
-    /// </summary>
+    /// <summary>Identifies the caller's own device; never return it or log it.</summary>
     internal string? CurrentDeviceTokenHash { get; set; }
 
     public async Task<IReadOnlyList<TrustedDeviceSummary>> ListAsync(Guid userId, CancellationToken cancellationToken = default)
@@ -39,8 +36,8 @@ internal sealed class TrustedDeviceService(
     {
         var active = await devices.ListActiveAsync(userId, cancellationToken);
 
-        // Scoped to this user's own list, so a device id belonging to someone else is
-        // indistinguishable from one that never existed.
+        // Scoped to this user's own list, so another user's device id is indistinguishable from one
+        // that never existed.
         if (!active.Any(device => device.FamilyId == deviceId))
             return false;
 

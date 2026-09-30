@@ -110,8 +110,6 @@ public class TokenCleanupTests
     }
 }
 
-/// <summary>The cleanup service takes a scope per sweep. This is the smallest thing that hands one
-/// out without building a container.</summary>
 internal sealed class FakeServiceScopeFactory(FakeServiceProvider services) : IServiceScopeFactory, IServiceScope
 {
     public IServiceProvider ServiceProvider => services;
@@ -123,8 +121,6 @@ internal sealed class FakeServiceScopeFactory(FakeServiceProvider services) : IS
     }
 }
 
-/// <summary>Keeps every line and its structured values, so a test can assert on a count that is
-/// only ever reported through the log.</summary>
 internal sealed class CapturingLogger<T> : ILogger<T>
 {
     internal List<(LogLevel Level, IReadOnlyDictionary<string, object?> Values)> Entries { get; } = [];

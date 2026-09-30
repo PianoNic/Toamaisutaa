@@ -10,8 +10,7 @@ public interface IPasswordSignInService
 
     /// <summary>
     /// Revokes the presented token's family. Never reports whether it existed, and deliberately
-    /// leaves trusted devices alone - signing out is not a security event, and a device surviving it
-    /// is the entire point of having trusted it.
+    /// leaves trusted devices alone - signing out is not a security event.
     /// </summary>
     Task SignOutAsync(string refreshToken, CancellationToken cancellationToken = default);
 
@@ -25,17 +24,9 @@ public interface IPasswordSignInService
     /// reading the mailbox is the factor.
     /// </summary>
     /// <remarks>
-    /// <para>
-    /// Stops at <see cref="SignInOutcome.TwoFactorRequired"/> for an enrolled account exactly as
-    /// <see cref="SignInAsync"/> does, and the challenge is finished at the same
-    /// <see cref="VerifyTwoFactorAsync"/>. The token is spent either way - it got the account holder
-    /// as far as the challenge, which is all a first factor ever does.
-    /// </para>
-    /// <para>
-    /// A trusted device cannot stand in for that challenge here, unlike at <see cref="SignInAsync"/>.
-    /// There the cached factor sits behind a password; here it would sit behind a mailbox alone, and
-    /// two cached things are not two factors. Whoever enrolled an authenticator gets asked for it.
-    /// </para>
+    /// Stops at <see cref="SignInOutcome.TwoFactorRequired"/> for an enrolled account, finished at
+    /// <see cref="VerifyTwoFactorAsync"/>; the token is spent either way. A trusted device cannot
+    /// skip that challenge here, because a mailbox plus a cached factor is not two factors.
     /// </remarks>
     Task<SignInResult> VerifyMagicLinkAsync(MagicLinkSignInRequest request, CancellationToken cancellationToken = default);
 
@@ -50,20 +41,15 @@ public interface IPasswordSignInService
     /// second-factor state moved forward so a refresh does not undo it.
     /// </summary>
     /// <remarks>
-    /// No refresh token comes back and the family is not rotated. Rotating here would mean a client
-    /// that ignored a new refresh token presented a spent one at its next refresh, tripping reuse
-    /// detection - so successfully proving your identity would end every session you have.
+    /// No refresh token comes back and the family is not rotated: a client ignoring a rotated token
+    /// would trip reuse detection at its next refresh and lose the whole session.
     /// </remarks>
     Task<StepUpResult> CompleteStepUpAsync(StepUpVerificationRequest request, CancellationToken cancellationToken = default);
 }
 
 /// <summary>
-/// Who is stepping up, and which of their sessions.
+/// Who is stepping up, and which of their sessions - the caller's <c>sub</c> and <c>toa_sid</c>.
 /// </summary>
-/// <remarks>
-/// Both come from the caller's token - <c>sub</c> and <c>toa_sid</c> - and are passed in rather than
-/// read here, so <c>Core</c> still never learns what an HTTP request is.
-/// </remarks>
 public sealed record StepUpRequest
 {
     public required Guid UserId { get; init; }
@@ -111,13 +97,6 @@ public sealed record StepUpResult
 /// <summary>
 /// Everything a sign-in attempt carries.
 /// </summary>
-/// <remarks>
-/// A record rather than an argument list, for the reason <see cref="AccessTokenRequest"/> is one:
-/// this signature has now needed widening in consecutive releases, and a third time would be a
-/// pattern rather than an incident. It also keeps the transport out of <c>Core</c> - the endpoint
-/// reads the user agent and address from the request and puts them here, so nothing below the web
-/// layer has to know what an HTTP request is.
-/// </remarks>
 public sealed record PasswordSignInRequest
 {
     /// <summary>A user name or an email address; the caller does not have to know which.</summary>
@@ -141,10 +120,7 @@ public sealed record PasswordSignInRequest
 /// A magic-link token being redeemed, and the client redeeming it.
 /// </summary>
 /// <remarks>
-/// A record rather than a bare string for the same reason <see cref="PasswordSignInRequest"/> is
-/// one: the user agent and the address are read from the request by the endpoint and passed down, so
-/// nothing below the web layer has to know what an HTTP request is. There is deliberately no device
-/// token here - see <see cref="IPasswordSignInService.VerifyMagicLinkAsync"/>.
+/// There is deliberately no device token here - see <see cref="IPasswordSignInService.VerifyMagicLinkAsync"/>.
 /// </remarks>
 public sealed record MagicLinkSignInRequest
 {
@@ -164,9 +140,8 @@ public sealed record TwoFactorSignInRequest
     public required string Code { get; init; }
 
     /// <summary>
-    /// Ask for a device token in the response. Honoured only here, never on a sign-in that was
-    /// itself device-trusted - otherwise a family could renew itself indefinitely and its absolute
-    /// lifetime would mean nothing.
+    /// Ask for a device token in the response. Never honoured on a sign-in that was itself
+    /// device-trusted, or a family could renew itself indefinitely.
     /// </summary>
     public bool RememberDevice { get; init; }
 
@@ -211,9 +186,7 @@ public sealed record TrustedDeviceToken(string Token, int ExpiresIn);
 /// The half-finished sign-in, handed to the caller so they can come back with a second factor.
 /// </summary>
 /// <remarks>
-/// Opaque random bytes, not a signed token. A JWT challenge would be structurally a valid bearer
-/// token held out of the API only by a validation rule, and rules are configuration a consumer can
-/// loosen. This one cannot be presented as a bearer token at all.
+/// Opaque random bytes rather than a JWT, so it can never be presented as a bearer token.
 /// </remarks>
 public sealed record TwoFactorChallenge(string Token, int ExpiresIn);
 
@@ -273,26 +246,16 @@ public enum SignInOutcome
 
     /// <summary>
     /// The session named by <c>toa_sid</c> has no live refresh row: it was signed out or revoked
-    /// while its access token was still inside its lifetime. Elevating it would resurrect something
-    /// the user deliberately ended.
+    /// while its access token was still inside its lifetime.
     /// </summary>
     SessionEnded,
 
-    /// <summary>
-    /// The magic-link token is unknown, already spent or expired. One outcome for all three, the
-    /// same reasoning a reset link uses: they are the same answer to whoever is holding it.
-    /// </summary>
+    /// <summary>The magic-link token is unknown, already spent or expired.</summary>
     InvalidMagicLink,
 
     /// <summary>
-    /// A WebAuthn assertion did not verify: a wrong signature, an origin or relying party that does
-    /// not match, a credential nobody has registered, a counter that went backwards, or user
-    /// verification that was asked for and not performed.
+    /// A WebAuthn assertion did not verify, for any reason. The ceremony's log line carries which.
     /// </summary>
-    /// <remarks>
-    /// One value for all of them, because the endpoint answers one body regardless and a sink
-    /// reading this gets the detail from the log line the ceremony wrote alongside it.
-    /// </remarks>
     InvalidPasskey,
 }
 
@@ -307,17 +270,13 @@ public static class TwoFactorSource
     public const string Device = "device";
 
     /// <summary>
-    /// A WebAuthn assertion the authenticator verified the user for. One ceremony proved possession
-    /// of the key and a PIN or a biometric, which is why a passkey sign-in is not asked for a TOTP
-    /// code on top.
+    /// A user-verified WebAuthn assertion, which already proves two factors, so no TOTP is asked for.
     /// </summary>
     public const string Passkey = "passkey";
 }
 
 /// <summary>
-/// The pair a successful sign-in returns. The endpoints serialise it under the RFC 6749 names -
-/// <c>access_token</c>, <c>refresh_token</c>, <c>expires_in</c>, <c>token_type</c> - so a client
-/// that already speaks OAuth token endpoints reads it without a mapping.
+/// The pair a successful sign-in returns, serialised by the endpoints under the RFC 6749 names.
 /// </summary>
 public sealed record TokenPair
 {

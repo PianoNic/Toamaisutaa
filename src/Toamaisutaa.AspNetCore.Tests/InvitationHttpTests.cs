@@ -6,11 +6,6 @@ using Toamaisutaa.EntityFrameworkCore;
 
 namespace Toamaisutaa.AspNetCore.Tests;
 
-/// <summary>
-/// <c>/auth/invitations</c> and <c>/auth/invitations/complete</c> - the invariant that matters here:
-/// no response from either ever carries the invitation token, only <c>IInvitationNotifier</c> ever
-/// sees it.
-/// </summary>
 public class InvitationHttpTests
 {
     [Test]
@@ -31,10 +26,6 @@ public class InvitationHttpTests
         await Assert.That(app.IssuedInvitations[0].Token).IsNotEmpty();
     }
 
-    /// <summary>
-    /// Each invitation used to reserve a new row with a new week-long token, so a first link that
-    /// leaked stayed good however many times the address was invited again.
-    /// </summary>
     [Test]
     public async Task Inviting_an_address_again_retires_the_earlier_link()
     {
@@ -57,7 +48,6 @@ public class InvitationHttpTests
         await Assert.That(app.IssuedInvitations[1].UserId).IsEqualTo(app.IssuedInvitations[0].UserId);
     }
 
-    /// <summary>There was no way to withdraw one short of deleting the row by hand.</summary>
     [Test]
     public async Task A_revoked_invitation_cannot_be_completed()
     {
@@ -78,8 +68,6 @@ public class InvitationHttpTests
         await Assert.That(complete.StatusCode).IsEqualTo(HttpStatusCode.BadRequest);
     }
 
-    /// <summary>Revoking reads the address, and an address can belong to a finished account. That
-    /// one is not an invitation, and is left exactly as it was.</summary>
     [Test]
     public async Task Revoking_never_touches_an_account_that_was_completed()
     {
@@ -94,8 +82,7 @@ public class InvitationHttpTests
     }
 
     /// <summary>
-    /// Completion took the address from the user row, whose profile email a provider sync can move.
-    /// The address proven is the one the invitation went to, recorded on its token.
+    /// A provider sync can move the user row's profile email, so the proven address is the one recorded on the token.
     /// </summary>
     [Test]
     public async Task Completing_verifies_the_address_the_invitation_went_to()
@@ -120,8 +107,6 @@ public class InvitationHttpTests
         await Assert.That(byRewritten.StatusCode).IsEqualTo(HttpStatusCode.Unauthorized);
     }
 
-    /// <summary>Two completions of one link at once both reached the insert, and the second
-    /// answered 500.</summary>
     [Test]
     public async Task Completing_one_link_in_parallel_succeeds_once_and_never_500s()
     {
@@ -202,8 +187,6 @@ public class InvitationHttpTests
         await Assert.That(create.StatusCode).IsEqualTo(HttpStatusCode.NotFound);
     }
 
-    // Reserving an account for an address of the caller's choosing is administration, not something
-    // any signed-in account may do.
     [Test]
     public async Task Creating_an_invitation_is_refused_for_a_caller_without_the_admin_role()
     {
@@ -216,8 +199,7 @@ public class InvitationHttpTests
         await Assert.That(app.IssuedInvitations).IsEmpty();
     }
 
-    // Only the endpoint that issues a token needs the admin policy. Completing one is done by the
-    // invited person, and the invitation may have been created by a worker rather than over HTTP.
+    // Completion stays mapped because the invitation may have been created by a worker rather than over HTTP.
     [Test]
     public async Task Only_the_issuing_endpoint_disappears_without_an_admin_role_configured()
     {
@@ -234,8 +216,7 @@ public class InvitationHttpTests
         await Assert.That(complete.StatusCode).IsEqualTo(HttpStatusCode.BadRequest);
     }
 
-    // 502 rather than 500, and nothing reserved: the row and its token are rolled back, because
-    // nothing here looks for an existing reservation and a retry would otherwise make a second one.
+    // Nothing looks for an existing reservation, so a retry after a kept row would make a second one.
     [Test]
     public async Task A_failing_invitation_notifier_reserves_nothing()
     {
@@ -257,8 +238,7 @@ public class InvitationHttpTests
 
         await Assert.That(await db.Users.AsNoTracking().CountAsync(user => user.Email == "invited@example.com")).IsEqualTo(0);
 
-        // Not merely "no live token": the row goes with the user it was issued for, which is the
-        // cascade doing it rather than anything this flow writes.
+        // The token row goes by cascade with its user, not by anything this flow writes.
         await Assert.That(await db.InvitationTokens.AsNoTracking().CountAsync()).IsEqualTo(0);
     }
 

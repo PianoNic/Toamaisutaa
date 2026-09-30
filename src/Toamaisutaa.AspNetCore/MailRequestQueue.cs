@@ -7,22 +7,9 @@ using Toamaisutaa.Core;
 namespace Toamaisutaa.AspNetCore;
 
 /// <summary>
-/// The anonymous requests that may send mail - a reset link, a magic link - run here, after the
-/// response has gone.
+/// Runs anonymous mail-sending requests after the response, so response time cannot reveal which
+/// addresses have accounts; several readers, so one slow SMTP server cannot keep the bounded queue full.
 /// </summary>
-/// <remarks>
-/// <para>
-/// Every branch of those endpoints answers the same 204, and that promise was only ever half kept:
-/// an unknown address returned after one lookup while a real one waited on an SMTP connection, so
-/// the clock told a caller which addresses had accounts. Doing the work here makes the response
-/// time the same for all of them, because none of them waits for any of it.
-/// </para>
-/// <para>
-/// Bounded, and a full queue drops the request rather than growing. Several readers, because one
-/// drained at the speed of a single SMTP conversation, and anyone asking about enough addresses
-/// could keep it full so that every real request behind them was dropped.
-/// </para>
-/// </remarks>
 internal sealed class MailRequestQueue(IServiceScopeFactory scopes, ToamaisutaaMetrics metrics, ILogger<MailRequestQueue> logger) : BackgroundService
 {
     private const int Capacity = 1000;
@@ -30,21 +17,16 @@ internal sealed class MailRequestQueue(IServiceScopeFactory scopes, ToamaisutaaM
     // ponytail: a fixed width - a setting when somebody's mail server wants more or fewer connections.
     internal const int Readers = 8;
 
-    // Wait, not DropWrite: DropWrite makes TryWrite answer true for the item it throws away, so a
-    // full queue dropped requests without a single line saying so. Nothing here ever waits to write.
+    // Wait, not DropWrite: DropWrite makes TryWrite return true for the item it discards, hiding drops.
     private readonly Channel<Func<IServiceProvider, CancellationToken, Task>> _work =
         Channel.CreateBounded<Func<IServiceProvider, CancellationToken, Task>>(
             new BoundedChannelOptions(Capacity) { FullMode = BoundedChannelFullMode.Wait });
 
     private int _pending;
 
-    /// <summary>How long one job may run. Well past any SMTP conversation that is going to finish;
-    /// settable only so a test does not wait two minutes to watch it.</summary>
     internal TimeSpan JobTimeout { get; set; } = TimeSpan.FromMinutes(2);
 
-    /// <summary>Queues work that runs in a scope of its own, since the request's scope is gone by
-    /// the time it starts.</summary>
-    /// <returns>False when the queue was full and the work was dropped.</returns>
+    /// <summary>Runs work in a scope of its own, since the request's scope is gone by the time it starts.</summary>
     internal bool Enqueue(Func<IServiceProvider, CancellationToken, Task> work)
     {
         Interlocked.Increment(ref _pending);
@@ -59,8 +41,6 @@ internal sealed class MailRequestQueue(IServiceScopeFactory scopes, ToamaisutaaM
         return false;
     }
 
-    /// <summary>Resolves once everything queued so far has run. For tests, which read what a
-    /// notifier was handed straight after the response.</summary>
     internal async Task WhenIdleAsync()
     {
         while (Volatile.Read(ref _pending) > 0)
@@ -93,8 +73,7 @@ internal sealed class MailRequestQueue(IServiceScopeFactory scopes, ToamaisutaaM
         {
             await foreach (var work in _work.Reader.ReadAllAsync(stoppingToken))
             {
-                // A deadline of its own: a notifier that never answers held its reader until shutdown,
-                // and a few of them stopped the queue for everybody.
+                // A notifier that never answers would otherwise hold its reader until shutdown.
                 using var deadline = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);
                 deadline.CancelAfter(JobTimeout);
 

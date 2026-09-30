@@ -1,9 +1,8 @@
 namespace Toamaisutaa.Core;
 
 /// <summary>
-/// Login identifiers are normalised here rather than left to the database, so that whether
-/// <c>Nic@Example.com</c> and <c>nic@example.com</c> are the same account does not depend on which
-/// provider the deployment happens to use or how its collation was configured.
+/// Normalised here rather than by the database, so identifier equality does not depend on the
+/// provider's collation.
 /// </summary>
 internal static class Normalizer
 {

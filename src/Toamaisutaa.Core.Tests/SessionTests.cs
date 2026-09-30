@@ -2,10 +2,6 @@ using Toamaisutaa.Abstractions;
 
 namespace Toamaisutaa.Core.Tests;
 
-/// <summary>
-/// Refresh families seen as sessions: what a row records about where it came from, and what
-/// listing and revoking them does.
-/// </summary>
 public class SessionTests
 {
     private const string Password = "correct horse battery";
@@ -13,14 +9,9 @@ public class SessionTests
     private const string Chrome = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/141.0";
 
     /// <summary>
-    /// Registers, then drops the row registration itself left behind - self-registration signs the
-    /// account in, so without this every test would start one session ahead of what it asked for.
+    /// Drops the session registration leaves behind straight out of the fake store, because
+    /// <c>RevokeAllExceptAsync</c> is under test here.
     /// </summary>
-    /// <remarks>
-    /// Emptied straight out of the fake store rather than by calling <c>RevokeAllExceptAsync</c>,
-    /// which is one of the things under test here. A setup step that used it would report the whole
-    /// file red the moment it broke, and say nothing about which behaviour was lost.
-    /// </remarks>
     private static async Task<ToamaisutaaUser> RegisterAsync(
         PasswordHarness harness,
         string userName = "pianonic",
@@ -36,8 +27,6 @@ public class SessionTests
         harness.Passwords.RefreshTokens
             .Single(token => token.TokenHash == SecureTokens.HashToken(result.Tokens!.RefreshToken))
             .FamilyId;
-
-    // ── What a session records ──
 
     [Test]
     public async Task A_session_records_the_user_agent_the_sign_in_carried()
@@ -75,10 +64,8 @@ public class SessionTests
     }
 
     /// <summary>
-    /// The rule that has now been the bug three phases running, asked of these three fields:
-    /// recomputed, carried, or deliberately dropped? Carried - <c>/auth/refresh</c> is the one call
-    /// a background timer makes, and recomputing would describe every session as whatever last
-    /// renewed it.
+    /// Carried rather than recomputed: <c>/auth/refresh</c> is the call a background timer makes,
+    /// so recomputing would describe every session as whatever last renewed it.
     /// </summary>
     [Test]
     public async Task Refreshing_carries_the_user_agent_and_the_address_onto_the_rotated_row()
@@ -129,8 +116,6 @@ public class SessionTests
         await Assert.That(listed.AuthenticationMethods).Contains(ToamaisutaaDefaults.MultiFactorMethod);
     }
 
-    // ── Listing ──
-
     [Test]
     public async Task Two_sign_ins_are_two_sessions_and_only_the_named_one_is_current()
     {
@@ -149,7 +134,7 @@ public class SessionTests
 
     /// <summary>
     /// The family is refused at the next refresh rather than swept off a timer, so it is still
-    /// unrotated and unrevoked in the table. Listing it would offer somebody a session that is over.
+    /// unrotated and unrevoked in the table.
     /// </summary>
     [Test]
     public async Task A_family_past_its_absolute_lifetime_is_not_listed()
@@ -186,8 +171,6 @@ public class SessionTests
             .IsEqualTo(establishedAt.AddDays(3));
     }
 
-    // ── Revoking ──
-
     [Test]
     public async Task A_revoked_session_can_no_longer_refresh()
     {
@@ -203,8 +186,6 @@ public class SessionTests
         await Assert.That(refreshed.Outcome).IsEqualTo(SignInOutcome.RefreshTokenRevoked);
     }
 
-    /// <summary>Same answer as a session that never existed, so this cannot be used to discover
-    /// another account's session ids.</summary>
     [Test]
     public async Task Revoking_someone_else_s_session_answers_false_and_leaves_it_alive()
     {
@@ -228,8 +209,6 @@ public class SessionTests
         await Assert.That(await harness.Sessions.RevokeAsync(user.Id, Guid.CreateVersion7())).IsFalse();
     }
 
-    /// <summary>Every other revocation reaches an audit sink; a user ending their own session is
-    /// the one somebody reading that table would most expect to find.</summary>
     [Test]
     public async Task Revoking_a_session_publishes_it_with_its_reason()
     {
@@ -280,7 +259,6 @@ public class SessionTests
 
         await Assert.That(revoked).IsEqualTo(2);
 
-        // The one the caller was on still refreshes; the other two are gone.
         await Assert.That((await harness.SignIn.RefreshAsync(kept.Tokens!.RefreshToken)).Outcome)
             .IsEqualTo(SignInOutcome.Succeeded);
         await Assert.That((await harness.SignIn.RefreshAsync(first.Tokens!.RefreshToken)).Outcome)
@@ -289,7 +267,6 @@ public class SessionTests
             .IsEqualTo(SignInOutcome.RefreshTokenRevoked);
     }
 
-    /// <summary>A caller whose token names no session has none to keep, so all of them go.</summary>
     [Test]
     public async Task Signing_out_everywhere_else_with_no_current_session_ends_every_one()
     {

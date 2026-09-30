@@ -5,7 +5,6 @@ using Toamaisutaa.Abstractions;
 
 namespace Toamaisutaa.Core;
 
-/// <summary>Applies the provisioning decision to the stores.</summary>
 internal sealed class ExternalLoginProvisioner(
     IClaimsProfileMapper mapper,
     IProvisioningPolicy policy,
@@ -18,9 +17,8 @@ internal sealed class ExternalLoginProvisioner(
 {
     public async Task<ToamaisutaaUser> ProvisionAsync(ClaimsPrincipal principal, CancellationToken cancellationToken = default)
     {
-        // A token this package issued names a local user directly and has no external login behind
-        // it. Left to the normal path, its subject would look like one nobody has ever seen and
-        // every request would provision another duplicate user.
+        // A locally issued token has no external login behind it; on the normal path every request
+        // would provision another duplicate user.
         if (TryGetLocallyIssuedUserId(principal, out var localUserId))
         {
             return await userStore.FindByIdAsync(localUserId, cancellationToken)
@@ -36,10 +34,8 @@ internal sealed class ExternalLoginProvisioner(
         }
         catch (ExternalLoginConflictException exception)
         {
-            // Two first requests for the same never-seen subject raced and both decided to create.
-            // The loser lands here; the winner's row now exists, so a second pass finds it and
-            // takes the AlreadyLinked path. One retry is enough: the pair is unique, so the row
-            // cannot disappear again.
+            // Lost a race to create the same subject; the winner's row now exists, so one retry
+            // takes the AlreadyLinked path.
             logger.LogDebug(
                 exception,
                 "Concurrent first sign-in for provider {ProviderKey}; re-reading the row the other request created.",
@@ -51,8 +47,6 @@ internal sealed class ExternalLoginProvisioner(
             }
             catch (ExternalLoginConflictException again)
             {
-                // Still no row that matches exactly, and still a unique index that says one exists:
-                // the database thinks two subjects are the same that differ in case or accents.
                 throw new InvalidOperationException(
                     $"Cannot provision subject '{profile.Subject}' for provider '{options.Value.ProviderKey}': the database "
                     + "treats it as equal to an existing subject that differs only in case or accents. OIDC subjects are "
@@ -65,9 +59,8 @@ internal sealed class ExternalLoginProvisioner(
     }
 
     /// <summary>
-    /// Decided by the issuer, not by a claim an identity provider could also emit. The bearer layer
-    /// binds the local signing key to the local issuer, so a token can only carry that issuer if we
-    /// signed it.
+    /// Decided by the issuer, not a claim an identity provider could also emit: the bearer layer binds
+    /// the local signing key to the local issuer.
     /// </summary>
     private bool TryGetLocallyIssuedUserId(ClaimsPrincipal principal, out Guid userId)
     {
@@ -75,10 +68,8 @@ internal sealed class ExternalLoginProvisioner(
 
         var local = localLoginOptions.Value;
 
-        // No signing key of either shape means password login was never registered, so no token is
-        // ours. Both are asked: a deployment that has moved to asymmetric keys drops
-        // LocalLogin:SigningKey, and reading only that one would send every locally issued token
-        // down the external-login path to be provisioned as a stranger.
+        // Both key shapes are checked: an asymmetric-only deployment has no SigningKey, and reading
+        // only that would provision every locally issued token as a stranger.
         if (string.IsNullOrWhiteSpace(local.SigningKey) && local.SigningKeys.Count == 0)
             return false;
 
@@ -156,10 +147,7 @@ internal sealed class ExternalLoginProvisioner(
         }
     }
 
-    /// <summary>
-    /// The sign-in stamp is the one thing that would otherwise write on every single request, which
-    /// is the cost this whole design exists to avoid. Stamp it at most once per interval.
-    /// </summary>
+    /// <summary>Throttled so the sign-in stamp does not write on every request.</summary>
     private bool ShouldStampSignIn(ToamaisutaaExternalLogin login, ProfileSyncMode mode, TimeSpan interval) => mode switch
     {
         ProfileSyncMode.Never => false,

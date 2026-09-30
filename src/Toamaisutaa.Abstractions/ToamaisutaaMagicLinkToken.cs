@@ -1,15 +1,11 @@
 namespace Toamaisutaa.Abstractions;
 
 /// <summary>
-/// Single-use, time-limited, and stored hashed exactly as password reset tokens are. The shape is
-/// the same because the guarantee is: whoever reads the mailbox holds it, and holding it once is
-/// all it is good for.
+/// Single-use, time-limited, and stored hashed exactly as password reset tokens are.
 /// </summary>
 /// <remarks>
-/// It is a stronger credential than a reset token, though, and that is why its lifetime is shorter.
-/// A reset link asks for a new password before it gives anything away; this one is exchanged for a
-/// token pair directly, so the window in which a forwarded email is a session is the window this row
-/// is alive.
+/// Shorter-lived than a reset token because it is exchanged for a token pair directly, so its
+/// lifetime is the window in which a forwarded email is a session.
 /// </remarks>
 public class ToamaisutaaMagicLinkToken
 {

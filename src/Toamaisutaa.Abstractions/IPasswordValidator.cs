@@ -16,9 +16,7 @@ public interface IPasswordValidator
     /// decides locally implements the one method and ignores this.
     /// </summary>
     /// <remarks>
-    /// Override it when the answer needs I/O - a breach-list lookup is the case this exists for.
-    /// Every call site is already inside an async method with a cancellation token in scope, so
-    /// there is no sync-over-async anywhere in the package's own path.
+    /// Override it when the answer needs I/O, such as a breach-list lookup.
     /// </remarks>
     ValueTask<IReadOnlyList<string>> ValidateAsync(string password, CancellationToken cancellationToken = default) =>
         ValueTask.FromResult(Validate(password));

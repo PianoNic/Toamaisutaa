@@ -6,13 +6,6 @@ using Toamaisutaa.Abstractions;
 
 namespace Toamaisutaa.Core;
 
-/// <summary>
-/// Deletes every expiring row this package writes - refresh, reset, invitation, email verification
-/// and magic-link tokens, two-factor and passkey challenges, and trusted devices - once it is past
-/// its expiry. Opt-in, because a
-/// package should not start doing background writes to someone's database without being asked -
-/// but offered, because the alternative is a table nobody thinks about until it is enormous.
-/// </summary>
 internal sealed class TokenCleanupService(
     IServiceScopeFactory scopeFactory,
     IOptions<ToamaisutaaLocalLoginOptions> options,
@@ -31,8 +24,6 @@ internal sealed class TokenCleanupService(
             }
             catch (Exception exception) when (exception is not OperationCanceledException)
             {
-                // A sweep that fails is not worth taking the application down for; the rows are
-                // still valid, just untidy.
                 logger.LogWarning(exception, "Expired-token cleanup failed. Trying again next interval.");
             }
         }
@@ -40,25 +31,15 @@ internal sealed class TokenCleanupService(
     }
 
     /// <summary>
-    /// Refresh rows are kept until their family is past its absolute lifetime, not merely until the
-    /// row itself expires.
+    /// Refresh rows are kept until their family is past its absolute lifetime, because a rotated row
+    /// is the evidence reuse detection needs to revoke the family when a stolen token is replayed.
     /// </summary>
-    /// <remarks>
-    /// A rotated row is the evidence reuse detection works from: present it again and the family is
-    /// revoked. Deleted at its own expiry, fourteen days by default, a stolen rotated token presented
-    /// after that answered a plain unknown-token refusal - no revocation, no event - for the rest of a
-    /// ninety-day family. A row expires one refresh lifetime after it was written, and its family had
-    /// started by then, so anything that expired before this cutoff belongs to a family already dead.
-    /// </remarks>
     internal static DateTimeOffset RefreshCutoff(DateTimeOffset now, ToamaisutaaLocalLoginOptions settings)
     {
         var margin = settings.RefreshTokenAbsoluteLifetime - settings.RefreshTokenLifetime;
         return margin > TimeSpan.Zero ? now - margin : now;
     }
 
-    /// <summary>One sweep. Internal rather than private because the host decides when
-    /// <see cref="ExecuteAsync"/> first runs its body, which makes start-then-stop a race the tests
-    /// lose; they run a sweep directly instead.</summary>
     internal async Task CleanupAsync(CancellationToken cancellationToken)
     {
         await using var scope = scopeFactory.CreateAsyncScope();
@@ -70,16 +51,13 @@ internal sealed class TokenCleanupService(
         var removedRefresh = await refreshTokens.DeleteExpiredAsync(RefreshCutoff(now, options.Value), cancellationToken);
         var removedReset = await resetTokens.DeleteExpiredAsync(now, cancellationToken);
 
-        // Optional, because two-factor is. Challenges expire in five minutes and every sign-in that
-        // stops for one writes a row, so this is the fastest-growing of the three when it is on.
+        // Optional stores: this service is registered on its own and must not require the features.
         var challenges = scope.ServiceProvider.GetService<ITwoFactorChallengeStore>();
         var removedChallenges = challenges is null ? 0 : await challenges.DeleteExpiredAsync(now, cancellationToken);
 
         var devices = scope.ServiceProvider.GetService<ITrustedDeviceStore>();
         var removedDevices = devices is null ? 0 : await devices.DeleteExpiredAsync(now, cancellationToken);
 
-        // Optional for the same reason as the two above: this service is registered on its own and
-        // does not require the password-login stores to be present.
         var invitations = scope.ServiceProvider.GetService<IInvitationTokenStore>();
         var removedInvitations = invitations is null ? 0 : await invitations.DeleteExpiredAsync(now, cancellationToken);
 
@@ -89,9 +67,6 @@ internal sealed class TokenCleanupService(
         var magicLinks = scope.ServiceProvider.GetService<IMagicLinkTokenStore>();
         var removedMagicLinks = magicLinks is null ? 0 : await magicLinks.DeleteExpiredAsync(now, cancellationToken);
 
-        // Optional, because passkeys are. Every begun ceremony writes a row and every abandoned one
-        // leaves it behind, so an application whose users close the prompt without finishing
-        // accumulates these faster than anything else here.
         var passkeyChallenges = scope.ServiceProvider.GetService<IPasskeyChallengeStore>();
         var removedPasskeyChallenges = passkeyChallenges is null ? 0 : await passkeyChallenges.DeleteExpiredAsync(now, cancellationToken);
 

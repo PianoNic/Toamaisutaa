@@ -4,10 +4,6 @@ using Toamaisutaa.Abstractions;
 
 namespace Toamaisutaa.AspNetCore.Tests;
 
-/// <summary>
-/// Single-use tokens presented in parallel. Each was checked for "not spent yet" and then marked
-/// spent in a second step, so every request that landed between the two was let through.
-/// </summary>
 public class ConcurrentRedemptionHttpTests
 {
     private const int Parallel = 10;
@@ -62,11 +58,7 @@ public class ConcurrentRedemptionHttpTests
         await Assert.That(attempts.Count(response => response.StatusCode == HttpStatusCode.OK)).IsEqualTo(1);
     }
 
-    /// <summary>
-    /// One TOTP code, typed into several sign-ins at once. The challenges are separate, so the only
-    /// thing that makes a code single-use is the recorded step - and that was read, compared, then
-    /// written, with every request in between let through.
-    /// </summary>
+    /// <summary>The challenges are separate, so only the recorded step makes the code single-use.</summary>
     [Test]
     public async Task A_totp_code_used_in_parallel_signs_in_at_most_once()
     {
@@ -87,11 +79,8 @@ public class ConcurrentRedemptionHttpTests
         await Assert.That(attempts.Count(response => response.StatusCode == HttpStatusCode.OK)).IsEqualTo(1);
     }
 
-    /// <summary>
-    /// The parallel test above sends one TOTP code ten times, and the recorded step refuses nine of
-    /// them before the challenge is ever asked. Ten different recovery codes each pass on their own,
-    /// so only the challenge's conditional spend can keep this to one session.
-    /// </summary>
+    /// <summary>Different recovery codes each pass on their own, so only the challenge's conditional
+    /// spend can keep this to one session.</summary>
     [Test]
     public async Task A_challenge_answered_with_different_recovery_codes_in_parallel_signs_in_once()
     {
@@ -107,11 +96,6 @@ public class ConcurrentRedemptionHttpTests
         await Assert.That(attempts.Count(response => response.StatusCode == HttpStatusCode.OK)).IsEqualTo(1);
     }
 
-    /// <summary>
-    /// A recovery code in one tab and a TOTP code in another, on the same challenge. The recovery
-    /// code used to be spent before the challenge, so the tab that lost the challenge had burned a
-    /// code and got no session for it.
-    /// </summary>
     [Test]
     public async Task A_recovery_code_that_loses_its_challenge_is_not_spent()
     {
@@ -144,11 +128,8 @@ public class ConcurrentRedemptionHttpTests
         await Assert.That(unused).IsEqualTo(10);
     }
 
-    /// <summary>
-    /// A double-click: the losing request reserved its attempt after the winner had cleared the
-    /// count, lost the challenge, and was then counted as a wrong code - one stray failure left on
-    /// an account that had just signed in.
-    /// </summary>
+    /// <summary>The loser reserves its attempt after the winner cleared the count, so losing the
+    /// challenge must not be counted as a wrong code.</summary>
     [Test]
     public async Task A_right_code_that_loses_its_challenge_leaves_no_failure_behind()
     {
@@ -283,10 +264,7 @@ public class ConcurrentRedemptionHttpTests
         await Assert.That(attempts.Count(response => response.StatusCode == HttpStatusCode.NoContent)).IsEqualTo(1);
     }
 
-    /// <summary>
-    /// One recovery code, typed into several sign-ins at once. Each challenge is separate, so only
-    /// the code's own spend stands between it and a session per challenge.
-    /// </summary>
+    /// <summary>The challenges are separate, so only the code's own spend makes it single-use.</summary>
     [Test]
     public async Task A_recovery_code_used_in_parallel_signs_in_at_most_once()
     {

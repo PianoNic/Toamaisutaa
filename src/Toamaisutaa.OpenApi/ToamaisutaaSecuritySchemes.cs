@@ -5,10 +5,6 @@ using Toamaisutaa.Abstractions;
 
 namespace Toamaisutaa.OpenApi;
 
-/// <summary>
-/// What the document transformer writes: a bearer scheme, an OAuth2 scheme when the issuer's
-/// discovery document can be read, and a document-wide requirement naming both.
-/// </summary>
 internal static class ToamaisutaaSecuritySchemes
 {
     public const string BearerScheme = "Bearer";
@@ -33,9 +29,7 @@ internal static class ToamaisutaaSecuritySchemes
             Description = "Paste the access_token from /auth/login or /auth/2fa/verify.",
         };
 
-        // A list of requirements is an OR and a single requirement holding two schemes is an AND. It
-        // has to be the first: one token gets you in, and which issuer minted it is precisely what
-        // this API does not care about.
+        // Separate requirements are an OR; one requirement holding both schemes would be an AND.
         List<OpenApiSecurityRequirement> requirements =
         [
             new() { [new OpenApiSecuritySchemeReference(BearerScheme, document)] = [] },
@@ -71,14 +65,9 @@ internal static class ToamaisutaaSecuritySchemes
     }
 
     /// <summary>
-    /// The scopes the application itself requests, split out of <c>Oidc:Scope</c> - the same string
-    /// the configuration endpoint hands the SPA, so the Authorize button asks for exactly what the
-    /// SPA asks for and a token obtained here behaves like one obtained there.
+    /// From <c>Oidc:Scope</c>, the string the SPA is handed, so the Authorize button asks for exactly
+    /// what the SPA does.
     /// </summary>
-    /// <remarks>
-    /// No descriptions. Only the issuer knows what its scopes mean, and inventing a sentence per
-    /// scope would put text in the document that nobody wrote.
-    /// </remarks>
     private static Dictionary<string, string> Scopes(string? scope) =>
         (scope ?? string.Empty)
             .Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)

@@ -38,8 +38,6 @@ public class DefaultEmailVerificationEmailTemplateTests
         await Assert.That(content.PlainTextBody).DoesNotContain("token=a token/with+chars");
     }
 
-    // The person reading this is the only one who can tell whether the account should be pointing at
-    // their mailbox at all, and they cannot tell without seeing which address is being claimed.
     [Test]
     public async Task NamesTheAddressBeingVerified()
     {
@@ -50,10 +48,8 @@ public class DefaultEmailVerificationEmailTemplateTests
         await Assert.That(content.PlainTextBody).DoesNotContain("old@example.com");
     }
 
-    /// <summary>
-    /// The recipient is whoever the signed-in caller named, and the name is whatever they registered
-    /// with. Greeting by it let anyone send their own sentence and URL from this domain to any inbox.
-    /// </summary>
+    /// <summary>Greeting by the registered name would let anyone mail their own words from this domain
+    /// to any inbox.</summary>
     [Test]
     public async Task CarriesNothingTheUserChose()
     {

@@ -11,12 +11,8 @@ using Toamaisutaa.Abstractions;
 namespace Toamaisutaa.AspNetCore.Tests;
 
 /// <summary>
-/// The sample's keys are in a public repository. Every other startup check passed them, being the
-/// right length and valid base64, so a deployment running on a copy of the sample's Development
-/// settings signed tokens anyone could forge.
+/// Reads the sample's own settings file, so the test follows its keys and does not publish them a second time.
 /// </summary>
-/// <remarks>Read from the sample's own file, so the test follows the sample if its keys change and
-/// the values are not published a second time here.</remarks>
 public class PublishedSecretsStartupCheckTests
 {
     [Test]
@@ -31,18 +27,13 @@ public class PublishedSecretsStartupCheckTests
         await Assert.That(message!).Contains("values from the public sample");
     }
 
-    /// <summary>The sample itself has to keep running, which is the reason the values exist.</summary>
     [Test]
     public async Task Starts_in_development_on_the_samples_values()
     {
         await Assert.That(await StartAsync("signing", Environments.Development)).IsNull();
     }
 
-    /// <summary>
-    /// Development accepted them on any address, so a container or a staging box started with the
-    /// wrong environment and bound to every interface signed tokens anyone could forge. On a real
-    /// server, so there are real addresses to judge.
-    /// </summary>
+    /// <summary>Runs on a real server, because the test server has no bound addresses to judge.</summary>
     [Test]
     [Arguments("http://0.0.0.0:0", false)]
     [Arguments("http://127.0.0.1:0", true)]

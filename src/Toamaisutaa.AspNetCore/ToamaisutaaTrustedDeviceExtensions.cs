@@ -15,8 +15,7 @@ public static class ToamaisutaaTrustedDeviceExtensions
     /// </summary>
     /// <remarks>
     /// Needs two-factor authentication and a store registration, both checked at startup. A trusted
-    /// device is a cached second factor and nothing else - it never stands in for the password, and
-    /// it never survives a credential change.
+    /// device never stands in for the password and never survives a credential change.
     /// </remarks>
     public static IServiceCollection AddToamaisutaaTrustedDevices(
         this IServiceCollection services,

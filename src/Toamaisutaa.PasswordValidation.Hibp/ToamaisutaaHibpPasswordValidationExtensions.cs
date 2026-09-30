@@ -10,14 +10,12 @@ namespace Microsoft.Extensions.DependencyInjection;
 public static class ToamaisutaaHibpPasswordValidationExtensions
 {
     /// <summary>
-    /// Adds a Have I Been Pwned breach check on top of the password rules already in place. Optional
-    /// - local password login works without it, and the length floor is unchanged either way.
+    /// Adds a Have I Been Pwned breach check on top of the password rules already in place.
     /// </summary>
     /// <remarks>
-    /// Order against <c>AddToamaisutaaPasswordLogin</c> does not matter, only that both run. What
-    /// the check wraps is whatever <see cref="IPasswordValidator"/> stands at the moment of this
-    /// call, and the length rules when nothing does yet. The wrapped registration keeps the lifetime
-    /// it was made with, so a scoped validator of your own stays scoped.
+    /// Order against <c>AddToamaisutaaPasswordLogin</c> does not matter. The check wraps whatever
+    /// <see cref="IPasswordValidator"/> is registered at the moment of this call, keeping its
+    /// lifetime, or the length rules when nothing is yet.
     /// </remarks>
     public static IServiceCollection AddToamaisutaaHibpPasswordValidation(
         this IServiceCollection services,
@@ -52,32 +50,22 @@ public static class ToamaisutaaHibpPasswordValidationExtensions
         services.TryAddSingleton<IBreachedPasswordIndex, PwnedPasswordsRangeIndex>();
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IHostedService, HibpStartupCheck>());
 
-        // Composed, not substituted: whatever validator stands here becomes the one the check runs
-        // after. Registering over it rather than beside it is what keeps the length rules from
-        // being answered twice, and taking the old descriptor out is what keeps the container from
-        // handing somebody the unwrapped one.
-        //
-        // Either order works. Called after AddToamaisutaaPasswordLogin this finds the length rules;
-        // called before, it finds nothing and builds them itself, and the TryAdd inside
-        // AddToamaisutaaPasswordLogin then leaves this registration alone.
-        // Keyed registrations are somebody else's business: only the one everybody resolves is wrapped.
+        // The old descriptor is removed so the container never hands out the unwrapped validator.
+        // Called before AddToamaisutaaPasswordLogin, its TryAdd then leaves this registration alone.
         var existing = services.LastOrDefault(descriptor =>
             descriptor.ServiceType == typeof(IPasswordValidator) && descriptor.ServiceKey is null);
 
         if (existing is not null)
             services.Remove(existing);
 
-        // A key of its own per call, so wrapping a wrapper resolves the one below it rather than
-        // itself.
+        // A key per call, so wrapping a wrapper resolves the one below it rather than itself.
         var innerKey = new object();
         var inner = InnerDescriptor(existing, innerKey);
 
         services.Add(inner);
 
-        // The wrapped validator goes back into the container rather than being built by hand: it
-        // keeps the lifetime it was registered with, is handed the provider of whatever scope asked
-        // for it, and is disposed with that scope. Building it from this factory's provider would
-        // resolve a scoped dependency from the root and dispose nothing.
+        // Resolved from the container rather than built by hand, which would resolve a scoped
+        // dependency from the root and dispose nothing.
         services.Add(new ServiceDescriptor(
             typeof(IPasswordValidator),
             provider => new HibpPasswordValidator(
@@ -90,8 +78,6 @@ public static class ToamaisutaaHibpPasswordValidationExtensions
         return services;
     }
 
-    /// <summary>Puts the descriptor the breach check took out back under a private key, unchanged in
-    /// everything but the key, so the container goes on building it the way it was asked to.</summary>
     private static ServiceDescriptor InnerDescriptor(ServiceDescriptor? descriptor, object key) => descriptor switch
     {
         null => new ServiceDescriptor(typeof(IPasswordValidator), key, typeof(DefaultPasswordValidator), ServiceLifetime.Singleton),

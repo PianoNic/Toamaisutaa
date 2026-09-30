@@ -4,7 +4,6 @@ using Toamaisutaa.Abstractions;
 
 namespace Toamaisutaa.Core.Tests;
 
-/// <summary>Everything wired with in-memory stores, so the flows can be exercised without a host.</summary>
 internal sealed class PasswordHarness
 {
     internal static readonly DateTimeOffset Start = new(2026, 8, 11, 12, 0, 0, TimeSpan.Zero);
@@ -61,8 +60,8 @@ internal sealed class PasswordHarness
 
         Events = new RecordingEventSink();
 
-        // The recorder goes second on purpose, so a test about a sink that throws also proves the
-        // next one still gets the event.
+        // The recorder goes second so a test about a sink that throws also proves the next one still
+        // gets the event.
         var recorder = new AuthenticationEventSinkRegistration(typeof(RecordingEventSink), () => Events);
 
         var publisher = new AuthenticationEventPublisher(
@@ -73,14 +72,12 @@ internal sealed class PasswordHarness
 
         var provider = new FakeServiceProvider();
 
-        // Always there in a real host. The two-factor gate reads the stamp through it.
+        // Always there in a real host; the two-factor gate reads the stamp through it.
         provider.Add<IUserStore>(Users);
 
-        // Likewise, and resolved rather than injected by the services that report without needing it.
+        // Resolved rather than injected by the services that report without needing it.
         provider.Add(Metrics);
 
-        // Registered by default, so most tests get it for free; the one test about the missing-
-        // notifier failure asks for it to be left out instead.
         if (withAdminPasswordNotifier)
             provider.Add<IAdminPasswordIssuedNotifier>(AdminPasswordNotifier);
 
@@ -93,8 +90,8 @@ internal sealed class PasswordHarness
         if (withMagicLinkNotifier)
             provider.Add<IMagicLinkNotifier>(MagicLinkNotifier);
 
-        // Registered only when the test asks for it, so the "password login with no second factor
-        // configured" path is exercised by every other test rather than assumed.
+        // Registered only on request, so every other test exercises password login with no second
+        // factor configured.
         if (withTwoFactor)
         {
             provider
@@ -112,8 +109,7 @@ internal sealed class PasswordHarness
         if (withTrustedDevices)
             provider.Add<ITrustedDeviceStore>(Devices);
 
-        // Same reasoning as the two above: the passkey package is optional, so every test that does
-        // not ask for it exercises the path where Core resolves no store at all.
+        // Optional for the same reason, so every other test exercises Core resolving no passkey store.
         Passkeys = new FakePasskeyStore();
 
         if (withPasskeys)
@@ -194,10 +190,8 @@ internal sealed class PasswordHarness
 
     internal FixedTimeProvider Clock { get; }
 
-    /// <summary>Enrolment proof from a caller who signed in just now.</summary>
     internal TwoFactorEnrolmentProof FreshSignIn => new() { AuthenticatedAt = Clock.GetUtcNow() };
 
-    /// <summary>Everything the flows published, in order.</summary>
     internal RecordingEventSink Events { get; }
 
     internal ToamaisutaaLocalLoginOptions Options { get; }
@@ -232,14 +226,11 @@ internal sealed class PasswordHarness
 
     internal TwoFactorVerifier Verifier { get; }
 
-    /// <summary>This harness's own meter, so a metrics assertion measures this harness and not
-    /// whichever others happen to be running beside it.</summary>
+    /// <summary>This harness's own meter, so metrics assertions do not see harnesses running beside it.</summary>
     internal ToamaisutaaMetrics Metrics { get; }
 
     internal PasswordSignInService SignIn { get; }
 
-    /// <summary>For issuing a challenge the way a passkey assertion does, to an account that may
-    /// have no password at all.</summary>
     internal TwoFactorGate Gate { get; }
 
     internal PasswordAccountService Accounts { get; }
@@ -254,14 +245,10 @@ internal sealed class PasswordHarness
 
     internal SessionService Sessions { get; }
 
-    /// <summary>The one place a token pair is minted. Shared with the passkey package, so a test
-    /// that drives it here is testing what a passkey sign-in ends in too.</summary>
     internal LocalSessionIssuer SessionIssuer { get; }
 
     internal ToamaisutaaTrustedDeviceOptions TrustedDeviceOptions { get; }
 
-    /// <summary>What every existing test used to call directly, kept as a helper so the request
-    /// record does not have to appear in fifty places.</summary>
     internal Task<SignInResult> SignInAsync(
         string identifier,
         string password,
@@ -308,8 +295,7 @@ internal sealed class PasswordHarness
         bool withThrowingEventSink = false,
         IPasswordValidator? validator = null)
     {
-        // Iterations far below the production floor: these tests run many derivations and the floor
-        // is a startup check, not a property of the hasher.
+        // Far below the production floor, which is a startup check rather than a property of the hasher.
         var options = new ToamaisutaaLocalLoginOptions { Pbkdf2Iterations = 1_000 };
         configure?.Invoke(options);
 
@@ -338,7 +324,6 @@ internal sealed class PasswordHarness
             validator);
     }
 
-    /// <summary>A registered local account, as self-registration would have produced it.</summary>
     internal async Task<ToamaisutaaUser> RegisterAsync(string userName = "pianonic", string? email = "nic@example.com", string password = "correct horse battery")
     {
         var result = await Accounts.RegisterAsync(new RegisterRequest(userName, email, password));
@@ -349,8 +334,6 @@ internal sealed class PasswordHarness
         return Users.Users.Single(user => user.Id == result.UserId);
     }
 
-    /// <summary>An account as OIDC provisioning would have left it: a user row, an external login,
-    /// and no password at all.</summary>
     internal ToamaisutaaUser ProvisionExternalUser(string email = "sso@example.com", string userName = "ssouser")
     {
         var user = new ToamaisutaaUser
@@ -368,8 +351,6 @@ internal sealed class PasswordHarness
         return user;
     }
 
-    /// <summary>Enrols a user end to end - begin, read the secret back, confirm with a real code -
-    /// and hands back the plaintext secret and the recovery codes.</summary>
     internal async Task<(byte[] Secret, IReadOnlyList<string> RecoveryCodes)> EnrolAsync(Guid userId)
     {
         var started = await TwoFactor.BeginEnrolmentAsync(userId, FreshSignIn);
@@ -382,8 +363,6 @@ internal sealed class PasswordHarness
         return (secret, completed.RecoveryCodes);
     }
 
-    /// <summary>The code an authenticator app would be showing at the harness clock's current
-    /// moment.</summary>
     internal string CurrentCode(byte[] secret, int stepOffset = 0)
     {
         var period = TwoFactorOptions.Period;

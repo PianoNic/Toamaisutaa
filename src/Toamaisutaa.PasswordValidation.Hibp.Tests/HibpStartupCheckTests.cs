@@ -18,8 +18,6 @@ public class HibpStartupCheckTests
         await Check().StartAsync(CancellationToken.None);
     }
 
-    // Zero would refuse every password, including the padding entries, which reads at 2am as the
-    // corpus having gone mad rather than as a configuration value.
     [Test]
     [Arguments(0)]
     [Arguments(-1)]
@@ -39,8 +37,6 @@ public class HibpStartupCheckTests
             .Throws<InvalidOperationException>();
     }
 
-    // Both parse as absolute URIs and neither is something HttpClient can send, so every lookup
-    // would fail open and read as the corpus being unreachable rather than as a setting.
     [Test]
     [Arguments("file:///srv/pwned/")]
     [Arguments("ftp://mirror.internal/pwned/")]
@@ -50,8 +46,6 @@ public class HibpStartupCheckTests
             .Throws<InvalidOperationException>();
     }
 
-    // The trailing slash is the range index's business, not a reason to refuse to start: a mirror
-    // written down without one is looked up with every segment it was given.
     [Test]
     public async Task StartsWithAMirrorAddressThatHasNoTrailingSlash()
     {
@@ -79,7 +73,6 @@ public class HibpStartupCheckTests
             .Throws<InvalidOperationException>();
     }
 
-    // Read at 2am by somebody whose application will not start. It has to name the key.
     [Test]
     public async Task SaysWhichSettingIsWrong()
     {

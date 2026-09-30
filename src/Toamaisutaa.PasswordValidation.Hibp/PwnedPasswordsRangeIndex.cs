@@ -6,15 +6,9 @@ using Microsoft.Extensions.Options;
 namespace Toamaisutaa.PasswordValidation.Hibp;
 
 /// <summary>
-/// The Pwned Passwords range API, queried by k-anonymity: five characters of the hash go out, the
-/// other thirty-five are compared here.
+/// The Pwned Passwords range API, queried by k-anonymity. SHA-1 is not a choice: it is the corpus's
+/// index.
 /// </summary>
-/// <remarks>
-/// SHA-1 is not a choice - it is the corpus's index, and the whole point is that nothing about the
-/// password can be recovered from five hex characters. A prefix matches on the order of eight
-/// hundred hashes, so the service learns that somebody typed one of eight hundred things and
-/// nothing about which.
-/// </remarks>
 internal sealed class PwnedPasswordsRangeIndex(
     IHttpClientFactory httpClientFactory,
     IOptions<ToamaisutaaHibpOptions> options) : IBreachedPasswordIndex
@@ -33,13 +27,12 @@ internal sealed class PwnedPasswordsRangeIndex(
 
         request.Headers.TryAddWithoutValidation("User-Agent", settings.UserAgent);
 
-        // Pads the response with entries whose count is zero, so its length no longer says how many
-        // real hashes share the prefix. The padding drops out on its own: a zero count never
-        // reaches a threshold of one or more.
+        // Zero-count padding hides how many real hashes share the prefix, and never reaches a
+        // threshold of one.
         request.Headers.TryAddWithoutValidation("Add-Padding", "true");
 
-        // The options timeout rather than the client's, so changing it in configuration takes effect
-        // without the named client being rebuilt.
+        // The options timeout rather than the client's, so a configuration change takes effect
+        // without rebuilding the named client.
         using var attempt = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         attempt.CancelAfter(settings.Timeout);
 
@@ -66,13 +59,10 @@ internal sealed class PwnedPasswordsRangeIndex(
         return 0;
     }
 
-    /// <summary>Where the prefix is looked up, keeping every segment of the configured address.</summary>
-    /// <remarks>
-    /// Resolving a relative path against a base address replaces its last segment, so a mirror
-    /// configured as <c>https://mirror.internal/pwned</c> would be asked for
-    /// <c>https://mirror.internal/range/{prefix}</c>. That 404s, the validator fails open, and the
-    /// deployment believes it is checking breaches while accepting every password.
-    /// </remarks>
+    /// <summary>
+    /// Without the trailing slash, resolving drops the base's last segment, so a mirror at
+    /// <c>/pwned</c> would 404 and silently fail open on every password.
+    /// </summary>
     private static Uri Range(string baseAddress, string prefix)
     {
         var root = baseAddress.EndsWith('/') ? baseAddress : baseAddress + "/";

@@ -11,23 +11,10 @@ namespace Toamaisutaa.PasswordHashing.Argon2;
 /// PBKDF2 hasher underneath it for every row this package did not write.
 /// </summary>
 /// <remarks>
-/// <para>
-/// Public because installing this package is a decision about the credential path, and a consumer
-/// who wants to construct or decorate the hasher themselves should not have to go through
-/// reflection to do it. <c>AddToamaisutaaArgon2PasswordHashing</c> is the ordinary way in.
-/// </para>
-/// <para>
-/// Argon2id is memory-hard where PBKDF2 is only compute-hard, which is the whole reason to carry a
-/// third-party dependency for it: each guess has to claim real memory, so the racks of GPUs that
-/// make a PBKDF2 word list cheap do not parallelise nearly as well.
-/// </para>
-/// <para>
-/// A deployment that already has PBKDF2 rows needs no migration and no flag day. Those rows verify
-/// through <see cref="Pbkdf2PasswordHasher"/>, exactly as they did, and a correct password is
-/// answered with <see cref="PasswordVerificationResult.SucceededRehashNeeded"/>, so the row is
-/// rewritten as Argon2id in the same transaction that signed its owner in. Setting
-/// <see cref="ToamaisutaaArgon2Options.VerifyOnly"/> runs the same migration backwards.
-/// </para>
+/// Existing PBKDF2 rows verify through <see cref="Pbkdf2PasswordHasher"/> and a correct password
+/// is answered with <see cref="PasswordVerificationResult.SucceededRehashNeeded"/>, so they migrate
+/// to Argon2id on sign-in. <see cref="ToamaisutaaArgon2Options.VerifyOnly"/> runs the migration
+/// backwards.
 /// </remarks>
 public sealed class Argon2idPasswordHasher(
     IOptions<ToamaisutaaArgon2Options> options,
@@ -36,24 +23,19 @@ public sealed class Argon2idPasswordHasher(
 {
     internal const string AlgorithmName = "argon2id";
 
-    /// <summary>0x13, the only version Argon2 has had since 2015 and the only one implemented
-    /// here. A row naming another one is refused rather than guessed at.</summary>
+    /// <summary>0x13, the only version implemented; a row naming another is refused rather than
+    /// guessed at.</summary>
     private const int Argon2Version = 19;
 
     private const string MemoryParameter = "m";
     private const string IterationsParameter = "t";
     private const string ParallelismParameter = "p";
 
-    /// <summary>The PHC field for "which key was this made with", which is what a pepper version
-    /// is.</summary>
     private const string PepperVersionParameter = "keyid";
 
-    // A stored row is ours, but a database an attacker can write is a database that can ask this
-    // process for a gigabyte of memory and a minute of work per login attempt. Bound what a row may
-    // request.
-    //
-    // Internal because Argon2HashingStartupCheck refuses configured parameters above them: a value
-    // this hasher will write but not read back produces credentials nothing can verify.
+    // A database an attacker can write could otherwise make each login attempt demand a gigabyte
+    // and a minute of work. Argon2HashingStartupCheck refuses configured values above these, since
+    // rows written with them would never verify.
     internal const int MaxMemoryKib = 1024 * 1024;
     internal const int MaxIterations = 64;
     internal const int MaxParallelism = 64;
@@ -121,8 +103,7 @@ public sealed class Argon2idPasswordHasher(
         if (!TryReadPepperVersion(stored, out var pepperVersion))
             return PasswordVerificationResult.Failed;
 
-        // A row peppered with a key this deployment no longer holds cannot be checked. Fail closed,
-        // for the same reason the PBKDF2 hasher does.
+        // A row peppered with a key this deployment no longer holds cannot be checked, so fail closed.
         if (!PasswordPepper.TryResolve(loginOptions.Value, pepperVersion, out var pepper))
             return PasswordVerificationResult.Failed;
 
@@ -137,8 +118,7 @@ public sealed class Argon2idPasswordHasher(
         if (!CryptographicOperations.FixedTimeEquals(computed, stored.Hash))
             return PasswordVerificationResult.Failed;
 
-        // VerifyOnly is draining these rows back to PBKDF2, so every one of them is out of date by
-        // definition.
+        // VerifyOnly drains these rows back to PBKDF2.
         if (options.Value.VerifyOnly)
             return PasswordVerificationResult.SucceededRehashNeeded;
 
@@ -147,11 +127,6 @@ public sealed class Argon2idPasswordHasher(
             : PasswordVerificationResult.Succeeded;
     }
 
-    /// <summary>
-    /// A row this package did not write, which in practice means a PBKDF2 row from before it was
-    /// installed. The existing hasher reads it exactly as it always did, and a correct password is
-    /// answered with a rehash so the row is rewritten as Argon2id while the plaintext is in hand.
-    /// </summary>
     private PasswordVerificationResult VerifyThroughPbkdf2(string password, string hash)
     {
         var result = pbkdf2.Verify(password, hash);
@@ -192,8 +167,6 @@ public sealed class Argon2idPasswordHasher(
         return true;
     }
 
-    /// <summary>Anything weaker than, or older than, what is configured now gets rewritten while
-    /// the plaintext is still in hand.</summary>
     private bool NeedsRehash(PhcString stored, int memory, int iterations, int parallelism, string? pepperVersion)
     {
         var settings = loginOptions.Value;
@@ -201,8 +174,7 @@ public sealed class Argon2idPasswordHasher(
 
         return memory < argon.MemorySizeKib
             || iterations < argon.Iterations
-            // Not "fewer than", because lanes divide the memory rather than add to it: a row whose
-            // lane count is not the configured one is rewritten rather than ranked against it.
+            // Lanes divide the memory rather than add to it, so any mismatch is rewritten, not ranked.
             || parallelism != argon.DegreeOfParallelism
             || stored.Salt.Length < settings.SaltSizeBytes
             || stored.Hash.Length < settings.HashSizeBytes

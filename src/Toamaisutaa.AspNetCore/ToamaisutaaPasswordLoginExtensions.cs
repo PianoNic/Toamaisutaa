@@ -14,9 +14,8 @@ public static class ToamaisutaaPasswordLoginExtensions
     /// deployments that cannot run an identity provider.
     /// </summary>
     /// <remarks>
-    /// Requires <c>AddToamaisutaaBearer</c> for the token validation and the issuer, a store
-    /// registration for the tables, and an <see cref="IPasswordResetNotifier"/> of your own. All
-    /// three are checked at startup rather than at the first request.
+    /// Requires <c>AddToamaisutaaBearer</c>, a store registration, and an
+    /// <see cref="IPasswordResetNotifier"/> of your own, all checked at startup.
     /// </remarks>
     public static IServiceCollection AddToamaisutaaPasswordLogin(
         this IServiceCollection services,
@@ -48,17 +47,12 @@ public static class ToamaisutaaPasswordLoginExtensions
     {
         services.TryAddSingleton(TimeProvider.System);
 
-        // Local sign-in is about a local user row, so the account side is not optional here the way
-        // it is for a pure resource server.
         services.AddToamaisutaaProvisioning();
         services.AddToamaisutaaCurrentUser();
 
-        // One meter for the whole package, so every instrument on it appears and disappears
-        // together for whoever subscribed to the name.
         services.TryAddSingleton<ToamaisutaaMetrics>();
 
-        // Added by AddToamaisutaaBearer as well, because either call may come first. The startup
-        // check below reads it, so it has to be there even when this is the first of the two.
+        // Also added by AddToamaisutaaBearer; the startup check below needs it whichever call comes first.
         services.TryAddSingleton<LocalSigningKeyRing>();
 
         services.TryAddSingleton<IPasswordHasher, Pbkdf2PasswordHasher>();
@@ -66,36 +60,24 @@ public static class ToamaisutaaPasswordLoginExtensions
         services.TryAddSingleton<IUserRoleProvider, EmptyUserRoleProvider>();
         services.TryAddSingleton<DummyPasswordHash>();
 
-        // The sign-in path always asks whether a second factor applies. Bound and registered even
-        // when AddToamaisutaaTwoFactor was never called, because the gate answers "no" from the
-        // absence of the stores rather than from its own absence - which would be a crash.
+        // Registered even without AddToamaisutaaTwoFactor: the sign-in path always resolves the gates,
+        // which answer "no" from the absence of the stores rather than crashing on their own absence.
         services.AddOptions<ToamaisutaaTwoFactorOptions>();
         services.TryAddScoped<TwoFactorGate>();
 
-        // Same shape: the sign-in path always asks whether a device token stands in for a second
-        // factor, and the gate answers no from the absence of the store rather than its own.
         services.AddOptions<ToamaisutaaTrustedDeviceOptions>();
         services.TryAddScoped<TrustedDeviceGate>();
 
-        // Registered with the sign-in path rather than on its own, because that path publishes
-        // unconditionally: with no IAuthenticationEventSink registered this hands the event to
-        // nobody, which is cheaper than a null check at every call site.
         services.TryAddScoped<AuthenticationEventPublisher>();
 
-        // Shared with the passkey package, which mints the same session from a different ceremony.
-        // Registered here as well as there, because either call may come first.
+        // Also registered by the passkey package, because either call may come first.
         services.TryAddScoped<LocalSessionIssuer>();
 
         services.TryAddScoped<IPasswordSignInService, PasswordSignInService>();
         services.TryAddScoped<IPasswordAccountService, PasswordAccountService>();
 
-        // Not opt-in the way trusted devices are: refresh families exist from the first sign-in
-        // whether or not anyone maps the endpoints, so listing and ending them needs no feature of
-        // its own to be switched on first.
         services.TryAddScoped<ISessionService, SessionService>();
 
-        // Owned rather than delegated to the rate-limiting middleware, so that forgetting a call in
-        // Program.cs cannot silently leave the anonymous endpoints unthrottled.
         services.TryAddSingleton<PasswordRateLimiter>();
 
         services.TryAddSingleton<MailRequestCooldown>();
@@ -103,8 +85,7 @@ public static class ToamaisutaaPasswordLoginExtensions
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IHostedService, MailRequestQueue>(
             provider => provider.GetRequiredService<MailRequestQueue>()));
 
-        // A typed factory, not a plain one: TryAddEnumerable needs to know the implementation type
-        // to tell this apart from every other hosted service.
+        // A typed factory: TryAddEnumerable needs the implementation type to tell hosted services apart.
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IHostedService, PasswordLoginStartupCheck>(provider =>
             new PasswordLoginStartupCheck(
                 services,

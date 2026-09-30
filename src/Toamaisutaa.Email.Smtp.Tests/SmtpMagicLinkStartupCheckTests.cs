@@ -42,7 +42,6 @@ public class SmtpMagicLinkStartupCheckTests
         await Assert.That(() => Check(options).StartAsync(CancellationToken.None)).Throws<InvalidOperationException>();
     }
 
-    // The link is the default template's business alone, so a consumer template is not held to it.
     [Test]
     public async Task StartsCleanlyWithoutALinkTemplateWhenTheTemplateIsNotTheDefault()
     {

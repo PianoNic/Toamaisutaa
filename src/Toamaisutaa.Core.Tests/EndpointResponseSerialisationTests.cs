@@ -4,29 +4,13 @@ using Toamaisutaa.Abstractions;
 namespace Toamaisutaa.Core.Tests;
 
 /// <summary>
-/// The wire contract of the endpoints, asserted as literal JSON.
+/// Every expectation was captured from the shipped wire format, so a diff here is a diff a deployed
+/// client would see.
 /// </summary>
-/// <remarks>
-/// <para>
-/// These shapes were anonymous objects until they had types, which meant the RFC 6749 field names
-/// were C# identifiers in an endpoint file and a rename would have changed the API without
-/// producing a single failing test. Every expectation below was captured from the running sample on
-/// 0.3.0 before the types existed, so a diff here is a diff a deployed client would see.
-/// </para>
-/// <para>
-/// Serialised through <see cref="JsonSerializerDefaults.Web"/> - the same defaults minimal APIs use
-/// - so the camelCase naming policy is applied exactly as it is in production. That is the point:
-/// the assertions prove the pinned names survive a policy that would otherwise rewrite them.
-/// </para>
-/// </remarks>
 public class EndpointResponseSerialisationTests
 {
     private static readonly JsonSerializerOptions Web = new(JsonSerializerDefaults.Web);
 
-    /// <summary>
-    /// An application is free to configure its own naming policy, and several do. A response that
-    /// took its field names from a policy would change shape underneath the consumer who did.
-    /// </summary>
     private static readonly JsonSerializerOptions SnakeCase = new(JsonSerializerDefaults.Web)
     {
         PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower,
@@ -45,8 +29,7 @@ public class EndpointResponseSerialisationTests
             ExpiresIn = 900,
         });
 
-        // The three trailing nulls are shipped behaviour, not an oversight: 0.2.0 and 0.3.0 both
-        // emit them on every sign-in, so omitting them now would be a wire change.
+        // The trailing nulls are shipped behaviour, so omitting them now would be a wire change.
         await Assert.That(json).IsEqualTo(
             """
             {"access_token":"at","refresh_token":"rt","expires_in":900,"token_type":"Bearer","recovery_codes_running_low":null,"device_token":null,"device_expires_in":null}
@@ -71,10 +54,6 @@ public class EndpointResponseSerialisationTests
             """);
     }
 
-    /// <summary>
-    /// True or absent, never false. A client written against 0.2.0 reads this as truthy rather than
-    /// comparing it, so emitting <c>false</c> would be a change even though the meaning is the same.
-    /// </summary>
     [Test]
     public async Task Recovery_codes_running_low_is_true_or_null_and_never_false()
     {
@@ -120,10 +99,6 @@ public class EndpointResponseSerialisationTests
             """);
     }
 
-    /// <summary>
-    /// The one response body here that is camelCase, because no standard names it. Asserted so the
-    /// asymmetry is a decision the codebase holds rather than an accident nobody noticed.
-    /// </summary>
     [Test]
     public async Task Validation_error_response_stays_camel_case()
     {
@@ -140,8 +115,6 @@ public class EndpointResponseSerialisationTests
     {
         var json = Serialise(new StepUpChallengeResponse { Challenge = "No1CXq9", ExpiresIn = 300 });
 
-        // No two_factor_required. The caller asked for this one, so saying it is required would be
-        // a lie, and it is why this is not TwoFactorChallengeResponse.
         await Assert.That(json).IsEqualTo(
             """
             {"challenge":"No1CXq9","expires_in":300}
@@ -149,9 +122,8 @@ public class EndpointResponseSerialisationTests
     }
 
     /// <summary>
-    /// No refresh token, and that is the point. Sharing <see cref="TokenResponse"/> would put
-    /// <c>refresh_token: null</c> here, and a client that stored what came back would blank the
-    /// credential it needs to stay signed in.
+    /// Sharing <see cref="TokenResponse"/> would put <c>refresh_token: null</c> here, and a client
+    /// that stored what came back would blank the credential it needs to stay signed in.
     /// </summary>
     [Test]
     public async Task Step_up_response_carries_an_access_token_and_no_refresh_token()
@@ -174,10 +146,6 @@ public class EndpointResponseSerialisationTests
         await Assert.That(json).Contains("\"recovery_codes_running_low\":true");
     }
 
-    /// <summary>
-    /// The failure this whole file exists to catch. An application that sets its own naming policy
-    /// would, without the pinned names, silently reshape a standard token response.
-    /// </summary>
     [Test]
     public async Task Field_names_survive_an_application_naming_policy()
     {

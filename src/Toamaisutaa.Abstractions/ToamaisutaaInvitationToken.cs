@@ -1,10 +1,8 @@
 namespace Toamaisutaa.Abstractions;
 
 /// <summary>
-/// Single-use, time-limited, and stored hashed exactly as password reset tokens are. Names the one
-/// <see cref="ToamaisutaaUser"/> row it completes - a placeholder created with an email and no
-/// <see cref="ToamaisutaaPasswordCredential"/>, not an open invitation anyone can redeem into a new
-/// account of their choosing.
+/// Single-use, time-limited, stored hashed. Completes exactly one placeholder
+/// <see cref="ToamaisutaaUser"/> row that has no <see cref="ToamaisutaaPasswordCredential"/> yet.
 /// </summary>
 public class ToamaisutaaInvitationToken
 {
@@ -23,10 +21,9 @@ public class ToamaisutaaInvitationToken
     public DateTimeOffset? ConsumedAt { get; set; }
 
     /// <summary>
-    /// The address the invitation was sent to, which is the address completing it proves. Read from
-    /// here rather than from the reserved user row, whose profile email an identity provider's sync can
-    /// rewrite between the invitation and its completion. Null on rows written before the column
-    /// existed, which fall back to the user row.
+    /// The address the invitation was sent to, which completing it proves. Read from here rather than
+    /// the user row, whose email a provider sync can rewrite. Null on older rows, which fall back to
+    /// the user row.
     /// </summary>
     public string? Email { get; set; }
 

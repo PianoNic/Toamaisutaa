@@ -11,21 +11,13 @@ public static class ToamaisutaaSmtpEmailExtensions
     private const string ConfigurationSection = "Email:Smtp";
 
     /// <summary>
-    /// Registers an SMTP-backed <see cref="IPasswordResetNotifier"/>, so password reset actually
-    /// sends mail without you writing a notifier. Optional - local password login works with any
-    /// <see cref="IPasswordResetNotifier"/>, including one you write yourself.
+    /// Registers an SMTP-backed <see cref="IPasswordResetNotifier"/> and the transport the other SMTP
+    /// notifiers use.
     /// </summary>
     /// <remarks>
     /// Host, port, sender address and <see cref="ToamaisutaaSmtpEmailOptions.PasswordResetLinkTemplate"/>
-    /// are checked at startup rather than at the first password reset request. Register your own
-    /// <see cref="IPasswordResetEmailTemplate"/> before calling this to replace the default wording.
-    /// <para>
-    /// The reset email and nothing else. Invitations, email verification, magic links and
-    /// admin-issued passwords are opt-in one at a time - see
-    /// <see cref="AddToamaisutaaSmtpInvitationEmail"/>,
-    /// <see cref="AddToamaisutaaSmtpEmailVerification"/>, <see cref="AddToamaisutaaSmtpMagicLink"/>
-    /// and <see cref="AddToamaisutaaSmtpAdminPasswordEmail"/>.
-    /// </para>
+    /// are checked at startup. Register your own <see cref="IPasswordResetEmailTemplate"/> before
+    /// calling this to replace the default wording. The other emails are opt-in one at a time.
     /// </remarks>
     public static IServiceCollection AddToamaisutaaSmtpEmail(
         this IServiceCollection services,
@@ -59,15 +51,10 @@ public static class ToamaisutaaSmtpEmailExtensions
     /// binds the options and the transport this uses and has to be called as well.
     /// </summary>
     /// <remarks>
-    /// Separate from the call above, and not part of it, because registering an
-    /// <see cref="IInvitationNotifier"/> is what maps <c>POST /auth/invitations</c> and
-    /// <c>POST /auth/invitations/complete</c> at all. An application that installed this package to
-    /// send reset mail should not find two endpoints it never asked for on the wire.
-    /// <para>
+    /// Separate because registering an <see cref="IInvitationNotifier"/> is what maps
+    /// <c>POST /auth/invitations</c> and <c>POST /auth/invitations/complete</c> at all.
     /// <see cref="ToamaisutaaSmtpEmailOptions.InvitationLinkTemplate"/> is checked at startup unless
-    /// you register your own <see cref="IInvitationEmailTemplate"/>, which replaces the wording and
-    /// the link both.
-    /// </para>
+    /// you register your own <see cref="IInvitationEmailTemplate"/>.
     /// </remarks>
     public static IServiceCollection AddToamaisutaaSmtpInvitationEmail(this IServiceCollection services)
     {
@@ -87,13 +74,10 @@ public static class ToamaisutaaSmtpEmailExtensions
     /// binds the options and the transport this uses and has to be called as well.
     /// </summary>
     /// <remarks>
-    /// Separate for the same reason as the invitation notifier: registering one is what maps
-    /// <c>POST /auth/email</c> and <c>POST /auth/email/verify</c> at all.
-    /// <para>
+    /// Separate because registering one is what maps <c>POST /auth/email</c> and
+    /// <c>POST /auth/email/verify</c> at all.
     /// <see cref="ToamaisutaaSmtpEmailOptions.EmailVerificationLinkTemplate"/> is checked at startup
-    /// unless you register your own <see cref="IEmailVerificationEmailTemplate"/>, which replaces
-    /// the wording and the link both.
-    /// </para>
+    /// unless you register your own <see cref="IEmailVerificationEmailTemplate"/>.
     /// </remarks>
     public static IServiceCollection AddToamaisutaaSmtpEmailVerification(this IServiceCollection services)
     {
@@ -113,19 +97,16 @@ public static class ToamaisutaaSmtpEmailExtensions
     /// binds the options and the transport this uses and has to be called as well.
     /// </summary>
     /// <remarks>
-    /// Separate for the same reason as the invitation notifier: registering one is what maps
-    /// <c>POST /auth/magic-link</c> and <c>POST /auth/magic-link/verify</c> at all.
+    /// Separate because registering one is what maps <c>POST /auth/magic-link</c> and
+    /// <c>POST /auth/magic-link/verify</c> at all.
     /// <para>
-    /// A magic link is only ever sent to a verified address, so
-    /// <see cref="AddToamaisutaaSmtpEmailVerification"/> - or an
-    /// <see cref="IEmailVerificationNotifier"/> of your own - has to be registered as well.
-    /// Startup refuses the pair without it, because otherwise no address could ever qualify and the
-    /// endpoint would answer 204 forever while sending nothing.
+    /// A magic link is only sent to a verified address, so an <see cref="IEmailVerificationNotifier"/>
+    /// (such as <see cref="AddToamaisutaaSmtpEmailVerification"/>) must be registered too; startup
+    /// refuses the pair without it.
     /// </para>
     /// <para>
     /// <see cref="ToamaisutaaSmtpEmailOptions.MagicLinkTemplate"/> is checked at startup unless you
-    /// register your own <see cref="IMagicLinkEmailTemplate"/>, which replaces the wording and the
-    /// link both.
+    /// register your own <see cref="IMagicLinkEmailTemplate"/>.
     /// </para>
     /// </remarks>
     public static IServiceCollection AddToamaisutaaSmtpMagicLink(this IServiceCollection services)
@@ -146,13 +127,11 @@ public static class ToamaisutaaSmtpEmailExtensions
     /// binds the options and the transport this uses and has to be called as well.
     /// </summary>
     /// <remarks>
-    /// Separate for the same reason as the invitation notifier: registering one is what maps
-    /// <c>POST /auth/users</c> and <c>POST /auth/users/{userId}/password</c> at all.
+    /// Separate because registering one is what maps <c>POST /auth/users</c> and
+    /// <c>POST /auth/users/{userId}/password</c> at all.
     /// <para>
-    /// Emailing a password is emailing a credential, and it stays valid until somebody changes it.
-    /// The default wording says to change it straight away; if that is not good enough for you,
-    /// register your own <see cref="IAdminPasswordIssuedEmailTemplate"/>, or your own
-    /// <see cref="IAdminPasswordIssuedNotifier"/> and do not send mail at all.
+    /// Emailing a password is emailing a credential that stays valid until somebody changes it; to
+    /// avoid that, register your own <see cref="IAdminPasswordIssuedNotifier"/> instead.
     /// </para>
     /// </remarks>
     public static IServiceCollection AddToamaisutaaSmtpAdminPasswordEmail(this IServiceCollection services)

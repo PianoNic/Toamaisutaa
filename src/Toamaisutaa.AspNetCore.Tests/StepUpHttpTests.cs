@@ -2,16 +2,6 @@ using System.Net;
 
 namespace Toamaisutaa.AspNetCore.Tests;
 
-/// <summary>
-/// Step-up, and the freshness that has to survive a refresh.
-/// </summary>
-/// <remarks>
-/// `toa_2fa_at` has been carried on the refresh row since Phase 5, so the naive read is that the
-/// refresh rule was already satisfied. It was not: that mechanism was built for a value written
-/// once at sign-in and never moved. Step-up is the first thing that changes it mid-session, and if
-/// the row is not moved with the token the next refresh silently reverts freshness to the original
-/// sign-in - one access-token lifetime later, with nothing failing in between.
-/// </remarks>
 public class StepUpHttpTests
 {
     [Test]
@@ -32,8 +22,7 @@ public class StepUpHttpTests
             var refreshed = await (await app.Client.PostJson("/auth/refresh", new { refreshToken })).Json();
             refreshToken = refreshed.String("refresh_token")!;
 
-            // If this ever drifts, every step-up after the first refresh targets a family that does
-            // not exist and silently elevates nothing.
+            // If this drifts, every step-up after the first refresh silently elevates nothing.
             await Assert.That(Account.DecodeClaims(refreshed.String("access_token")!).String("toa_sid")).IsEqualTo(sid);
         }
     }
@@ -51,7 +40,6 @@ public class StepUpHttpTests
             .IsNotEqualTo(Account.DecodeClaims(b.String("access_token")!).String("toa_sid"));
     }
 
-    /// <summary>The three-line one. This is the test the whole phase turns on.</summary>
     [Test]
     public async Task Stepping_up_survives_a_refresh()
     {
@@ -72,8 +60,7 @@ public class StepUpHttpTests
 
         await Assert.That(elevated).IsGreaterThan(before);
 
-        // The refresh row, not just the token. Without the in-place update this is where freshness
-        // silently reverts to the original sign-in.
+        // Without the in-place update of the refresh row, freshness silently reverts to the original sign-in here.
         var refreshed = await (await app.Client.PostJson(
             "/auth/refresh",
             new { refreshToken = signedIn.String("refresh_token") })).Json();
@@ -84,10 +71,6 @@ public class StepUpHttpTests
         await Assert.That(afterRefresh).IsEqualTo(elevated);
     }
 
-    /// <summary>
-    /// The device case, which is what step-up is for: a cached factor that a freshness policy
-    /// should refuse until a live one replaces it.
-    /// </summary>
     [Test]
     public async Task Stepping_up_a_device_trusted_session_replaces_device_with_the_live_factor()
     {
@@ -115,10 +98,6 @@ public class StepUpHttpTests
         await Assert.That(Account.DecodeClaims(refreshed.String("access_token")!).String("toa_2fa_source")).IsEqualTo("otp");
     }
 
-    /// <summary>
-    /// amr is a monotonic union, so no policy that passed before a step-up can start failing after
-    /// one. A device-trusted session carries no `otp`; after a live TOTP step-up it does.
-    /// </summary>
     [Test]
     public async Task Amr_gains_otp_on_a_step_up_and_loses_nothing()
     {
@@ -137,7 +116,6 @@ public class StepUpHttpTests
 
         await Assert.That(after).IsEquivalentTo(new[] { "pwd", "mfa", "otp" });
 
-        // Monotonic: everything that was there is still there.
         foreach (var method in before)
             await Assert.That(after).Contains(method);
     }
@@ -181,8 +159,7 @@ public class StepUpHttpTests
     }
 
     /// <summary>
-    /// Purpose alone would not catch this: both challenges are StepUp and both belong to the same
-    /// user. The binding is what stops one session elevating another.
+    /// Both challenges are StepUp for the same user, so only the session binding stops this.
     /// </summary>
     [Test]
     public async Task A_step_up_challenge_from_another_session_is_refused()
@@ -230,10 +207,6 @@ public class StepUpHttpTests
             .IsEqualTo(beforeB);
     }
 
-    /// <summary>
-    /// A signed-out session keeps a valid access token until it expires. Elevating it would
-    /// resurrect something the user deliberately ended.
-    /// </summary>
     [Test]
     public async Task A_signed_out_session_cannot_step_up()
     {
@@ -250,16 +223,7 @@ public class StepUpHttpTests
         await Assert.That(response.StatusCode).IsEqualTo(HttpStatusCode.Unauthorized);
     }
 
-    /// <summary>
-    /// 400, not 401. The token is valid and the caller is authenticated; what is missing is a local
-    /// session, and 401 would send them to refresh a token that is not the problem.
-    /// </summary>
-    /// <remarks>
-    /// The token is minted here rather than doctored, because editing a real one breaks its
-    /// signature and the request never reaches the endpoint - which would make this test assert the
-    /// bearer pipeline while claiming to assert step-up. Same key, same issuer, no
-    /// <c>toa_sid</c>: the shape an identity provider's token has.
-    /// </remarks>
+    /// <summary>400, not 401, because 401 would send the caller to refresh a token that is not the problem.</summary>
     [Test]
     public async Task A_token_with_no_session_claim_answers_400()
     {
@@ -299,8 +263,6 @@ public class StepUpHttpTests
             await Assert.That(wrong.StatusCode).IsEqualTo(HttpStatusCode.Unauthorized);
         }
 
-        // Locked now, so even the right code is refused - the mirror of a trusted device not
-        // bypassing lockout.
         var begin = await app.Client.PostEmpty("/auth/2fa/step-up", account.AccessToken);
 
         await Assert.That(begin.StatusCode).IsEqualTo(HttpStatusCode.Unauthorized);
@@ -339,7 +301,6 @@ public class StepUpHttpTests
         await Assert.That(body.String("access_token")).IsNotNull();
         await Assert.That(Account.DecodeClaims(body.String("access_token")!).String("toa_2fa_source")).IsEqualTo("recovery");
 
-        // The side effect, which is the same inference as at sign-in: the authenticator is gone.
         await Assert.That((await app.Client.Get("/auth/devices", body.String("access_token")!)).Json().Result.GetArrayLength())
             .IsEqualTo(0);
     }
@@ -357,8 +318,7 @@ public class StepUpHttpTests
         var steppedUp = await account.StepUpAsync(accessToken: session.String("access_token"));
         var after = Account.DecodeClaims((await steppedUp.Json()).String("access_token")!).String("toa_stamp");
 
-        // Bumping it would revoke the family of the session being elevated, so proving you are
-        // yourself would sign you out.
+        // Bumping it would revoke the session being elevated, so proving you are yourself would sign you out.
         await Assert.That(after).IsEqualTo(before);
 
         var refreshed = await app.Client.PostJson("/auth/refresh", new { refreshToken = session.String("refresh_token") });

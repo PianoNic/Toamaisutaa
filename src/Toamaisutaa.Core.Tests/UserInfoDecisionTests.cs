@@ -10,7 +10,6 @@ public class UserInfoDecisionTests
         await Assert.That(UserInfoDecision.ShouldFetch(enabled: true, principal, "roles")).IsTrue();
     }
 
-    // An issuer that already puts roles in the access token pays nothing for enrichment.
     [Test]
     public async Task SkipsWhenTheTokenAlreadyAnsweredTheQuestion()
     {

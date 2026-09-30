@@ -6,21 +6,16 @@ namespace Toamaisutaa.Abstractions;
 /// invalidated the second one.
 /// </summary>
 /// <remarks>
-/// Opaque random bytes rather than a signed token, for the same reason as the two-factor challenge:
-/// a token that cannot be presented as a bearer token has no bypass to defend against.
-/// <para>
-/// Rotated on every use with reuse detection, exactly like a refresh token. A presented-but-already
-/// -rotated device token means two parties hold the chain, and one of them is not the account owner.
-/// </para>
+/// Opaque random bytes rather than a signed token, so it can never be presented as a bearer token.
+/// Rotated on every use with reuse detection, like a refresh token.
 /// </remarks>
 public class ToamaisutaaTrustedDevice
 {
     public Guid Id { get; set; }
 
     /// <summary>
-    /// Stable across rotations, and the identifier a user actually sees and revokes.
-    /// <see cref="Id"/> changes every time the token rotates, so a list endpoint keyed on it would
-    /// hand out identifiers that stop working after the next sign-in.
+    /// Stable across rotations, and the identifier a user sees and revokes. <see cref="Id"/> changes
+    /// on every rotation.
     /// </summary>
     public Guid FamilyId { get; set; }
 
@@ -31,23 +26,20 @@ public class ToamaisutaaTrustedDevice
 
     /// <summary>
     /// The user's <see cref="ToamaisutaaUser.SecurityStamp"/> when this family was established,
-    /// compared on every use. This single field is what makes every credential change revoke device
-    /// trust without each of them having to remember to.
+    /// compared on every use, so any credential change revokes device trust.
     /// </summary>
     public string SecurityStamp { get; set; } = default!;
 
     /// <summary>
-    /// When a second factor was last actually presented on this family - a TOTP code or a recovery
-    /// code, never a device token. Becomes <c>toa_2fa_at</c>, so a device-trusted sign-in reports
-    /// the original live challenge rather than now, and a step-up policy can tell the difference.
+    /// When a second factor was last actually presented on this family, never a device token.
+    /// Becomes <c>toa_2fa_at</c>, so a step-up policy sees the original live challenge rather than now.
     /// </summary>
     public DateTimeOffset SecondFactorAt { get; set; }
 
-    /// <summary>Supplied by the application. This package does not invent one.</summary>
+    /// <summary>Supplied by the application.</summary>
     public string? Label { get; set; }
 
-    /// <summary>Raw and truncated. Deliberately not parsed into a friendly name - that is either a
-    /// dependency or a lookup table that rots.</summary>
+    /// <summary>Raw and truncated.</summary>
     public string? UserAgent { get; set; }
 
     /// <summary>Null unless <c>TrustedDevices:IpAddressStorage</c> says otherwise.</summary>
@@ -56,8 +48,7 @@ public class ToamaisutaaTrustedDevice
     public DateTimeOffset CreatedAt { get; set; }
 
     /// <summary>
-    /// When the family started. Rotation does not move it, so a device used every week still
-    /// expires - the same reason refresh families have an absolute lifetime.
+    /// When the family started. Rotation does not move it, so a device used every week still expires.
     /// </summary>
     public DateTimeOffset FamilyStartedAt { get; set; }
 

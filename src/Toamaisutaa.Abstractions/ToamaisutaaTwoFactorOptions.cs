@@ -3,19 +3,13 @@ namespace Toamaisutaa.Abstractions;
 /// <summary>Everything read from the <c>TwoFactor</c> configuration section.</summary>
 public sealed class ToamaisutaaTwoFactorOptions
 {
-    // ── Encryption at rest ──
-
     /// <summary>
-    /// Base64, at least 32 bytes. Required once two-factor is registered.
+    /// Base64, at least 32 bytes. Required once two-factor is registered. Separate from the token
+    /// signing key.
     /// </summary>
     /// <remarks>
-    /// Its own key rather than the token signing key. Purpose separation is standard, the two rotate
-    /// on different schedules, and the signing key may one day become an RSA private key for
-    /// asymmetric validation - which cannot also be an AES-256-GCM key.
-    /// <para>
-    /// Losing it means every enrolled user must enrol again. A TOTP secret has to be recoverable to
-    /// be used, so it is encrypted rather than hashed, and there is no way to re-derive one.
-    /// </para>
+    /// Losing it means every enrolled user must enrol again: TOTP secrets are encrypted under it and
+    /// cannot be re-derived.
     /// </remarks>
     public string? EncryptionKey { get; set; }
 
@@ -25,8 +19,6 @@ public sealed class ToamaisutaaTwoFactorOptions
     /// <summary>Superseded keys, kept only so rows written before a rotation still decrypt. Each row
     /// is re-encrypted under the current key the next time it is used.</summary>
     public IDictionary<string, string> RetiredEncryptionKeys { get; set; } = new Dictionary<string, string>(StringComparer.Ordinal);
-
-    // ── TOTP ──
 
     /// <summary>Do not change this. Authenticator apps assume six.</summary>
     public int Digits { get; set; } = 6;
@@ -45,22 +37,15 @@ public sealed class ToamaisutaaTwoFactorOptions
     public string? Issuer { get; set; }
 
     /// <summary>
-    /// How recent a sign-in has to be to enrol without the current password. Whoever enrols is the
-    /// only one who can answer the second factor afterwards, so enrolling takes more than a token.
+    /// How recent a sign-in has to be to enrol without the current password.
     /// </summary>
     public TimeSpan EnrolmentProofWindow { get; set; } = TimeSpan.FromMinutes(5);
 
     /// <summary>
-    /// How long a begun enrolment can still be confirmed. Past it, confirming is refused and the
-    /// enrolment has to begin again, with a new secret.
+    /// How long a begun enrolment can still be confirmed, bounding how long a secret handed out in
+    /// the clear stays usable. Past it, the enrolment has to begin again with a new secret.
     /// </summary>
-    /// <remarks>
-    /// The secret was handed out in the clear when it began. One abandoned for good - a closed tab,
-    /// a QR code somebody photographed - used to stay confirmable for ever.
-    /// </remarks>
     public TimeSpan EnrolmentLifetime { get; set; } = TimeSpan.FromMinutes(15);
-
-    // ── Recovery codes ──
 
     public int RecoveryCodeCount { get; set; } = 10;
 
@@ -73,17 +58,12 @@ public sealed class ToamaisutaaTwoFactorOptions
     /// </summary>
     /// <remarks>
     /// Those rows are plain SHA-256 of a fifty-bit code, which a copy of the table gives up to one
-    /// GPU sweep. Turn this off once the ones left are few enough to ask their owners to regenerate,
-    /// and then delete them: the count is in the two-factor docs.
+    /// GPU sweep. Turn this off once few enough remain to ask their owners to regenerate.
     /// </remarks>
     public bool AcceptUnkeyedRecoveryCodes { get; set; } = true;
 
-    // ── Challenge ──
-
     /// <summary>How long the half-finished sign-in stays usable.</summary>
     public TimeSpan ChallengeLifetime { get; set; } = TimeSpan.FromMinutes(5);
-
-    // ── Enforcement ──
 
     public TwoFactorEnforcement Enforcement { get; set; } = TwoFactorEnforcement.Optional;
 

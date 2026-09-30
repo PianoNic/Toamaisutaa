@@ -4,8 +4,6 @@ namespace Toamaisutaa.Core.Tests;
 
 public class InvitationTests
 {
-    // ── Creating an invitation ──
-
     [Test]
     public async Task CreatingAnInvitationReservesAnAccountWithNoUserNameAndNoCredential()
     {
@@ -34,8 +32,8 @@ public class InvitationTests
         await Assert.That(harness.InvitationNotifier.Sent[0].Token).IsNotEmpty();
     }
 
-    // Nothing here looks for an existing reservation before making one, so a notifier that threw and
-    // left the row behind meant every retry against the same down relay reserved the address again.
+    // Nothing looks for an existing reservation before making one, so a row left behind by a failed
+    // send would be reserved again by every retry.
     [Test]
     public async Task ANotifierFailureLeavesNoReservedAccountBehind()
     {
@@ -73,8 +71,6 @@ public class InvitationTests
         await Assert.That(async () => await harness.Accounts.CreateInvitationAsync("ada@example.com"))
             .Throws<InvalidOperationException>();
     }
-
-    // ── Completing an invitation ──
 
     [Test]
     public async Task CompletingAnInvitationSetsTheChosenUserNameAndPasswordAndSignsIn()
@@ -132,7 +128,6 @@ public class InvitationTests
         await Assert.That(result.Succeeded).IsFalse();
     }
 
-    // A taken user name must not burn the reservation: the same person should be able to try again.
     [Test]
     public async Task ATakenUserNameLeavesTheTokenUsable()
     {
@@ -148,9 +143,6 @@ public class InvitationTests
         var retry = await harness.Accounts.CompleteInvitationAsync(token, "ada", "correct horse battery");
         await Assert.That(retry.Succeeded).IsTrue();
     }
-
-    // ── The invariant: a self-chosen password never reaches the admin notifier, and an
-    //    admin-provisioned password never reaches the invitation notifier ──
 
     [Test]
     public async Task CompletingAnInvitationNeverCallsTheAdminPasswordNotifier()

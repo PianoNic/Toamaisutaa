@@ -15,8 +15,8 @@ public interface ITwoFactorStore
     /// one, first - which is a replay, and the code is refused.
     /// </returns>
     /// <remarks>
-    /// An unconditional write let two requests with the same code both pass, and let a late write
-    /// move the step backwards and open a used code again.
+    /// Must be conditional: an unconditional write lets two requests with the same code both pass,
+    /// and a late write move the step backwards and reopen a used code.
     /// </remarks>
     Task<bool> RecordUsedStepAsync(Guid userId, long step, CancellationToken cancellationToken = default);
 
@@ -27,9 +27,8 @@ public interface ITwoFactorStore
     /// <returns>False when another request changed any of them first; the caller reads again and
     /// reapplies, so parallel guesses each count rather than all writing the same number.</returns>
     /// <remarks>
-    /// All three, not the count alone: a lock resets the count to zero, so a request that read the
-    /// row before any failure sees the count it expects after the lock, and a write conditional on
-    /// the count alone lands - clearing the lock it never saw.
+    /// All three, not the count alone: a lock resets the count to zero, so a stale write conditional
+    /// on the count alone could clear a lock it never saw.
     /// </remarks>
     Task<bool> UpdateFailedAttemptsAsync(
         Guid userId,

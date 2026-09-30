@@ -2,12 +2,6 @@ using Toamaisutaa.Abstractions;
 
 namespace Toamaisutaa.Core;
 
-/// <summary>
-/// Subject-only linking: a known (provider, subject) is the user it points at, and an unknown one
-/// gets a new user. There is nothing to match an unknown subject against, so
-/// <see cref="ProvisioningAction.LinkExisting"/> only happens when something upstream supplied a
-/// candidate, which nothing does today.
-/// </summary>
 internal sealed class DefaultProvisioningPolicy : IProvisioningPolicy
 {
     public ProvisioningDecision Decide(ProvisioningContext context)
@@ -35,13 +29,10 @@ internal sealed class DefaultProvisioningPolicy : IProvisioningPolicy
             {
                 Action = ProvisioningAction.LinkExisting,
                 UserId = candidate.Id,
-                // The candidate row predates this provider, so its profile came from somewhere
-                // else. Anything but Never means the token that just arrived should win.
                 ProfileNeedsUpdate = context.SyncMode != ProfileSyncMode.Never,
             };
         }
 
-        // The insert writes the profile, so there is never a follow-up update to do.
         return new ProvisioningDecision { Action = ProvisioningAction.CreateNew };
     }
 

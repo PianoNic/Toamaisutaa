@@ -2,20 +2,15 @@ using System.Diagnostics.Metrics;
 
 namespace Toamaisutaa.Core.Tests;
 
-/// <summary>One measurement as it was published, with the tags flattened to strings.</summary>
 internal readonly record struct RecordedMeasurement(string Instrument, double Value, IReadOnlyDictionary<string, string?> Tags)
 {
     internal string? Tag(string name) => Tags.TryGetValue(name, out var value) ? value : null;
 }
 
 /// <summary>
-/// Collects everything a single <see cref="Meter"/> publishes while it is alive.
+/// Bound to the meter instance rather than its name, because every harness creates a meter called
+/// <c>Toamaisutaa</c> and filtering by name would count whatever else was running.
 /// </summary>
-/// <remarks>
-/// Bound to the meter instance rather than to its name, because every harness in the suite creates
-/// a meter called <c>Toamaisutaa</c> and a listener filtering by name would count whatever else was
-/// running at the same time - which is the shape of a test that passes for the wrong reason.
-/// </remarks>
 internal sealed class MeterProbe : IDisposable
 {
     private readonly MeterListener _listener = new();

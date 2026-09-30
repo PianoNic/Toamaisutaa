@@ -18,21 +18,9 @@ using Toamaisutaa.EntityFrameworkCore;
 namespace Toamaisutaa.AspNetCore.Tests;
 
 /// <summary>
-/// The whole package behind a real HTTP pipeline, in process, on a throwaway database.
+/// With <c>Oidc:Authority</c> unset the bearer handler never attempts discovery and validates
+/// locally issued tokens against the configured signing key alone, so the suite runs offline.
 /// </summary>
-/// <remarks>
-/// <para>
-/// This exists because three bugs shipped past a service suite that was correct throughout: a
-/// rotated device token the endpoint dropped, endpoint names that made the routing matcher
-/// unbuildable, and a security stamp exception that escaped as a 500. Every one of them lived
-/// between a correct service and the wire, and nothing automated looked there.
-/// </para>
-/// <para>
-/// No identity provider is needed. With <c>Oidc:Authority</c> unset the bearer handler never
-/// attempts discovery and validates locally issued tokens against the configured signing key
-/// alone, so the suite runs offline and deterministically.
-/// </para>
-/// </remarks>
 internal sealed class TestApp : IAsyncDisposable
 {
     private readonly WebApplication _app;
@@ -58,102 +46,44 @@ internal sealed class TestApp : IAsyncDisposable
         IssuedMagicLinks = issuedMagicLinks;
     }
 
-    /// <summary>Where the test host serves from, and so the only origin a WebAuthn ceremony here
-    /// can claim. The browser puts this in the client data and the package checks it.</summary>
     public const string Origin = "http://localhost";
 
-    /// <summary>What <c>Oidc:AdminRole</c> names here, which is what puts the admin provisioning
-    /// endpoints on the wire and what their policy asks for.</summary>
     public const string AdminRole = "gate-master";
 
     /// <summary>
-    /// The one account name <see cref="AdminRole"/> is granted to. Every other account this suite
-    /// registers is an ordinary caller, which is what makes a 403 assertion mean something.
+    /// The only account granted <see cref="AdminRole"/>, so a 403 for any other account means something.
     /// </summary>
     public const string AdminUserName = "admin";
 
     public HttpClient Client { get; }
 
-    /// <summary>Test-host only: a request carrying this header arrives from the address it names.</summary>
     public const string RemoteIpHeader = "X-Test-Remote-Ip";
 
-    /// <summary>A client that returns the moment the response does, without waiting for queued
-    /// mail. For the test that the response does not wait for it either.</summary>
+    /// <summary>Does not wait for queued mail, for the test that the response does not wait for it either.</summary>
     public HttpClient RawClient => _app.GetTestClient();
 
-    /// <summary>The host's own container. For the few assertions that have to read what landed in
-    /// the database rather than what came back in a body - a stored password hash is never on the
-    /// wire, and that is the point of it.</summary>
     public IServiceProvider Services => _app.Services;
 
-    /// <summary>
-    /// What <c>IAdminPasswordIssuedNotifier</c> was handed - the only place a password an admin
-    /// endpoint issued can be observed, since it is never in an HTTP response.
-    /// </summary>
     public List<(Guid UserId, string Password)> IssuedPasswords { get; }
 
-    /// <summary>What <c>IInvitationNotifier</c> was handed - the only place an invitation token can
-    /// be observed, since it is never in an HTTP response.</summary>
     public List<(Guid UserId, string Token)> IssuedInvitations { get; }
 
-    /// <summary>What <c>IEmailVerificationNotifier</c> was handed. The address is kept alongside the
-    /// token, because which mailbox the link went to is the half of that flow that matters.</summary>
     public List<(Guid UserId, string Email, string Token)> IssuedEmailVerifications { get; }
 
-    /// <summary>What <c>IMagicLinkNotifier</c> was handed. The only place a sign-in link can be
-    /// observed, since it is never in an HTTP response.</summary>
     public List<(Guid UserId, string Token)> IssuedMagicLinks { get; }
 
     /// <summary>
-    /// Advance it to cross a TOTP step. Anchored at the real clock and never moved far, because the
-    /// bearer handler validates lifetimes against the system clock rather than this.
+    /// Anchored at the real clock and never moved far, because the bearer handler validates
+    /// lifetimes against the system clock rather than this.
     /// </summary>
     public MutableTimeProvider Time { get; }
 
-    /// <param name="mapExtra">Maps further endpoints, for tests about where endpoints land.</param>
-    /// <param name="configure">Adjusts configuration before the host is built.</param>
-    /// <param name="handleStaleStampGlobally">
-    /// Registers the <c>IExceptionHandler</c> the docs hand a consumer. <b>Off by default, and that
-    /// matters:</b> it turns a stale stamp into the same 401 the package's own endpoint filter
-    /// produces, so leaving it on made every stale-stamp assertion below pass with the filter
-    /// deleted. Mutation-tested, and it was masking the thing it was meant to check.
-    /// </param>
-    /// <param name="configureServices">Overrides a registration after the package's own - e.g.
-    /// swapping in a notifier that throws, to prove a dependency failing does not become a 500.</param>
-    /// <param name="includeAdminPasswordNotifier">
-    /// On by default, so <c>/auth/users</c> and <c>/auth/users/{userId}/password</c> are mapped and
-    /// most tests can use them. Off to prove they are not mapped at all without one.
-    /// </param>
-    /// <param name="includeInvitationNotifier">
-    /// On by default, so <c>/auth/invitations</c> and <c>/auth/invitations/complete</c> are mapped
-    /// and most tests can use them. Off to prove they are not mapped at all without one.
-    /// </param>
-    /// <param name="includeEmailVerificationNotifier">
-    /// On by default, so <c>/auth/email</c> and <c>/auth/email/verify</c> are mapped and most tests
-    /// can use them. Off to prove they are not mapped at all without one.
-    /// </param>
-    /// <param name="includeMagicLinkNotifier">
-    /// Follows <paramref name="includeEmailVerificationNotifier"/> unless it is given, so
-    /// <c>/auth/magic-link</c> and <c>/auth/magic-link/verify</c> are mapped for most tests. It has
-    /// to follow rather than default to true: startup refuses a magic-link notifier with no way to
-    /// verify an address, because then no address could ever qualify for a link. Pass false to prove
-    /// the endpoints are not mapped at all without one.
-    /// </param>
-    /// <param name="remoteIpAddress">
-    /// Puts an address on every connection. The test host leaves <c>RemoteIpAddress</c> null, so
-    /// without this the columns fed from it are null throughout and a test about
-    /// <c>IpAddressStorage</c> would pass whether the setting were honoured or ignored.
-    /// </param>
-    /// <param name="includeOpenApi">
-    /// Adds <c>AddToamaisutaaOpenApi</c> and maps <c>/openapi/v1.json</c>. Off by default: it is a
-    /// document generator no other test needs, and it makes the discovery fetch resolve back into
-    /// this same host.
-    /// </param>
-    /// <param name="includeAdminRole">
-    /// On by default: sets <c>Oidc:AdminRole</c> and grants it to <see cref="AdminUserName"/>, so
-    /// the admin provisioning endpoints are mapped and one account can reach them. Off to prove
-    /// they are not mapped at all when nothing says who an administrator is.
-    /// </param>
+    // handleStaleStampGlobally is off by default because the handler produces the same 401 as the
+    // package's endpoint filter, so leaving it on lets every stale-stamp test pass with the filter deleted.
+    // includeMagicLinkNotifier follows includeEmailVerificationNotifier rather than defaulting to true,
+    // because startup refuses a magic-link notifier with no way to verify an address.
+    // remoteIpAddress exists because the test host leaves RemoteIpAddress null, so without it a test
+    // about IpAddressStorage would pass whether the setting were honoured or ignored.
     public static async Task<TestApp> StartAsync(
         Action<IEndpointRouteBuilder>? mapExtra = null,
         Action<Dictionary<string, string?>>? configure = null,
@@ -169,7 +99,6 @@ internal sealed class TestApp : IAsyncDisposable
     {
         var settings = new Dictionary<string, string?>
         {
-            // No Authority: nothing to discover, nothing to reach over the network.
             ["Oidc:ClientId"] = "toamaisutaa-tests",
             ["Oidc:AdminRole"] = includeAdminRole ? AdminRole : null,
             ["LocalLogin:SigningKey"] = Convert.ToBase64String(new byte[32]),
@@ -184,8 +113,6 @@ internal sealed class TestApp : IAsyncDisposable
             ["TwoFactor:EncryptionKey"] = Convert.ToBase64String(new byte[32]),
             ["TrustedDevices:IpAddressStorage"] = "Truncated",
             ["LocalLogin:IpAddressStorage"] = "Truncated",
-            // The test host serves everything from http://localhost, so that is the only origin a
-            // ceremony can honestly claim to have happened on.
             ["Passkeys:RelyingPartyId"] = "localhost",
             ["Passkeys:Origins:0"] = Origin,
         };
@@ -202,17 +129,15 @@ internal sealed class TestApp : IAsyncDisposable
         // Before AddToamaisutaaBearer, which registers TimeProvider.System with TryAdd.
         builder.Services.AddSingleton<TimeProvider>(time);
 
-        // A file rather than one shared in-memory connection, so every request opens its own the way
-        // a real deployment does. One connection handed to every scope is not thread-safe, and a test
-        // firing requests in parallel failed on it before it reached the code it was testing.
+        // A file rather than one shared in-memory connection, because one connection handed to every
+        // scope is not thread-safe and parallel requests fail on it.
         var databasePath = Path.Combine(Path.GetTempPath(), $"toamaisutaa-tests-{Guid.NewGuid():N}.db");
         var connectionString = new SqliteConnectionStringBuilder { DataSource = databasePath, Pooling = false }.ToString();
 
         var connection = new SqliteConnection(connectionString);
         await connection.OpenAsync();
 
-        // Readers alongside a writer, which is what any concurrent SQLite deployment runs. Without it
-        // parallel requests fail with "database is locked" rather than waiting their turn.
+        // Without WAL, parallel requests fail with "database is locked" rather than waiting their turn.
         await using (var wal = connection.CreateCommand())
         {
             wal.CommandText = "PRAGMA journal_mode=WAL;";
@@ -230,8 +155,7 @@ internal sealed class TestApp : IAsyncDisposable
         builder.Services.AddToamaisutaaPasskeys(builder.Configuration);
         builder.Services.AddSingleton<IPasswordResetNotifier, SilentResetNotifier>();
 
-        // This package ships no roles table, so a locally issued token carries no role until an
-        // application supplies one. Stands in for that table, and grants the role to one name only.
+        // The package ships no roles table, so this stands in for the one an application supplies.
         if (includeAdminRole)
             builder.Services.AddSingleton<IUserRoleProvider>(new AdminByNameRoleProvider());
 
@@ -256,11 +180,8 @@ internal sealed class TestApp : IAsyncDisposable
         {
             builder.Services.AddToamaisutaaOpenApi(builder.Configuration);
 
-            // Sends the discovery fetch back into this host instead of onto the network, so a test
-            // serves its own issuer metadata from a route and the suite still needs no identity
-            // provider. An address this host has no route for answers a refusal rather than a
-            // document, which is the same "could not be read" branch as an issuer that is not
-            // there at all.
+            // Sends the discovery fetch back into this host instead of onto the network, so the
+            // suite still needs no identity provider.
             builder.Services
                 .AddHttpClient(ToamaisutaaDefaults.DiscoveryHttpClientName)
                 .ConfigurePrimaryHttpMessageHandler(services => ((TestServer)services.GetRequiredService<IServer>()).CreateHandler());
@@ -279,7 +200,6 @@ internal sealed class TestApp : IAsyncDisposable
         if (handleStaleStampGlobally)
             app.UseExceptionHandler();
 
-        // A per-request address wins over the per-app one, for tests about how callers are told apart.
         app.Use((context, next) =>
         {
             if (context.Request.Headers.TryGetValue(RemoteIpHeader, out var perRequest))
@@ -300,7 +220,6 @@ internal sealed class TestApp : IAsyncDisposable
         app.MapToamaisutaaSessionEndpoints();
         app.MapToamaisutaaPasskeyEndpoints();
 
-        // Stands in for an ordinary protected endpoint of the application's own.
         app.MapGet("/test/me", async (ICurrentUser currentUser, CancellationToken cancellationToken) =>
         {
             var user = await currentUser.GetOrProvisionAsync(cancellationToken);
@@ -322,8 +241,7 @@ internal sealed class TestApp : IAsyncDisposable
         var server = app.GetTestServer();
         var queue = app.Services.GetRequiredService<MailRequestQueue>();
 
-        // Waits for queued mail after every response, so a test reads what a notifier was handed the
-        // way it did when sending happened inside the request. RawClient does not wait.
+        // Waits for queued mail after every response, so a test can read what a notifier was handed.
         var client = new HttpClient(new MailDrainingHandler(queue) { InnerHandler = server.CreateHandler() })
         {
             BaseAddress = server.BaseAddress,
@@ -341,14 +259,9 @@ internal sealed class TestApp : IAsyncDisposable
     }
 
     /// <summary>
-    /// A valid token for this host that carries no <c>toa_sid</c> - the shape an identity
-    /// provider's token has, and the one step-up has to refuse with 400 rather than 401.
+    /// Minted rather than doctored, because editing a real token breaks its signature and the
+    /// request never reaches the endpoint under test.
     /// </summary>
-    /// <remarks>
-    /// Minted rather than doctored. Editing a real token breaks its signature, so the request would
-    /// be refused by the bearer pipeline and never reach the endpoint under test - a test that
-    /// passes for the wrong reason.
-    /// </remarks>
     public string MintTokenWithoutSession(string subject)
     {
         var key = new SymmetricSecurityKey(new byte[32]) { KeyId = ToamaisutaaDefaults.LocalSigningKeyId };
@@ -381,8 +294,6 @@ internal sealed class TestApp : IAsyncDisposable
         }
     }
 
-    /// <summary>Grants <see cref="AdminRole"/> to <see cref="AdminUserName"/> and to nobody
-    /// else.</summary>
     private sealed class AdminByNameRoleProvider : IUserRoleProvider
     {
         public Task<IReadOnlyList<string>> GetRolesAsync(ToamaisutaaUser user, CancellationToken cancellationToken = default) =>
@@ -431,7 +342,7 @@ internal sealed class TestApp : IAsyncDisposable
         }
     }
 
-    /// <summary>The handler the docs hand a consumer, verbatim, so the suite exercises it too.</summary>
+    /// <summary>The handler the docs hand a consumer, verbatim, so keep the two in step.</summary>
     private sealed class StaleSecurityStampHandler : IExceptionHandler
     {
         public async ValueTask<bool> TryHandleAsync(
@@ -463,8 +374,8 @@ internal sealed class MutableTimeProvider(DateTimeOffset now) : TimeProvider
     public void Advance(TimeSpan by) => Now = Now.Add(by);
 
     /// <summary>
-    /// Moves to the next TOTP step. A code is accepted only if its step is strictly newer than the
-    /// last accepted one, so two codes in a row need this between them.
+    /// A code is accepted only if its step is strictly newer than the last accepted one, so two codes
+    /// in a row need this between them.
     /// </summary>
     public void AdvanceToNextTotpStep()
     {
@@ -474,7 +385,6 @@ internal sealed class MutableTimeProvider(DateTimeOffset now) : TimeProvider
     }
 }
 
-/// <summary>Holds each response until the mail it queued has been handed to its notifier.</summary>
 internal sealed class MailDrainingHandler(MailRequestQueue queue) : DelegatingHandler
 {
     protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)

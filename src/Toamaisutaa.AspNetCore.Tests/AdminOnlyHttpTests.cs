@@ -4,11 +4,6 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Toamaisutaa.AspNetCore.Tests;
 
-/// <summary>
-/// <c>Oidc:RequireAdminRoleGlobally</c> promises an admin-only application. It used to set only the
-/// fallback policy, which covers endpoints that say nothing - so any endpoint that did ask for
-/// authorization, with a bare <c>[Authorize]</c>, let every signed-in user through.
-/// </summary>
 public class AdminOnlyHttpTests
 {
     [Test]
@@ -32,11 +27,8 @@ public class AdminOnlyHttpTests
         await Assert.That((await app.Client.Get("/test/unmarked", admin.AccessToken)).StatusCode).IsEqualTo(HttpStatusCode.OK);
     }
 
-    /// <summary>
-    /// An endpoint naming a policy of its own never consults the default or the fallback policy, so
-    /// anybody that policy admitted got through - including the two-factor policy this package
-    /// documents for exactly such endpoints.
-    /// </summary>
+    /// <summary>An endpoint naming a policy of its own never consults the default or the fallback
+    /// policy, so the admin requirement has to reach it some other way.</summary>
     [Test]
     public async Task An_endpoint_naming_its_own_policy_is_admin_only_too()
     {
@@ -53,7 +45,6 @@ public class AdminOnlyHttpTests
         await Assert.That((await app.Client.Get("/test/named", admin.AccessToken)).StatusCode).IsEqualTo(HttpStatusCode.OK);
     }
 
-    /// <summary>Without the flag, a plain authorization requirement is still just "signed in".</summary>
     [Test]
     public async Task Without_the_flag_a_signed_in_user_passes_plain_authorization()
     {

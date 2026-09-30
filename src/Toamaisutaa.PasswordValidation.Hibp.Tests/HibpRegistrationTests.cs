@@ -6,14 +6,9 @@ using Toamaisutaa.Core;
 namespace Toamaisutaa.PasswordValidation.Hibp.Tests;
 
 /// <summary>
-/// That the check is added to the password rules rather than put in their place, whichever order
-/// the two registrations happen in.
+/// <c>AddToamaisutaaPasswordLogin</c> is not referenced here, so its one relevant registration, a
+/// <c>TryAddSingleton</c> of the length rules, stands in for it.
 /// </summary>
-/// <remarks>
-/// <c>AddToamaisutaaPasswordLogin</c> lives in Toamaisutaa.AspNetCore, which this package does not
-/// reference, so the two orders are reproduced here with the one registration out of it that
-/// matters: a <c>TryAddSingleton</c> of the length rules.
-/// </remarks>
 public class HibpRegistrationTests
 {
     private static IServiceCollection Services()
@@ -63,9 +58,6 @@ public class HibpRegistrationTests
         await Assert.That(await validator.ValidateAsync("short")).IsNotEmpty();
     }
 
-    // The other order has to work too, and it does for a reason worth pinning down:
-    // AddToamaisutaaPasswordLogin registers its validator with TryAdd, so it finds this one already
-    // standing and leaves it alone.
     [Test]
     public async Task WrapsTheLengthRulesWhenAddedBeforeThem()
     {
@@ -91,8 +83,6 @@ public class HibpRegistrationTests
         await Assert.That(await Resolve(services).ValidateAsync("a password long enough to pass")).IsNotEmpty();
     }
 
-    // Somebody who registered their own validator gets the breach check on top of theirs, not on
-    // top of the length rules they deliberately replaced.
     [Test]
     public async Task WrapsAValidatorOfYourOwnRatherThanTheDefault()
     {
@@ -108,9 +98,6 @@ public class HibpRegistrationTests
         await Assert.That(mine.Seen).HasSingleItem();
     }
 
-    // Leaving the wrapped registration in the container under its own service type would hand
-    // anybody resolving IPasswordValidator a coin flip over which of the two they get. It stays in
-    // under a private key instead, which is not a registration anybody resolves by accident.
     [Test]
     public async Task LeavesExactlyOneValidatorRegistered()
     {
@@ -125,9 +112,6 @@ public class HibpRegistrationTests
         await Assert.That(services.BuildServiceProvider().GetServices<IPasswordValidator>().ToList()).HasSingleItem();
     }
 
-    // A validator of somebody's own registered scoped stays scoped. Rebuilding it inside a singleton
-    // factory hands it the root provider, which under scope validation is a 500 on the first
-    // password and without it a scoped dependency captured for the life of the process.
     [Test]
     public async Task KeepsAScopedValidatorOfYourOwnScoped()
     {
@@ -141,9 +125,6 @@ public class HibpRegistrationTests
         await Assert.That(await Errors(second)).IsEquivalentTo(new[] { Dependency(second).Id });
     }
 
-    // ActivatorUtilities builds an instance the container knows nothing about, so an IDisposable
-    // validator of somebody's own was never disposed. The container does it once the descriptor is
-    // the one building it.
     [Test]
     public async Task DisposesAScopedValidatorOfYourOwnWithItsScope()
     {
@@ -175,9 +156,8 @@ public class HibpRegistrationTests
             .IsTypeOf<PwnedPasswordsRangeIndex>();
     }
 
-    // Two assertions, not one. Registering no startup check at all makes the second pass on its own:
-    // Single() over an empty sequence throws the very InvalidOperationException the assertion is
-    // waiting for, and the test goes green for a container with nothing in it.
+    // Asserts the check exists first, or an empty container would pass by throwing the same
+    // InvalidOperationException.
     [Test]
     public async Task RefusesToStartOnOptionsItCannotUse()
     {

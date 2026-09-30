@@ -7,17 +7,11 @@ using MimeKit;
 
 namespace Toamaisutaa.Email.Smtp.Tests;
 
-/// <summary>
-/// The real sender against a real socket. What is under test is what goes over the wire, so nothing
-/// here stands in for MailKit.
-/// </summary>
+/// <summary>Runs against a real socket, because what is under test is what goes over the wire.</summary>
 public class MailKitSmtpMessageSenderTests
 {
-    /// <summary>
-    /// A relay that does not offer STARTTLS is what anyone on the path sees after deleting the offer
-    /// from the greeting. MailKit's own Auto carried on in the clear and sent the login next; the
-    /// default here has to refuse before a single credential byte leaves.
-    /// </summary>
+    /// <summary>A server without STARTTLS is what a stripping attacker presents; MailKit's own Auto
+    /// sends the login in the clear there.</summary>
     [Test]
     public async Task The_default_security_never_sends_the_login_to_a_server_without_starttls()
     {
@@ -54,10 +48,6 @@ public class MailKitSmtpMessageSenderTests
         await Assert.That(MailKitSmtpMessageSender.ToSecureSocketOptions(SmtpSecurityMode.Auto, port)).IsEqualTo(expected);
     }
 
-    /// <summary>
-    /// Speaks just enough SMTP to accept a login and a message, and advertises no STARTTLS. Records
-    /// every line the client sends.
-    /// </summary>
     private sealed class PlaintextSmtpServer : IAsyncDisposable
     {
         private readonly TcpListener _listener;

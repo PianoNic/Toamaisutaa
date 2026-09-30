@@ -3,27 +3,18 @@ using System.Text.Json;
 
 namespace Toamaisutaa.AspNetCore.Tests;
 
-/// <summary>
-/// Drives the endpoints the way a client does, so a test reads as a scenario rather than as
-/// plumbing. Everything goes over HTTP - nothing here reaches into a service or a store.
-/// </summary>
 internal sealed class Account(TestApp app, string userName, string password)
 {
-    /// <summary>What every account here registers with. A constant because the endpoints that ask
-    /// for a current password need it as a default argument.</summary>
     public const string DefaultPassword = "correct horse battery staple";
 
     public string UserName { get; } = userName;
 
     public string Password { get; } = password;
 
-    /// <summary>The address this account registered with. Unverified until
-    /// <see cref="VerifyEmailAsync"/> says otherwise.</summary>
     public string Email { get; } = $"{userName}@example.com";
 
     public string AccessToken { get; private set; } = default!;
 
-    /// <summary>Base32 TOTP secret, once enrolled.</summary>
     public string? Secret { get; private set; }
 
     public static async Task<Account> RegisterAsync(TestApp app, string userName = "ada")
@@ -41,10 +32,7 @@ internal sealed class Account(TestApp app, string userName, string password)
         return account;
     }
 
-    /// <summary>
-    /// Proves the address this account registered with, which is what a magic link needs before one
-    /// will be sent. Asking to change to the address already held is the documented way to do it.
-    /// </summary>
+    /// <summary>Asking to change to the address already held is the documented way to verify it.</summary>
     public async Task VerifyEmailAsync()
     {
         var request = await app.Client.PostJson(
@@ -63,7 +51,6 @@ internal sealed class Account(TestApp app, string userName, string password)
             throw new InvalidOperationException($"Email verification failed: {verify.StatusCode} {await verify.Content.ReadAsStringAsync()}");
     }
 
-    /// <summary>Asks for a sign-in link and hands back the raw token the notifier was given.</summary>
     public async Task<string> RequestMagicLinkAsync()
     {
         var response = await app.Client.PostJson("/auth/magic-link", new { email = Email });
@@ -77,11 +64,8 @@ internal sealed class Account(TestApp app, string userName, string password)
     public Task<HttpResponseMessage> LoginAsync(string? deviceToken = null) =>
         app.Client.PostJson("/auth/login", new { identifier = UserName, password = Password, deviceToken });
 
-    /// <summary>
-    /// Enrols and confirms, leaving <see cref="AccessToken"/> refreshed - confirming moves the
-    /// security stamp, so the token that confirmed is dead and reusing it would fail every
-    /// subsequent call for the wrong reason.
-    /// </summary>
+    /// <summary>Confirming moves the security stamp, so this signs in again rather than leave a dead
+    /// <see cref="AccessToken"/> failing later calls for the wrong reason.</summary>
     public async Task EnrolAsync()
     {
         await EnrolForRecoveryCodesAsync();
@@ -111,7 +95,6 @@ internal sealed class Account(TestApp app, string userName, string password)
         return (await confirm.Json()).Strings("recoveryCodes");
     }
 
-    /// <summary>Begins and completes a step-up on the session this account currently holds.</summary>
     public async Task<HttpResponseMessage> StepUpAsync(string? code = null, string? accessToken = null)
     {
         var token = accessToken ?? AccessToken;
@@ -131,7 +114,6 @@ internal sealed class Account(TestApp app, string userName, string password)
             token);
     }
 
-    /// <summary>The claims on the access token this account currently holds.</summary>
     public JsonElement Claims() => DecodeClaims(AccessToken);
 
     public static JsonElement DecodeClaims(string accessToken)
@@ -143,7 +125,6 @@ internal sealed class Account(TestApp app, string userName, string password)
         return JsonDocument.Parse(bytes).RootElement.Clone();
     }
 
-    /// <summary>A full sign-in through the challenge, returning the body of the final response.</summary>
     public async Task<JsonElement> SignInWithSecondFactorAsync(bool rememberDevice = false, string? deviceLabel = null)
     {
         var challenge = (await LoginAsync()).Json().Result.String("challenge")!;

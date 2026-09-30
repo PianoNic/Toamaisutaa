@@ -7,17 +7,8 @@ namespace Toamaisutaa.Abstractions;
 /// <c>/auth/register</c> and <c>/auth/2fa/verify</c>.
 /// </summary>
 /// <remarks>
-/// <para>
-/// A named type rather than an anonymous object because this is the wire contract of the most
-/// important endpoint in the package. As an anonymous initialiser it could not be referenced by a
-/// test, could not be declared to OpenAPI, and the RFC 6749 field names existed only as C#
-/// identifiers that any rename would have quietly changed.
-/// </para>
-/// <para>
-/// Every name is pinned with <see cref="JsonPropertyNameAttribute"/> rather than left to a naming
-/// policy. An application that configures its own <c>JsonOptions</c> - snake_case everywhere, say,
-/// or no policy at all - would otherwise reshape a standard token response by accident.
-/// </para>
+/// Every name is pinned with <see cref="JsonPropertyNameAttribute"/> so an application's own
+/// <c>JsonOptions</c> naming policy cannot reshape the RFC 6749 token response.
 /// </remarks>
 public sealed record TokenResponse
 {
@@ -36,8 +27,8 @@ public sealed record TokenResponse
 
     /// <summary>
     /// <see langword="true"/> when a recovery code was spent to get here and few remain, and
-    /// <see langword="null"/> otherwise - never <see langword="false"/>. That asymmetry is the shape
-    /// 0.2.0 shipped and clients read it as truthy-or-absent, so it stays.
+    /// <see langword="null"/> otherwise - never <see langword="false"/>, because clients read it as
+    /// truthy-or-absent.
     /// </summary>
     [JsonPropertyName("recovery_codes_running_low")]
     public bool? RecoveryCodesRunningLow { get; init; }
@@ -62,9 +53,7 @@ public sealed record TokenResponse
 /// confirmed second factor, so there are no tokens yet.
 /// </summary>
 /// <remarks>
-/// A 200 rather than a new status code, so the branch is explicit and cannot be missed by a client
-/// that only checks for success. Present <see cref="Challenge"/> with a code to
-/// <c>/auth/2fa/verify</c>.
+/// Present <see cref="Challenge"/> with a code to <c>/auth/2fa/verify</c>.
 /// </remarks>
 public sealed record TwoFactorChallengeResponse
 {
@@ -84,9 +73,8 @@ public sealed record TwoFactorChallengeResponse
 /// What <c>/auth/2fa/step-up</c> returns: a challenge for a session that is already signed in.
 /// </summary>
 /// <remarks>
-/// Not <see cref="TwoFactorChallengeResponse"/>, close as the shape is. That one carries
-/// <c>two_factor_required: true</c>, which would be a lie here - nothing is required, the caller
-/// asked.
+/// Not <see cref="TwoFactorChallengeResponse"/>, whose <c>two_factor_required: true</c> would be
+/// false here.
 /// </remarks>
 public sealed record StepUpChallengeResponse
 {
@@ -102,9 +90,8 @@ public sealed record StepUpChallengeResponse
 /// What <c>/auth/2fa/step-up/verify</c> returns: a new access token for the same session.
 /// </summary>
 /// <remarks>
-/// Not <see cref="TokenResponse"/>, because there is no refresh token. Sharing that type would put
-/// <c>refresh_token: null</c> on every step-up, and a client that stored what came back would blank
-/// the credential it needs to stay signed in.
+/// Not <see cref="TokenResponse"/>: a <c>refresh_token: null</c> would make a client that stores the
+/// response blank the credential it needs to stay signed in.
 /// </remarks>
 public sealed record StepUpResponse
 {
@@ -130,8 +117,7 @@ public sealed record StepUpResponse
 /// already reads OAuth error bodies reads this one.
 /// </summary>
 /// <remarks>
-/// One body for every way a sign-in can fail. Wrong password, no such account, locked out and an
-/// unknown refresh token are the same answer, because telling them apart tells a caller which user
+/// One body for every way a sign-in can fail, because telling them apart tells a caller which user
 /// names are real.
 /// </remarks>
 public sealed record ErrorResponse
@@ -148,9 +134,7 @@ public sealed record ErrorResponse
 /// already taken.
 /// </summary>
 /// <remarks>
-/// camelCase, unlike the token and error bodies above. No standard names this shape, so it follows
-/// the same rule as the rest of the package's own responses. The mix is deliberate: token endpoints
-/// are OAuth-shaped, everything else is ours.
+/// camelCase, unlike the OAuth-shaped token and error bodies, deliberately.
 /// </remarks>
 public sealed record ValidationErrorResponse
 {
@@ -183,9 +167,7 @@ public sealed record InvitationResponse
 /// <c>LocalLogin:SigningKeys</c>, in the RFC 7517 shape a gateway already knows how to read.
 /// </summary>
 /// <remarks>
-/// Only mapped when there are asymmetric keys to publish. A deployment signing HS256 has no public
-/// half, and an empty set would tell a gateway that this issuer publishes nothing rather than that
-/// it was never asked to.
+/// Only mapped when there are asymmetric keys to publish; HS256 has no public half.
 /// </remarks>
 public sealed record JsonWebKeySetResponse
 {
@@ -194,13 +176,11 @@ public sealed record JsonWebKeySetResponse
 }
 
 /// <summary>
-/// One public key of <see cref="JsonWebKeySetResponse"/>. RFC 7517 field names, which is the whole
-/// point of the document: they are what every JWKS client already reads.
+/// One public key of <see cref="JsonWebKeySetResponse"/>, with RFC 7517 field names.
 /// </summary>
 /// <remarks>
-/// The per-key-type members are omitted when null rather than written as <c>null</c>. An RSA key
-/// carrying <c>"crv": null</c> is not a shape the RFC describes, and a strict parser is within its
-/// rights to refuse it.
+/// The per-key-type members are omitted when null because a strict RFC 7517 parser may refuse a
+/// member written as <c>null</c>.
 /// </remarks>
 public sealed record JsonWebKeyResponse
 {

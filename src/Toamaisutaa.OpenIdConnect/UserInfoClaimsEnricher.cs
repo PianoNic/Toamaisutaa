@@ -14,19 +14,12 @@ using Toamaisutaa.Core;
 namespace Toamaisutaa.OpenIdConnect;
 
 /// <summary>
-/// Claims the access token does not carry, fetched from the endpoint OIDC puts them on.
-/// Pocket ID publishes group membership in the ID token and userinfo while keeping the access token
-/// minimal; Okta and Entra leave groups out to bound token size. This layer validates the access
-/// token, so without this those deployments could never satisfy a role requirement.
+/// Pocket ID, Okta and Entra leave groups out of the access token, so without userinfo those
+/// deployments could never satisfy a role requirement.
 /// </summary>
 /// <remarks>
-/// Cached through <see cref="HybridCache"/>. The reason is the cold start: a browser reload fires a
-/// dozen requests carrying the same token at once, and a plain memory cache is empty for all of
-/// them, so the issuer takes a dozen userinfo calls to answer one page. HybridCache runs the first
-/// and joins the rest to it. The second level is left switched off unless
-/// <see cref="ToamaisutaaOidcOptions.ShareUserInfoCacheAcrossInstances"/> asks for it: these entries
-/// decide authorization, and a registered <c>IDistributedCache</c> is not on its own a statement
-/// that they belong in it.
+/// <see cref="HybridCache"/> joins the concurrent requests a cold page load fires with one token into
+/// one userinfo call.
 /// </remarks>
 internal sealed class UserInfoClaimsEnricher(
     IOptions<ToamaisutaaOidcOptions> options,
@@ -41,11 +34,8 @@ internal sealed class UserInfoClaimsEnricher(
     {
         var settings = options.Value;
 
-        // A token this package signed is not the identity provider's to read. Sending it there
-        // handed a local credential to a third party as a bearer token, on every request by any
-        // user whose token carries no role - and it only ever came back 401. Read off the base type:
-        // under UseSecurityTokenValidators the token is a JwtSecurityToken, and a check on
-        // JsonWebToken alone let every one of them through.
+        // Never send a locally signed token to the identity provider, which would hand it a local credential.
+        // Read off the base type: under UseSecurityTokenValidators the token is a JwtSecurityToken.
         if (string.Equals(context.SecurityToken?.Issuer, localLogin.Value.Issuer, StringComparison.Ordinal))
             return;
 
@@ -71,22 +61,15 @@ internal sealed class UserInfoClaimsEnricher(
         }
         catch (UserInfoUnavailableException)
         {
-            // Already logged with its status where it happened. It leaves the cache factory as an
-            // exception rather than as an empty claim set because an empty claim set would be
-            // stored, and one 503 would then read as "this user has no groups" until it expired.
+            // Thrown rather than returned empty, because an empty set would be cached as "no groups".
         }
         catch (Exception exception) when (exception is HttpRequestException or TaskCanceledException or JsonException or InvalidOperationException)
         {
-            // A userinfo endpoint that is down must not turn a valid login into a 500. The claims
-            // already on the token still decide.
+            // A userinfo endpoint that is down must not turn a valid login into a 500.
             _logger.LogWarning(exception, "Could not read userinfo; deciding on the token's own claims.");
         }
     }
 
-    /// <summary>
-    /// The endpoint is resolved outside the cache: an issuer that publishes none is a permanent
-    /// answer that no expiry should be attached to, and the configuration manager caches it anyway.
-    /// </summary>
     private async Task<UserInfoClaim[]> FetchAsync(
         TokenValidatedContext context,
         string accessToken,
@@ -138,10 +121,7 @@ internal sealed class UserInfoClaimsEnricher(
     }
 
     /// <summary>
-    /// Keyed on the subject, not on the token: the same person's claims are the same claims across
-    /// their tokens, and a key derived from a 32-bit hash code would let one caller's roles be
-    /// served to another. Falls back to a SHA-256 of the token when the principal somehow has no
-    /// subject, which is still collision-free.
+    /// Never keyed on a 32-bit hash code, which would let one caller's roles be served to another.
     /// </summary>
     private static string CacheKey(ToamaisutaaOidcOptions settings, TokenValidatedContext context, string accessToken)
     {
@@ -158,11 +138,8 @@ internal sealed class UserInfoClaimsEnricher(
     }
 
     /// <summary>
-    /// Which deployment the entry belongs to: the issuer it was read from, and the audiences this
-    /// service accepts. The scheme name is "Bearer" for every consumer of the package, so without
-    /// this the key is the subject alone - and two services against one issuer, holding different
-    /// scopes and sharing one distributed cache, would serve each other's claims for that subject.
-    /// Hashed rather than spelled out because an authority is a URL and a cache key is not.
+    /// Without the issuer and audiences in the key, two services sharing one distributed cache would
+    /// serve each other's claims for the same subject.
     /// </summary>
     private static string ScopeDigest(ToamaisutaaOidcOptions settings)
     {
@@ -184,8 +161,7 @@ internal sealed class UserInfoClaimsEnricher(
         return configuration.UserInfoEndpoint;
     }
 
-    /// <summary>The token exactly as presented. Taken from the validated token rather than the
-    /// Authorization header, so a token that arrived on the query string works too.</summary>
+    /// <summary>Prefers the validated token over the header, so a query-string token works too.</summary>
     private static string? ReadAccessToken(TokenValidatedContext context)
     {
         if (context.SecurityToken is JsonWebToken jsonWebToken && !string.IsNullOrEmpty(jsonWebToken.EncodedToken))
@@ -198,7 +174,5 @@ internal sealed class UserInfoClaimsEnricher(
             : null;
     }
 
-    /// <summary>Carries nothing and is never seen outside this class - it exists only to leave the
-    /// cache factory without a value to store.</summary>
     private sealed class UserInfoUnavailableException : Exception;
 }

@@ -4,15 +4,8 @@ using Toamaisutaa.Abstractions;
 
 namespace Toamaisutaa.AspNetCore.Tests;
 
-/// <summary>
-/// One refresh token presented twice at once - the thief and the owner, racing.
-/// </summary>
 public class ConcurrentRefreshHttpTests
 {
-    /// <summary>
-    /// Rotation read the row, saw it live, then marked it spent. Two requests between those steps
-    /// both saw it live and both got a new pair, forking the family with no reuse ever detected.
-    /// </summary>
     [Test]
     public async Task A_refresh_token_presented_in_parallel_is_exchanged_at_most_once()
     {
@@ -24,17 +17,13 @@ public class ConcurrentRefreshHttpTests
         var attempts = await Task.WhenAll(Enumerable.Range(0, 10).Select(_ =>
             app.Client.PostJson("/auth/refresh", new { refreshToken })));
 
-        // At most one, not exactly one: every loser is reuse, reuse revokes the family, and the
-        // winner's new token belongs to that family - so a winner that checks after a loser has
-        // revoked is refused too. None at all is a right answer here.
+        // At most one, not exactly one: a loser's reuse revokes the family the winner's new token
+        // belongs to, so none at all is a right answer.
         await Assert.That(attempts.Count(response => response.StatusCode == HttpStatusCode.OK)).IsLessThanOrEqualTo(1);
     }
 
-    /// <summary>
-    /// A sign-out that lands after a refresh has spent its token but before the new one is written
-    /// revokes the family as it stands, which does not yet include the new token. That token used to
-    /// stay live until the family's absolute lifetime, in the hands of whoever was refreshing.
-    /// </summary>
+    /// <summary>Held before the new token is written, so the sign-out revokes a family that does not
+    /// yet include it.</summary>
     [Test]
     public async Task A_sign_out_during_a_refresh_leaves_no_live_token()
     {
@@ -59,11 +48,8 @@ public class ConcurrentRefreshHttpTests
         await Assert.That(live).IsNull();
     }
 
-    /// <summary>
-    /// A refresh whose token is revoked between its read and its write loses the write, and every
-    /// lost write was answered as reuse: a stolen-token alarm and every trusted device gone, for a
-    /// person who signed out in one tab while another was renewing.
-    /// </summary>
+    /// <summary>Held between the read and the rotate write, so the sign-out makes the write lose without
+    /// any reuse having happened.</summary>
     [Test]
     public async Task A_refresh_that_loses_to_a_sign_out_is_not_answered_as_reuse()
     {
@@ -86,8 +72,6 @@ public class ConcurrentRefreshHttpTests
         await Assert.That(reuse.Total).IsEqualTo(0);
     }
 
-    /// <summary>The real store, except that a refresh stops just before the step the test names
-    /// until the test lets it go.</summary>
     private sealed class HeldRefreshTokenStore
     {
         private readonly ManualResetEventSlim _release = new();

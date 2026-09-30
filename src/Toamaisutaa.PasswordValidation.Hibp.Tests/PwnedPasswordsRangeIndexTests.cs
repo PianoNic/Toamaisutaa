@@ -4,15 +4,9 @@ using Microsoft.Extensions.Options;
 namespace Toamaisutaa.PasswordValidation.Hibp.Tests;
 
 /// <summary>
-/// The wire format, and the k-anonymity promise that rests on it.
+/// The hashes are computed outside this solution, not taken from the code under test: SHA-1 of
+/// "password" is 5BAA61E4C9B93F3F0682250B6CF8331B7EE68FD8, the range API's documented example.
 /// </summary>
-/// <remarks>
-/// The hashes below were computed outside this solution, not taken from the code under test, for
-/// the same reason <c>TotpProviderTests</c> asserts published vectors: a fixture borrowed from the
-/// implementation agrees with it even when both are wrong. SHA-1 of "password" is
-/// 5BAA61E4C9B93F3F0682250B6CF8331B7EE68FD8, which is the example the Pwned Passwords range API is
-/// documented with.
-/// </remarks>
 public class PwnedPasswordsRangeIndexTests
 {
     private const string Password = "password";
@@ -50,8 +44,6 @@ public class PwnedPasswordsRangeIndexTests
         await Assert.That(await Index(handler).CountAsync(Password)).IsEqualTo(0);
     }
 
-    // The API answers in upper case, but nothing in the protocol promises it will keep doing so,
-    // and a case mismatch would silently mean "not breached" for every password.
     [Test]
     public async Task MatchesTheSuffixWhateverCaseItComesBackIn()
     {
@@ -60,13 +52,8 @@ public class PwnedPasswordsRangeIndexTests
         await Assert.That(await Index(handler).CountAsync(Password)).IsEqualTo(7);
     }
 
-    // The whole privacy claim in one assertion: five characters of the hash, and nothing else about
-    // the password, anywhere in the request.
-    //
-    // On a different vector from the rest of the class, and that is the point of it being here:
-    // "password" is a substring of the host name, so asserting the request does not contain it
-    // passed while saying nothing. SHA-1 of "correct horse battery staple" is
-    // ABF7AAD6438836DBE526AA231ABDE2D0EEF74D42.
+    // A different vector from the rest of the class, because "password" is a substring of the host
+    // name. SHA-1 of "correct horse battery staple" is ABF7AAD6438836DBE526AA231ABDE2D0EEF74D42.
     [Test]
     public async Task SendsTheFirstFiveCharactersOfTheHashAndNothingElse()
     {
@@ -88,8 +75,6 @@ public class PwnedPasswordsRangeIndexTests
         await Assert.That(request.Content).IsNull();
     }
 
-    // Padding entries carry a count of zero, so a threshold of one or more discards them without the
-    // parser knowing they exist. This asserts they cannot be read as a hit.
     [Test]
     public async Task ReadsAPaddingEntryAsNoAppearances()
     {
@@ -109,8 +94,6 @@ public class PwnedPasswordsRangeIndexTests
         await Assert.That(padding!.Single()).IsEqualTo("true");
     }
 
-    // The range API answers 400 to a request with no user agent, which would fail every lookup and
-    // look exactly like the service being down.
     [Test]
     public async Task SendsTheConfiguredUserAgent()
     {
@@ -132,9 +115,6 @@ public class PwnedPasswordsRangeIndexTests
             .IsEqualTo($"https://mirror.internal/pwned/range/{Prefix}");
     }
 
-    // Resolving "range/{prefix}" against a base address replaces its last segment, so the mirror
-    // written down without a trailing slash was asked for a path nobody hosts. The 404 fails open,
-    // which is breach checking that is off while looking on.
     [Test]
     [Arguments("https://mirror.internal/pwned", "https://mirror.internal/pwned/range/")]
     [Arguments("https://mirror.internal/hibp/v1", "https://mirror.internal/hibp/v1/range/")]
@@ -176,10 +156,8 @@ public class PwnedPasswordsRangeIndexTests
         await Assert.That(async () => await Index(handler).CountAsync(Password)).Throws<HttpRequestException>();
     }
 
-    // The timeout is the options one, per request, so changing it in configuration takes effect
-    // without the named client being rebuilt. Timed rather than merely awaited: falling back to
-    // HttpClient's own timeout would also throw here, a hundred seconds later, with a registration
-    // held open for all of them - and an awaited assertion cannot tell the two apart.
+    // Timed rather than merely awaited, because HttpClient's own timeout would also throw here, a
+    // hundred seconds later.
     [Test]
     public async Task GivesUpAfterTheConfiguredTimeoutRatherThanTheClients()
     {

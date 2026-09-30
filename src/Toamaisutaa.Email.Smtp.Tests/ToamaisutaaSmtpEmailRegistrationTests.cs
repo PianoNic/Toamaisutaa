@@ -26,10 +26,7 @@ public class ToamaisutaaSmtpEmailRegistrationTests
         return services;
     }
 
-    // Registering an IInvitationNotifier, an IEmailVerificationNotifier or an
-    // IAdminPasswordIssuedNotifier is what maps /auth/invitations, /auth/email and /auth/users at
-    // all. Installing this package for reset mail must not put six endpoints on the wire that
-    // nobody asked for.
+    // Registering any of these notifiers maps its endpoints, so reset mail alone must not bring them.
     [Test]
     public async Task TheResetRegistrationBringsNoneOfTheOtherThreeNotifiers()
     {

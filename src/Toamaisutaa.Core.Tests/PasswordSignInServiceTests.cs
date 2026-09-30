@@ -45,8 +45,6 @@ public class PasswordSignInServiceTests
         await Assert.That(result.Outcome).IsEqualTo(SignInOutcome.Succeeded);
     }
 
-    // The two cases the caller must not be able to tell apart. They differ here, in the outcome the
-    // log records; the endpoint collapses both into one response.
     [Test]
     public async Task UnknownUserAndWrongPasswordAreDistinctInternallyAndBothFail()
     {
@@ -74,14 +72,12 @@ public class PasswordSignInServiceTests
         for (var attempt = 0; attempt < 5; attempt++)
             await harness.SignInAsync("pianonic", "wrong");
 
-        // Even the right password is refused now, and refused the same way as everything else.
         var result = await harness.SignInAsync("pianonic", Password);
 
         await Assert.That(result.Outcome).IsEqualTo(SignInOutcome.LockedOut);
     }
 
-    /// <summary>The last allowed attempt is counted before it is checked, which is what locks the
-    /// account. Right, it still signs in, exactly as a fifth try did when counting came after.</summary>
+    /// <summary>The last allowed attempt is counted before it is checked, which is what locks the account.</summary>
     [Test]
     public async Task TheRightPasswordOnTheLastAllowedAttemptSignsIn()
     {
@@ -134,7 +130,6 @@ public class PasswordSignInServiceTests
 
         var before = harness.Passwords.Credentials.Single().PasswordHash;
 
-        // The deployment raises its iteration count.
         harness.Options.Pbkdf2Iterations *= 2;
 
         var result = await harness.SignInAsync("pianonic", Password);
@@ -144,8 +139,6 @@ public class PasswordSignInServiceTests
         await Assert.That(after).IsNotEqualTo(before);
         await Assert.That(after).Contains($"i={harness.Options.Pbkdf2Iterations}");
     }
-
-    // ── Refresh ──
 
     [Test]
     public async Task RefreshingReturnsANewPairAndRetiresTheOldToken()
@@ -178,15 +171,10 @@ public class PasswordSignInServiceTests
         var rotated = harness.Passwords.RefreshTokens[^1];
 
         await Assert.That(rotated.FamilyId).IsEqualTo(issued.FamilyId);
-
-        // A day later, and the family is still dated from the sign-in that started it - which is
-        // what stops rotation from extending a session for ever.
         await Assert.That(rotated.FamilyStartedAt).IsEqualTo(issued.FamilyStartedAt);
         await Assert.That(rotated.CreatedAt).IsNotEqualTo(issued.CreatedAt);
     }
 
-    // The stolen-token case. Both holders lose the chain, because there is no way to tell which one
-    // is the owner.
     [Test]
     public async Task PresentingARotatedTokenAgainRevokesTheWholeFamily()
     {
@@ -201,7 +189,6 @@ public class PasswordSignInServiceTests
 
         await Assert.That(reuse.Outcome).IsEqualTo(SignInOutcome.RefreshTokenReused);
 
-        // The token the thief's victim was still holding is dead too.
         var afterwards = await harness.SignIn.RefreshAsync(second.RefreshToken);
         await Assert.That(afterwards.Outcome).IsEqualTo(SignInOutcome.RefreshTokenRevoked);
 
@@ -211,7 +198,6 @@ public class PasswordSignInServiceTests
         await Assert.That(chain.All(token => token.RevokedAt is not null)).IsTrue();
         await Assert.That(chain.All(token => token.RevokedReason == "refresh-token-reuse")).IsTrue();
 
-        // Only that chain. A session started from a different sign-in is somebody else's problem.
         await Assert.That(harness.Passwords.RefreshTokens.Any(token => token.FamilyId != family && token.RevokedAt is null)).IsTrue();
     }
 
@@ -240,7 +226,6 @@ public class PasswordSignInServiceTests
         await Assert.That(result.Outcome).IsEqualTo(SignInOutcome.RefreshTokenExpired);
     }
 
-    // Rotation alone would keep a session alive for ever. The family's own age ends it.
     [Test]
     public async Task AFamilyPastItsAbsoluteLifetimeIsRefusedEvenWhileRotating()
     {

@@ -5,8 +5,6 @@ using MimeKit;
 
 namespace Toamaisutaa.Email.Smtp;
 
-/// <summary>Refuses to start rather than failing on the first password reset request, the same
-/// reasoning <c>PasswordLoginStartupCheck</c> uses for local login.</summary>
 internal sealed class SmtpEmailStartupCheck(
     IOptions<ToamaisutaaSmtpEmailOptions> options,
     ILogger<SmtpEmailStartupCheck> logger) : IHostedService

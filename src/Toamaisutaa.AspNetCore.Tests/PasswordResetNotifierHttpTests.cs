@@ -5,10 +5,7 @@ using Toamaisutaa.Abstractions;
 namespace Toamaisutaa.AspNetCore.Tests;
 
 /// <summary>
-/// docs/password-login.md promises "Requesting a reset always answers 204" - the whole point being
-/// that a caller cannot tell a real account from an unknown one by the response. A real
-/// <c>IPasswordResetNotifier</c> can throw for reasons that have nothing to do with the account, and
-/// nothing may turn that into anything but 204.
+/// A reset request always answers 204 so the response cannot reveal whether an account exists.
 /// </summary>
 public class PasswordResetNotifierHttpTests
 {

@@ -3,15 +3,11 @@ using Toamaisutaa.Abstractions;
 namespace Toamaisutaa.Core.Tests;
 
 /// <summary>
-/// What <c>ICurrentUser</c> answers where there is no request to read claims off.
+/// The <c>ICurrentUser</c> defaults are the contract for every non-HTTP implementation, so they are
+/// asserted rather than assumed.
 /// </summary>
-/// <remarks>
-/// The defaults are the contract for every implementation that is not the HTTP one - a worker, a
-/// test double, an application that wrote its own - so they are asserted rather than assumed.
-/// </remarks>
 public class CurrentUserDefaultsTests
 {
-    /// <summary>Knows who it is and nothing else, which is the shape a non-HTTP implementation has.</summary>
     private sealed class SubjectOnlyCurrentUser : ICurrentUser
     {
         public bool IsAuthenticated => true;
@@ -24,7 +20,6 @@ public class CurrentUserDefaultsTests
             throw new NotSupportedException();
     }
 
-    /// <summary>Answers for roles and leaves the rest defaulted.</summary>
     private sealed class RoleCarryingCurrentUser : ICurrentUser
     {
         public bool IsAuthenticated => true;
@@ -49,8 +44,6 @@ public class CurrentUserDefaultsTests
         await Assert.That(currentUser.FindClaim("sub")).IsNull();
     }
 
-    // So supplying roles is the whole job: the role check follows from them rather than being a
-    // second thing to get right.
     [Test]
     public async Task IsInRoleAnswersFromRolesAlone()
     {

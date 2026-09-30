@@ -12,8 +12,6 @@ public sealed class ToamaisutaaPasswordCredentialConfiguration : IEntityTypeConf
     {
         builder.ToTable(TableName);
 
-        // The user's own id is the key: one credential per account, enforced by the schema rather
-        // than by a rule someone has to remember.
         builder.HasKey(credential => credential.UserId);
         builder.Property(credential => credential.UserId).ValueGeneratedNever();
 
@@ -29,21 +27,16 @@ public sealed class ToamaisutaaPasswordCredentialConfiguration : IEntityTypeConf
         builder.Property(credential => credential.FirstFailedAttemptAt).HasConversion(InstantConverters.NullableInstant);
         builder.Property(credential => credential.LockedOutUntil).HasConversion(InstantConverters.NullableInstant);
 
-        // Every column two requests can race on. A write whose read is stale fails instead of landing:
-        // parallel wrong passwords would otherwise all write the same count, and a sign-in that read
-        // the row before a reset would write the old hash back.
+        // Every column two requests can race on, so a stale write fails rather than restoring an old
+        // hash or undercounting parallel wrong passwords.
         builder.Property(credential => credential.PasswordHash).IsConcurrencyToken();
         builder.Property(credential => credential.NormalizedEmail).IsConcurrencyToken();
         builder.Property(credential => credential.FailedAttemptCount).IsConcurrencyToken();
         builder.Property(credential => credential.LockedOutUntil).IsConcurrencyToken();
 
-        // Unique without a filter, which is the whole reason these live in their own table: only
-        // accounts that sign in with a password have a row, so the constraint applies exactly where
-        // it should and needs no provider-specific predicate.
         builder.HasIndex(credential => credential.NormalizedUserName).IsUnique();
 
-        // Nullable and unique: both supported providers treat NULLs as distinct, so any number of
-        // accounts may have no address while no two may share one.
+        // Nullable and unique relies on the providers treating NULLs as distinct.
         builder.HasIndex(credential => credential.NormalizedEmail).IsUnique();
 
         builder.HasOne<ToamaisutaaUser>()

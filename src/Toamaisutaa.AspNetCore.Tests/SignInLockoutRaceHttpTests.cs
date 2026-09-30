@@ -2,11 +2,6 @@ using System.Net;
 
 namespace Toamaisutaa.AspNetCore.Tests;
 
-/// <summary>
-/// A right password among a wave of wrong ones, sent together. The wave locks the account while the
-/// right one is still being hashed, and the right one used to sign in regardless - clearing the lock
-/// the wave had just set on its way out.
-/// </summary>
 public class SignInLockoutRaceHttpTests
 {
     [Test]
