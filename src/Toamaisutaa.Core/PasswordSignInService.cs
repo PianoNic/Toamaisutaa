@@ -249,6 +249,8 @@ internal sealed class PasswordSignInService(
         {
             if (redemption.Outcome == SignInOutcome.InvalidTwoFactorCode && reservation is { } reserved)
                 await ReportWrongCodeAsync(reserved, "Sign-in", now, cancellationToken);
+            else
+                await GiveBackLostRaceAsync(redemption.Outcome, reservation, now, cancellationToken);
 
             await events.PublishAsync(
                 new TwoFactorFailed { OccurredAt = now, UserId = redemption.UserId, Reason = redemption.Outcome },
@@ -448,6 +450,8 @@ internal sealed class PasswordSignInService(
         {
             if (redemption.Outcome == SignInOutcome.InvalidTwoFactorCode && reservation is { } reserved)
                 await ReportWrongCodeAsync(reserved, "Step-up", now, cancellationToken);
+            else
+                await GiveBackLostRaceAsync(redemption.Outcome, reservation, now, cancellationToken);
 
             await events.PublishAsync(
                 new TwoFactorFailed { OccurredAt = now, UserId = request.UserId, Reason = redemption.Outcome },
@@ -886,6 +890,21 @@ internal sealed class PasswordSignInService(
 
     /// <summary>The count comes off only when a sign-in or step-up has finished, never after a
     /// first factor that still owes a second.</summary>
+    /// <summary>
+    /// A right code that lost its challenge, or the code itself, to another request was counted as
+    /// a wrong one: a double-click on Verify left a failure behind after the winning request had
+    /// already cleared the count. Its reservation is given back instead.
+    /// </summary>
+    private async Task GiveBackLostRaceAsync(
+        SignInOutcome outcome,
+        AttemptReservation? reservation,
+        DateTimeOffset now,
+        CancellationToken cancellationToken)
+    {
+        if (outcome == SignInOutcome.ChallengeAlreadyUsed && reservation is { Allowed: true } reserved)
+            await credentials.TryRefundAsync(reserved, now, cancellationToken);
+    }
+
     private async Task<SignInResult> LockedWhileVerifyingAsync(Guid userId, DateTimeOffset now, CancellationToken cancellationToken)
     {
         logger.LogWarning("Sign-in refused for user {UserId}: the password was right, but other attempts locked the account while it was being checked.", userId);
