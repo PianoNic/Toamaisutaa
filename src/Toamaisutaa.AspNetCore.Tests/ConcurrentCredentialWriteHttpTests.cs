@@ -118,7 +118,7 @@ public class ConcurrentCredentialWriteHttpTests
         var stored = await check.ServiceProvider.GetRequiredService<ITwoFactorStore>().FindAsync(userId);
 
         await Assert.That(landed).IsFalse();
-        await Assert.That(stored!.LockedOutUntil).IsNotNull();
+        await Assert.That(stored!.LockedOutUntil.HasValue).IsTrue();
     }
 
     [Test]

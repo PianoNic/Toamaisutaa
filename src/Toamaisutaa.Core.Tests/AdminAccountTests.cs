@@ -200,7 +200,7 @@ public class AdminAccountTests
         var refreshed = await harness.SignIn.RefreshAsync(tokens.RefreshToken);
         await Assert.That(refreshed.Outcome).IsEqualTo(SignInOutcome.RefreshTokenRevoked);
 
-        await Assert.That(harness.Passwords.ResetTokens.Single().ConsumedAt).IsNotNull();
+        await Assert.That(harness.Passwords.ResetTokens.Single().ConsumedAt.HasValue).IsTrue();
 
         var newPassword = await harness.SignInAsync("pianonic", "a whole new password");
         await Assert.That(newPassword.Outcome).IsEqualTo(SignInOutcome.Succeeded);

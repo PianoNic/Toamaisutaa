@@ -177,6 +177,12 @@ this than a scripted find-and-replace.
 The rule above says watch a test fail. This one is a level above it: make sure there was something
 to fail against.
 
+### `IsNotNull()` on a nullable value type asserts nothing
+
+TUnit's `IsNotNull()` passes for a null `DateTimeOffset?` or `Guid?`. Assert `.HasValue` with
+`IsTrue()` instead. `IsNull()` does work. This was found because a new test stayed green with its
+fix removed, and four older assertions had been checking nothing the same way.
+
 ## Before you claim it works
 
 - `dotnet build Toamaisutaa.slnx` is 0 warnings, 0 errors.

@@ -336,7 +336,7 @@ public class TwoFactorTests
         var result = await harness.SignIn.RefreshAsync(refreshToken);
 
         await Assert.That(result.Outcome).IsEqualTo(SignInOutcome.SecurityStampChanged);
-        await Assert.That(harness.Passwords.RefreshTokens.Single(token => token.Id == stored.Id).RevokedAt).IsNotNull();
+        await Assert.That(harness.Passwords.RefreshTokens.Single(token => token.Id == stored.Id).RevokedAt.HasValue).IsTrue();
     }
 
     [Test]

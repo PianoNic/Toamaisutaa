@@ -56,7 +56,7 @@ public class AuthenticationEventHttpTests
         var failure = recorded.OfType<SignInFailed>().Single();
 
         await Assert.That(failure.Reason).IsEqualTo(SignInOutcome.InvalidPassword);
-        await Assert.That(failure.UserId).IsNotNull();
+        await Assert.That(failure.UserId.HasValue).IsTrue();
     }
 
     [Test]
