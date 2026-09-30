@@ -33,6 +33,11 @@ internal sealed class ToamaisutaaClientConfigurationProvider(
 
         var redirectUri = configured ?? WithTrailingSlash(Origin(context))!;
 
+        // Set here rather than on the one route this package maps: the docs send consumers to build
+        // their own endpoint on this, and there the redirect URI came from the caller's Host header
+        // with nothing stopping a shared cache from handing one forged answer to everybody.
+        context.Response.Headers.CacheControl = "no-store";
+
         return new ToamaisutaaClientConfiguration
         {
             Authority = settings.Authority ?? string.Empty,

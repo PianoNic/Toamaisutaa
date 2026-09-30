@@ -1,5 +1,8 @@
 using System.Collections.Concurrent;
 using System.Net;
+using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
@@ -25,6 +28,23 @@ public class ClientConfigurationHttpTests
         await using var app = await TestApp.StartAsync();
 
         var response = await app.Client.Get(Path);
+
+        await Assert.That(response.StatusCode).IsEqualTo(HttpStatusCode.OK);
+        await Assert.That(response.Headers.CacheControl?.NoStore).IsTrue();
+    }
+
+    /// <summary>The endpoint getting-started tells consumers to write, copied as it is there. The
+    /// header used to live on the mapped route alone, so this one carried a Host-derived redirect
+    /// URI that any shared cache was free to keep.</summary>
+    [Test]
+    public async Task An_endpoint_of_your_own_built_on_the_provider_is_never_stored_by_a_cache_either()
+    {
+        await using var app = await TestApp.StartAsync(endpoints =>
+            endpoints.MapGet("/api/own", (HttpContext context, IToamaisutaaClientConfigurationProvider provider) =>
+                Results.Ok(new { Auth = provider.GetConfiguration(context), FeatureFlags = "none" }))
+                .AllowAnonymous());
+
+        var response = await app.Client.Get("/api/own");
 
         await Assert.That(response.StatusCode).IsEqualTo(HttpStatusCode.OK);
         await Assert.That(response.Headers.CacheControl?.NoStore).IsTrue();
