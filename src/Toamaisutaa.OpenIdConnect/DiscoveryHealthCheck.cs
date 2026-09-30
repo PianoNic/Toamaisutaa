@@ -45,9 +45,12 @@ internal sealed class DiscoveryHealthCheck(
     /// it again - the moment it could least take the traffic.</summary>
     private volatile Failure? _lastFailure;
 
-    /// <summary>One probe at a time. The ones that arrive while it runs wait for its answer instead
-    /// of each sending their own.</summary>
-    private readonly SemaphoreSlim _probing = new(1, 1);
+    /// <summary>One probe at a time, shared. The ones that arrive while it runs wait for its answer
+    /// instead of each sending their own, and it runs to the end whoever stops waiting - a caller
+    /// that gave up used to take the probe down with it, so nothing was cached and the next probe
+    /// asked again.</summary>
+    private readonly Lock _gate = new();
+    private Task<HealthCheckResult>? _probe;
 
     public async Task<HealthCheckResult> CheckHealthAsync(
         HealthCheckContext context,
@@ -69,33 +72,37 @@ internal sealed class DiscoveryHealthCheck(
         if (Answered(address, settings, now) is { } answered)
             return answered;
 
-        await _probing.WaitAsync(cancellationToken);
+        Task<HealthCheckResult> probe;
 
-        try
+        lock (_gate)
         {
-            // Whoever held the gate may have just answered this.
-            now = time.GetUtcNow();
+            // A finished probe stands for as long as Answered says it does, so one that has finished
+            // here is one whose answer has run out.
+            if (_probe is null || _probe.IsCompleted)
+                _probe = ProbeAndRememberAsync(address, settings);
 
-            if (Answered(address, settings, now) is { } justAnswered)
-                return justAnswered;
-
-            var (issuer, failure) = await ProbeAsync(address, settings.HealthCheck.Timeout, cancellationToken);
-
-            if (issuer is not null)
-            {
-                var fetched = new Fetch(now, issuer);
-                _lastSuccess = fetched;
-                _lastFailure = null;
-                return Reachable(address, fetched, now);
-            }
-
-            _lastFailure = new Failure(now, failure!);
-            return Unreachable(address, settings, _lastSuccess, failure!, now);
+            probe = _probe;
         }
-        finally
+
+        return await probe.WaitAsync(cancellationToken);
+    }
+
+    /// <summary>Bounded by <c>Oidc:HealthCheck:Timeout</c> and by nothing a caller holds.</summary>
+    private async Task<HealthCheckResult> ProbeAndRememberAsync(string address, ToamaisutaaOidcOptions settings)
+    {
+        var now = time.GetUtcNow();
+        var (issuer, failure) = await ProbeAsync(address, settings.HealthCheck.Timeout);
+
+        if (issuer is not null)
         {
-            _probing.Release();
+            var fetched = new Fetch(now, issuer);
+            _lastSuccess = fetched;
+            _lastFailure = null;
+            return Reachable(address, fetched, now);
         }
+
+        _lastFailure = new Failure(now, failure!);
+        return Unreachable(address, settings, _lastSuccess, failure!, now);
     }
 
     /// <summary>
@@ -149,18 +156,9 @@ internal sealed class DiscoveryHealthCheck(
             data: Data(address, cached));
     }
 
-    /// <summary>
-    /// Everything that is not a fetch failure is left to the caller: an <see cref="OperationCanceledException"/>
-    /// from the probe's own token means the health report was abandoned, not that the issuer is
-    /// down, and reporting it as unhealthy would be a lie told at shutdown.
-    /// </summary>
-    private async Task<(string? Issuer, string? Failure)> ProbeAsync(
-        string address,
-        TimeSpan timeout,
-        CancellationToken cancellationToken)
+    private async Task<(string? Issuer, string? Failure)> ProbeAsync(string address, TimeSpan timeout)
     {
-        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        deadline.CancelAfter(timeout);
+        using var deadline = new CancellationTokenSource(timeout);
 
         try
         {
@@ -181,10 +179,6 @@ internal sealed class DiscoveryHealthCheck(
                 return (null, "it answered 200 without an 'issuer' and 'jwks_uri' pair, so that is not a discovery document");
 
             return (issuer, null);
-        }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-        {
-            throw;
         }
         catch (OperationCanceledException)
         {

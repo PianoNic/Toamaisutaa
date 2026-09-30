@@ -237,6 +237,31 @@ public class DiscoveryHealthCheckHttpTests
     }
 
     /// <summary>
+    /// A kubelet that gives up after a second, against a five-second timeout, took the probe down
+    /// with it: nothing was cached, and every probe after it asked the issuer again.
+    /// </summary>
+    [Test]
+    public async Task A_probe_its_caller_gave_up_on_still_answers_the_next_one()
+    {
+        var issuer = new FakeIssuer { Latency = TimeSpan.FromMilliseconds(500) };
+
+        await using var app = await StartAsync(issuer);
+        var health = app.Services.GetRequiredService<HealthCheckService>();
+
+        using (var impatient = new CancellationTokenSource(TimeSpan.FromMilliseconds(50)))
+        {
+            await Assert.That(async () => await health.CheckHealthAsync(impatient.Token)).Throws<OperationCanceledException>();
+        }
+
+        await Task.Delay(TimeSpan.FromSeconds(1));
+
+        var report = await health.CheckHealthAsync();
+
+        await Assert.That(report.Status).IsEqualTo(HealthStatus.Healthy);
+        await Assert.That(issuer.Requests).IsEqualTo(1);
+    }
+
+    /// <summary>
     /// Degraded rather than unhealthy: the handler is still validating tokens against the document
     /// it holds, and taking the pod out of rotation for that would be the wrong call.
     /// </summary>
