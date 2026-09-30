@@ -62,6 +62,29 @@ public class CredentialWritesTests
         await Assert.That(credential.FailedAttemptCount).IsEqualTo(options.MaxFailedAttempts - 1);
     }
 
+    /// <summary>The right attempt is the one whose reservation locked the account; given back, the
+    /// lock goes with it and the count is what it was before.</summary>
+    [Test]
+    public async Task A_right_attempt_that_set_the_lock_itself_undoes_it()
+    {
+        var store = new FakePasswordStore();
+        var options = new ToamaisutaaLocalLoginOptions();
+        var now = DateTimeOffset.UtcNow;
+        var credential = new ToamaisutaaPasswordCredential { UserId = Guid.NewGuid(), UserName = "ada", NormalizedUserName = "ADA", PasswordHash = "h" };
+        await store.CreateAsync(credential);
+
+        for (var i = 1; i < options.MaxFailedAttempts; i++)
+            await store.ReserveAttemptAsync(credential, options, now, CancellationToken.None);
+
+        var right = await store.ReserveAttemptAsync(credential, options, now, CancellationToken.None);
+        await Assert.That(right.LockedByThisAttempt).IsTrue();
+
+        await store.RefundAsync(right, now, CancellationToken.None);
+
+        await Assert.That(LockoutPolicy.IsLockedOut(credential, now)).IsFalse();
+        await Assert.That(credential.FailedAttemptCount).IsEqualTo(options.MaxFailedAttempts - 1);
+    }
+
     private sealed class LosesFirst(FakePasswordStore inner, int times) : IPasswordCredentialStore
     {
         private int _lost;
