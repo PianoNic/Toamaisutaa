@@ -38,7 +38,31 @@ public class PublishedSecretsStartupCheckTests
         await Assert.That(await StartAsync("signing", Environments.Development)).IsNull();
     }
 
-    private static async Task<string?> StartAsync(string which, string environment)
+    /// <summary>
+    /// Development accepted them on any address, so a container or a staging box started with the
+    /// wrong environment and bound to every interface signed tokens anyone could forge. On a real
+    /// server, so there are real addresses to judge.
+    /// </summary>
+    [Test]
+    [Arguments("http://0.0.0.0:0", false)]
+    [Arguments("http://127.0.0.1:0", true)]
+    [Arguments("http://[::1]:0", true)]
+    public async Task In_development_the_samples_values_are_served_on_loopback_only(string url, bool starts)
+    {
+        var message = await StartAsync("signing", Environments.Development, url);
+
+        if (starts)
+        {
+            await Assert.That(message).IsNull();
+        }
+        else
+        {
+            await Assert.That(message).IsNotNull();
+            await Assert.That(message!).Contains("not loopback");
+        }
+    }
+
+    private static async Task<string?> StartAsync(string which, string environment, string? url = null)
     {
         var sample = JsonDocument.Parse(await File.ReadAllTextAsync(SampleSettingsPath())).RootElement;
         var local = sample.GetProperty("LocalLogin");
@@ -64,7 +88,10 @@ public class PublishedSecretsStartupCheckTests
         }
 
         var builder = WebApplication.CreateSlimBuilder(new WebApplicationOptions { EnvironmentName = environment });
-        builder.WebHost.UseTestServer();
+        if (url is null)
+            builder.WebHost.UseTestServer();
+        else
+            builder.WebHost.UseUrls(url);
         builder.Logging.SetMinimumLevel(LogLevel.None);
         builder.Configuration.AddInMemoryCollection(settings);
 

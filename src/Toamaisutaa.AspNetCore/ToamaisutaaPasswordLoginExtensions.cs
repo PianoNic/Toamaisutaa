@@ -114,6 +114,7 @@ public static class ToamaisutaaPasswordLoginExtensions
                 provider.GetRequiredService<LocalSigningKeyRing>())));
 
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IHostedService, PublishedSecretsStartupCheck>());
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IHostedService, Toamaisutaa.OpenIdConnect.PublishedSecretsLoopbackCheck>());
 
         return services;
     }
