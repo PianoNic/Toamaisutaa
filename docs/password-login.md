@@ -428,4 +428,5 @@ hands you - rather than expecting to construct one.
 | `LocalLogin:IpAddressStorage` | `None` | What a session row keeps of the caller's address |
 | `LocalLogin:RateLimit:Enabled` | `true` | Per caller address, fixed window. One budget across the anonymous endpoints and the signed-in ones that take a password or code as proof |
 | `LocalLogin:RateLimit:PermitLimit` / `Window` | `10` / `00:01:00` | |
+| `LocalLogin:RateLimit:Nat64Prefixes:0` | | A network-specific NAT64 prefix in front of you, such as `2001:db8:64::/96`. Its IPv4 clients are keyed on their own address rather than all sharing the gateway's. `64:ff9b::/96` and `64:ff9b:1::/48` are handled without it |
 | `LocalLogin:TokenCleanupInterval` | `06:00:00` | Only used by `AddToamaisutaaTokenCleanup()` |
