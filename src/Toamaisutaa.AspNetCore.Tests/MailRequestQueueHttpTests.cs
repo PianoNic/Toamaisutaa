@@ -34,6 +34,22 @@ public class MailRequestQueueHttpTests
     }
 
     /// <summary>
+    /// A notifier that never answers used to hold its reader until the host stopped. Given a
+    /// deadline, the job is abandoned and the reader goes back to work.
+    /// </summary>
+    [Test]
+    public async Task A_job_that_never_finishes_is_abandoned_at_its_deadline()
+    {
+        await using var app = await TestApp.StartAsync();
+        var queue = app.Services.GetRequiredService<MailRequestQueue>();
+        queue.JobTimeout = TimeSpan.FromMilliseconds(200);
+
+        queue.Enqueue((_, cancellationToken) => Task.Delay(Timeout.Infinite, cancellationToken));
+
+        await queue.WhenIdleAsync().WaitAsync(TimeSpan.FromSeconds(10));
+    }
+
+    /// <summary>
     /// A request dropped from a full queue sent nothing, but its address had already taken the
     /// cooldown, so the owner's retry a moment later was turned away too - two requests, no mail.
     /// </summary>

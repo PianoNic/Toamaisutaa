@@ -38,6 +38,10 @@ internal sealed class MailRequestQueue(IServiceScopeFactory scopes, ToamaisutaaM
 
     private int _pending;
 
+    /// <summary>How long one job may run. Well past any SMTP conversation that is going to finish;
+    /// settable only so a test does not wait two minutes to watch it.</summary>
+    internal TimeSpan JobTimeout { get; set; } = TimeSpan.FromMinutes(2);
+
     /// <summary>Queues work that runs in a scope of its own, since the request's scope is gone by
     /// the time it starts.</summary>
     /// <returns>False when the queue was full and the work was dropped.</returns>
@@ -89,10 +93,19 @@ internal sealed class MailRequestQueue(IServiceScopeFactory scopes, ToamaisutaaM
         {
             await foreach (var work in _work.Reader.ReadAllAsync(stoppingToken))
             {
+                // A deadline of its own: a notifier that never answers held its reader until shutdown,
+                // and a few of them stopped the queue for everybody.
+                using var deadline = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);
+                deadline.CancelAfter(JobTimeout);
+
                 try
                 {
                     await using var scope = scopes.CreateAsyncScope();
-                    await work(scope.ServiceProvider, stoppingToken);
+                    await work(scope.ServiceProvider, deadline.Token);
+                }
+                catch (OperationCanceledException) when (deadline.IsCancellationRequested && !stoppingToken.IsCancellationRequested)
+                {
+                    logger.LogError("A queued reset or magic-link request was abandoned after {Timeout}; nothing was sent.", JobTimeout);
                 }
                 catch (Exception exception) when (exception is not OperationCanceledException || !stoppingToken.IsCancellationRequested)
                 {
