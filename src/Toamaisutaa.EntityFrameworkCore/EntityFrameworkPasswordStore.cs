@@ -244,12 +244,35 @@ internal sealed class EntityFrameworkPasswordStore<TContext>(TContext context)
     async Task<ToamaisutaaInvitationToken?> IInvitationTokenStore.FindOpenByEmailAsync(
         string normalizedEmail,
         DateTimeOffset now,
-        CancellationToken cancellationToken) =>
-        (await context.Set<ToamaisutaaInvitationToken>()
-            .Where(token => token.NormalizedEmail == normalizedEmail && token.ConsumedAt == null && token.ExpiresAt > now)
-            .OrderByDescending(token => token.CreatedAt)
-            .ToListAsync(cancellationToken))
-        .FirstOrDefault(token => string.Equals(token.NormalizedEmail, normalizedEmail, StringComparison.Ordinal));
+        CancellationToken cancellationToken)
+    {
+        var found = (await context.Set<ToamaisutaaInvitationToken>()
+                .Where(token => token.NormalizedEmail == normalizedEmail && token.ConsumedAt == null && token.ExpiresAt > now)
+                .OrderByDescending(token => token.CreatedAt)
+                .ToListAsync(cancellationToken))
+            .FirstOrDefault(token => string.Equals(token.NormalizedEmail, normalizedEmail, StringComparison.Ordinal));
+
+        if (found is not null)
+            return found;
+
+        // Invitations sent before 0.8.0 carry no address; the reserved user row has it. Missing them
+        // left a leaked link that revoking and re-inviting both reported as gone.
+        // ponytail: scans every open pre-0.8.0 invitation, which the lifetime bounds to a handful.
+        var legacy = await context.Set<ToamaisutaaInvitationToken>()
+            .Where(token => token.NormalizedEmail == null && token.ConsumedAt == null && token.ExpiresAt > now)
+            .Join(
+                context.Set<ToamaisutaaUser>().Where(user => user.Email != null),
+                token => token.UserId,
+                user => user.Id,
+                (token, user) => new { Token = token, user.Email })
+            .ToListAsync(cancellationToken);
+
+        return legacy
+            .Where(row => string.Equals(row.Email!.Trim().ToUpperInvariant(), normalizedEmail, StringComparison.Ordinal))
+            .OrderByDescending(row => row.Token.CreatedAt)
+            .Select(row => row.Token)
+            .FirstOrDefault();
+    }
 
     async Task IInvitationTokenStore.InvalidateAllForUserAsync(Guid userId, DateTimeOffset consumedAt, CancellationToken cancellationToken) =>
         await context.Set<ToamaisutaaInvitationToken>()

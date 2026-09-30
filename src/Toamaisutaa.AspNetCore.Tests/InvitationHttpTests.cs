@@ -68,6 +68,36 @@ public class InvitationHttpTests
         await Assert.That(complete.StatusCode).IsEqualTo(HttpStatusCode.BadRequest);
     }
 
+    /// <summary>Rows from before 0.8.0 have no address column filled in, so revoking one reported
+    /// no open invitation while its link kept working.</summary>
+    [Test]
+    public async Task An_invitation_sent_before_the_address_was_stored_can_still_be_revoked()
+    {
+        await using var app = await TestApp.StartAsync();
+        var admin = await Account.RegisterAsync(app, TestApp.AdminUserName);
+
+        await app.Client.PostJson("/auth/invitations", new { email = "Invited@Example.com" }, admin.AccessToken);
+
+        await using (var scope = app.Services.CreateAsyncScope())
+        {
+            var cleared = await scope.ServiceProvider.GetRequiredService<ToamaisutaaDbContext>().InvitationTokens
+                .ExecuteUpdateAsync(setters => setters
+                    .SetProperty(token => token.Email, (string?)null)
+                    .SetProperty(token => token.NormalizedEmail, (string?)null));
+
+            await Assert.That(cleared).IsEqualTo(1);
+        }
+
+        var revoked = await app.Client.PostJson("/auth/invitations/revoke", new { email = "invited@example.com" }, admin.AccessToken);
+
+        var complete = await app.Client.PostJson(
+            "/auth/invitations/complete",
+            new { token = app.IssuedInvitations.Single().Token, userName = "invited", password = Account.DefaultPassword });
+
+        await Assert.That(revoked.StatusCode).IsEqualTo(HttpStatusCode.NoContent);
+        await Assert.That(complete.StatusCode).IsEqualTo(HttpStatusCode.BadRequest);
+    }
+
     [Test]
     public async Task Revoking_never_touches_an_account_that_was_completed()
     {

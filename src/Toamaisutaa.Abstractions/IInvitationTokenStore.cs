@@ -19,7 +19,9 @@ public interface IInvitationTokenStore
     /// <summary>
     /// The newest invitation to <paramref name="normalizedEmail"/> that is neither spent nor expired,
     /// or null. A user row is never assumed to be a reservation from its shape, because an account an
-    /// identity provider owns has the same shape.
+    /// identity provider owns has the same shape. Rows written before 0.8.0 have no
+    /// <see cref="ToamaisutaaInvitationToken.NormalizedEmail"/> and must be matched on their user row's
+    /// address, or revoking one reports it gone while its link still works.
     /// </summary>
     Task<ToamaisutaaInvitationToken?> FindOpenByEmailAsync(string normalizedEmail, DateTimeOffset now, CancellationToken cancellationToken = default);
 }
