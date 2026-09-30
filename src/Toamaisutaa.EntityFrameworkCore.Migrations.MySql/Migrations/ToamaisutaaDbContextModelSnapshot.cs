@@ -79,7 +79,8 @@ namespace Toamaisutaa.EntityFrameworkCore.Migrations.MySql.Migrations
                     b.Property<string>("Subject")
                         .IsRequired()
                         .HasMaxLength(256)
-                        .HasColumnType("varchar(256)");
+                        .HasColumnType("varchar(256)")
+                        .UseCollation("utf8mb4_bin");
 
                     b.Property<Guid>("UserId")
                         .HasColumnType("char(36)");

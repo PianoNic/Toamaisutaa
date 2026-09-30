@@ -57,7 +57,8 @@ internal sealed class ExternalLoginProvisioner(
                     $"Cannot provision subject '{profile.Subject}' for provider '{options.Value.ProviderKey}': the database "
                     + "treats it as equal to an existing subject that differs only in case or accents. OIDC subjects are "
                     + "case-sensitive; give ToamaisutaaExternalLogins.Subject a case- and accent-sensitive collation "
-                    + "(utf8mb4_bin on MySQL, Latin1_General_BIN2 on SQL Server).",
+                    + "(utf8mb4_bin on MySQL, Latin1_General_100_BIN2 on SQL Server). The shipped migrations do this; a "
+                    + "context of your own needs ApplyToamaisutaaConfiguration(Database) and a new migration.",
                     again);
             }
         }

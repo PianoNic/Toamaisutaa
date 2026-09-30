@@ -20,7 +20,7 @@ builder.Services.AddToamaisutaaDbContext(db => db.UseNpgsql(connectionString,
 protected override void OnModelCreating(ModelBuilder modelBuilder)
 {
     base.OnModelCreating(modelBuilder);
-    modelBuilder.ApplyToamaisutaaConfiguration();
+    modelBuilder.ApplyToamaisutaaConfiguration(Database);
 }
 ```
 
@@ -73,20 +73,30 @@ package and a regenerated migration - nothing in the schema changes.
 ### Subjects are case-sensitive, and SQL Server and MySQL are not
 
 An OpenID Connect subject is compared exactly. The default collations on SQL Server and MySQL ignore
-case, and MySQL's ignores accents as well. Lookups compare again in code, so `ALICE` never signs in
-as `alice`. But the unique index on `(ProviderKey, Subject)` still treats them as one, so the second
-of two subjects that differ only that way cannot be provisioned: it is refused with an error naming
-the collation. Identity providers that issue GUIDs never meet this. If yours issues names, give the
-column a binary collation:
+case, and MySQL's ignores accents as well, so the unique index on `(ProviderKey, Subject)` treated
+`alice` and `ALICE` as one subject and the second could never be provisioned.
 
-```sql
--- MySQL
-ALTER TABLE ToamaisutaaExternalLogins MODIFY Subject varchar(256) COLLATE utf8mb4_bin NOT NULL;
--- SQL Server: drop and recreate the unique index around this
-ALTER TABLE ToamaisutaaExternalLogins ALTER COLUMN Subject nvarchar(256) COLLATE Latin1_General_BIN2 NOT NULL;
+The shipped migrations give the column a binary collation on those two - `Latin1_General_100_BIN2`
+and `utf8mb4_bin` - and existing rows keep their values. PostgreSQL and SQLite compare exactly
+already and are left alone.
+
+**With your own context**, pass its `Database` so the model knows which provider it is for, then
+generate the migration:
+
+```csharp
+modelBuilder.ApplyToamaisutaaConfiguration(Database);
 ```
 
-PostgreSQL and SQLite compare exactly by default.
+On MySQL, check the generated migration before applying it. `MySql.EntityFrameworkCore` leaves the
+collation out of the `MODIFY` it generates, so the migration applies and changes nothing; the shipped
+one is written as SQL for that reason:
+
+```sql
+ALTER TABLE `ToamaisutaaExternalLogins` MODIFY `Subject` varchar(256) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL;
+```
+
+A database left comparing without case still refuses the second subject, with an error naming the
+collation rather than a bare conflict.
 
 ## Not using Entity Framework at all
 
