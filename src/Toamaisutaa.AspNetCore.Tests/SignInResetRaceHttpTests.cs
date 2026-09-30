@@ -24,6 +24,10 @@ public class SignInResetRaceHttpTests
         var won = await signIn;
         var refreshToken = (await won.Json()).String("refresh_token");
 
+        // Otherwise a refused sign-in posts a null token and gets the same 401 for another reason.
+        await Assert.That(won.StatusCode).IsEqualTo(HttpStatusCode.OK);
+        await Assert.That(refreshToken).IsNotNull();
+
         var refreshed = await app.Client.PostJson("/auth/refresh", new { refreshToken });
 
         await Assert.That(refreshed.StatusCode).IsEqualTo(HttpStatusCode.Unauthorized);
@@ -46,6 +50,9 @@ public class SignInResetRaceHttpTests
         hasher.Let();
 
         var challenge = (await (await signIn).Json()).String("challenge");
+
+        // Otherwise a refused sign-in posts a null challenge and gets the same 401 for another reason.
+        await Assert.That(challenge).IsNotNull();
 
         app.Time.AdvanceToNextTotpStep();
         var verified = await app.Client.PostJson("/auth/2fa/verify", new { challenge, code = Totp.Code(account.Secret!, app.Time.Now) });
@@ -74,6 +81,9 @@ public class SignInResetRaceHttpTests
         hasher.Let();
 
         var challenge = (await (await signIn).Json()).String("challenge");
+
+        // Otherwise a refused sign-in posts a null challenge and gets the same 401 for another reason.
+        await Assert.That(challenge).IsNotNull();
 
         app.Time.AdvanceToNextTotpStep();
         var verified = await app.Client.PostJson("/auth/2fa/verify", new { challenge, code = Totp.Code(account.Secret!, app.Time.Now) });
