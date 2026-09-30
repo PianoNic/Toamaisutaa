@@ -388,11 +388,13 @@ internal sealed class PasskeyService(
         return true;
     }
 
-    private readonly record struct ProvenOperation(string Name, string Doing, string Retry);
+    // A passkey signs in on its own, so registering one on an account with a second factor takes that
+    // second factor: the password alone would mint a way in that skips it. Removing one gives nothing.
+    private readonly record struct ProvenOperation(string Name, string Doing, string Retry, bool NeedsSecondFactorWhenEnrolled);
 
-    private static readonly ProvenOperation Registration = new("Passkey registration", "Registering a passkey", "register");
+    private static readonly ProvenOperation Registration = new("Passkey registration", "Registering a passkey", "register", NeedsSecondFactorWhenEnrolled: true);
 
-    private static readonly ProvenOperation Removal = new("Passkey removal", "Removing a passkey", "remove it");
+    private static readonly ProvenOperation Removal = new("Passkey removal", "Removing a passkey", "remove it", NeedsSecondFactorWhenEnrolled: false);
 
     private async Task RequireLiveCredentialAsync(
         Guid userId,
@@ -406,6 +408,20 @@ internal sealed class PasskeyService(
         // A time ahead of now is refused so a skewed issuer clock cannot extend the window.
         if (proof.SecondFactorAt is { } presentedAt && presentedAt <= now && now - presentedAt <= window)
             return;
+
+        if (operation.NeedsSecondFactorWhenEnrolled
+            && provider.GetService<ITwoFactorStore>() is { } enrolments
+            && await enrolments.FindAsync(userId, cancellationToken) is { ConfirmedAt: not null })
+        {
+            logger.LogWarning(
+                "{Operation} refused for user {UserId}: the account has a second factor, and none was presented recently.",
+                operation.Name,
+                userId);
+
+            throw new PasskeyRegistrationException(
+                $"This account has a second factor, so {operation.Doing.ToLowerInvariant()} needs it too, not only the "
+                + $"password. Complete a step-up, then {operation.Retry} while it is still fresh.");
+        }
 
         // Resolved rather than injected: the password stores may not be registered, and passwordless
         // accounts prove a second factor instead.

@@ -122,6 +122,10 @@ was only issued against a proof that held.
 **An account with no password** - one an identity provider owns, or one whose only credential is
 already a passkey - proves a second factor instead: sign in with a passkey, or complete
 `/auth/2fa/step-up`, then register while `toa_2fa_at` is still inside the window.
+
+**An account with a confirmed second factor** has to present it too; the password alone is refused.
+The passkey would otherwise be a way in that skips the code. Complete `/auth/2fa/step-up`, then
+register inside the window. Removing a passkey still takes the password alone.
 :::
 
 Every binary field is base64url in both directions. Standard base64 and padding either way are
