@@ -9,12 +9,10 @@ using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.IdentityModel.JsonWebTokens;
 using Microsoft.IdentityModel.Tokens;
 using Toamaisutaa.Abstractions;
-using Toamaisutaa.AspNetCore;
 using Toamaisutaa.EntityFrameworkCore;
 
 namespace Toamaisutaa.AspNetCore.Tests;

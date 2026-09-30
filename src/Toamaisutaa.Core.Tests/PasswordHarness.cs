@@ -1,6 +1,5 @@
 using System.Security.Cryptography;
 using Microsoft.Extensions.Logging.Abstractions;
-using Microsoft.Extensions.Options;
 using Toamaisutaa.Abstractions;
 
 namespace Toamaisutaa.Core.Tests;
