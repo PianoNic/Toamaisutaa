@@ -197,7 +197,10 @@ current-password check. `password` is optional; omit it and Toamaisutaa generate
 400, 403, or 502 when the password was set but could not be delivered - never a password.
 
 The password is mailed only to the credential's own address, never to the profile email an
-identity provider writes. An account with none gets no mail, so deliver the password another way.
+identity provider writes. An account with none gets no mail, so give the password in the request
+and deliver it another way; leaving it out there answers 400 before anything changes, because a
+generated password would reach nobody. Creating a user with neither an email nor a password is
+refused the same way.
 With `LocalLogin:RequireVerifiedEmailForPasswordReset` on, an address that was never verified
 answers 400 before anything changes.
 

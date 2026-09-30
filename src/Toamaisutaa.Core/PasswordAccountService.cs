@@ -174,6 +174,9 @@ internal sealed class PasswordAccountService(
         if (!string.IsNullOrWhiteSpace(email) && !IsBareAddress(email))
             return AccountResult.Failure(NotABareAddress);
 
+        if (password is null && string.IsNullOrWhiteSpace(email))
+            return AccountResult.Failure(NowhereToDeliver);
+
         var adminNotifier = ResolveAdminPasswordNotifier();
         var effectivePassword = password ?? AdminPasswordGenerator.Generate();
 
@@ -231,6 +234,14 @@ internal sealed class PasswordAccountService(
         // Only the credential's address: the profile field is written by an identity provider and
         // falling back to it mails a plaintext password to whoever controls that.
         var mailTo = credential?.Email;
+
+        // Refused before anything changes: a generated password nobody receives, set over passkeys
+        // it deletes, leaves the account with no way in.
+        if (mailTo is null && password is null)
+        {
+            logger.LogInformation("Admin password refused for user {UserId}: no password given and no address to send a generated one to.", userId);
+            return AccountResult.Failure(NowhereToDeliver);
+        }
 
         // The password travels in the clear, so the self-service reset rule applies, checked before
         // anything is changed.
@@ -880,6 +891,10 @@ internal sealed class PasswordAccountService(
 
     // A display name in front of the address would carry arbitrary text from this domain to any inbox.
     private const string NotABareAddress = "Give just the email address, with nothing around it.";
+
+    private const string NowhereToDeliver =
+        "This account has no local email address to send a generated password to. Give the password in the request "
+        + "and deliver it yourself.";
 
     private static bool IsBareAddress(string email) =>
         System.Net.Mail.MailAddress.TryCreate(email.Trim(), out var parsed)
