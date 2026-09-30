@@ -37,7 +37,7 @@ internal sealed class PasskeyService(
         var user = await users.FindByIdAsync(userId, cancellationToken)
             ?? throw new InvalidOperationException($"User {userId} does not exist.");
 
-        await RequireLiveCredentialAsync(userId, proof, timeProvider.GetUtcNow(), cancellationToken);
+        await RequireLiveCredentialAsync(userId, proof, Registration, timeProvider.GetUtcNow(), cancellationToken);
 
         var existing = await credentials.ListAsync(userId, cancellationToken);
 
@@ -382,7 +382,7 @@ internal sealed class PasskeyService(
 
         // The same proof registration asks for, and asked first so it answers the same whether or not
         // the id is this account's.
-        await RequireLiveCredentialAsync(userId, proof, now, cancellationToken);
+        await RequireLiveCredentialAsync(userId, proof, Removal, now, cancellationToken);
 
         if (!await credentials.DeleteAsync(userId, passkeyId, cancellationToken))
             return false;
@@ -430,9 +430,18 @@ internal sealed class PasskeyService(
     /// dependency would turn an optional registration into a crash at the first ceremony.
     /// </para>
     /// </remarks>
+    /// <summary>What the proof is for, in the words its refusals and log lines use. Removal used to
+    /// be refused as a registration, which told the person holding it to do something else.</summary>
+    private readonly record struct ProvenOperation(string Name, string Doing, string Retry);
+
+    private static readonly ProvenOperation Registration = new("Passkey registration", "Registering a passkey", "register");
+
+    private static readonly ProvenOperation Removal = new("Passkey removal", "Removing a passkey", "remove it");
+
     private async Task RequireLiveCredentialAsync(
         Guid userId,
         PasskeyRegistrationProof proof,
+        ProvenOperation operation,
         DateTimeOffset now,
         CancellationToken cancellationToken)
     {
@@ -449,23 +458,24 @@ internal sealed class PasskeyService(
         if (credential is null)
         {
             logger.LogWarning(
-                "Passkey registration refused for user {UserId}: the account has no password, and no second factor was presented recently.",
+                "{Operation} refused for user {UserId}: the account has no password, and no second factor was presented recently.",
+                operation.Name,
                 userId);
 
             throw new PasskeyRegistrationException(
-                "This account has no password to prove, so registering a passkey needs a second factor. Complete a "
-                + "step-up, then register while it is still fresh.");
+                $"This account has no password to prove, so {operation.Doing.ToLowerInvariant()} needs a second factor. "
+                + $"Complete a step-up, then {operation.Retry} while it is still fresh.");
         }
 
         var hasher = provider.GetService<IPasswordHasher>();
 
         if (hasher is null || string.IsNullOrEmpty(proof.CurrentPassword))
         {
-            logger.LogWarning("Passkey registration refused for user {UserId}: no current password was given.", userId);
+            logger.LogWarning("{Operation} refused for user {UserId}: no current password was given.", operation.Name, userId);
 
             throw new PasskeyRegistrationException(
-                "Registering a passkey needs proof of a credential this account already has. Send currentPassword, or "
-                + "complete a step-up, then register while it is still fresh.");
+                $"{operation.Doing} needs proof of a credential this account already has. Send currentPassword, or "
+                + $"complete a step-up, then {operation.Retry} while it is still fresh.");
         }
 
         // Counted exactly as a wrong password at sign-in is: a stolen access token reaches this.
@@ -476,7 +486,7 @@ internal sealed class PasskeyService(
             events,
             localLogin.Value,
             logger,
-            "Passkey registration",
+            operation.Name,
             now,
             cancellationToken);
 

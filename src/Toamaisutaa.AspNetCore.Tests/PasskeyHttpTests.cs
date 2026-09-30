@@ -507,6 +507,25 @@ public class PasskeyHttpTests
         await Assert.That((await response.Json()).String("error")).IsEqualTo("invalid_grant");
     }
 
+    /// <summary>Removal borrowed registration's proof, wording and all, so a person removing a key
+    /// was told that registering one needs proof.</summary>
+    [Test]
+    public async Task Deleting_a_passkey_without_proof_is_refused_as_a_removal()
+    {
+        await using var app = await TestApp.StartAsync();
+        var account = await Account.RegisterAsync(app);
+        using var authenticator = new SoftwareAuthenticator();
+
+        var id = (await (await Passkeys.RegisterAsync(app, account.AccessToken, authenticator)).Json()).String("id")!;
+
+        var refused = await app.Client.Delete($"/auth/passkeys/{id}", new { }, account.AccessToken);
+        var errors = string.Join(" ", (await refused.Json()).Strings("errors"));
+
+        await Assert.That(refused.StatusCode).IsEqualTo(HttpStatusCode.BadRequest);
+        await Assert.That(errors).Contains("Removing a passkey");
+        await Assert.That(errors).DoesNotContain("egister");
+    }
+
     [Test]
     public async Task Deleting_a_passkey_takes_it_out_of_the_list_and_out_of_sign_in()
     {
