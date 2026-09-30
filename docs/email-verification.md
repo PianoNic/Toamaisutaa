@@ -27,7 +27,7 @@ invitation links, unless you register your own `IEmailVerificationEmailTemplate`
 
 | Method | Route | Answers |
 |---|---|---|
-| POST | `/auth/email` | 204, 400, or 409. Authenticated. Only mapped when an `IEmailVerificationNotifier` is registered |
+| POST | `/auth/email` | 204, 400, 409, or 429. Authenticated. Only mapped when an `IEmailVerificationNotifier` is registered |
 | POST | `/auth/email/verify` | 204, 400, or 409. Anonymous, but only usable with a valid token |
 
 **`POST /auth/email`** - authenticated. `currentPassword` is required, and the address does not move.
@@ -44,15 +44,23 @@ another device. The token is what proves anything here.
 { "token": "the token from the notifier" }
 ```
 
-Both answer 409 when another local account already holds the address, which is checked twice: when
-the link is asked for, so a link that cannot work is never sent, and again when it is redeemed,
-because the link may have sat unread while somebody else took the address.
+Both answer 409 when another local account holds the address **and has proven it**, or holds it as a
+user name from before user names could not contain `@`. That is checked twice: when the link is
+asked for, so a link that cannot work is never sent, and again when it is redeemed, because the link
+may have sat unread while somebody else proved the address. An address another account only typed
+in, and never verified, is not a 409: redeeming the link proves this account holds it, and releases
+it from the other.
+
+`POST /auth/email` answers 429 in two cases, each with an `errors` body saying which: the per-address
+rate limit, and a per-account cooldown of `LocalLogin:MailRequestCooldown` (a minute by default)
+between links, so one account cannot mail an inbox without pause.
 
 ## Asking for the link again
 
 There is no separate resend endpoint. `POST /auth/email` with the address the account **already
 has** is a re-verification: same body, same password, same link, and redeeming it stamps the address
-confirmed without moving anything.
+confirmed without moving anything. Asked again inside the cooldown it answers 429, so a resend
+button should wait that long after the last one.
 
 That is also how a freshly registered account gets its address verified in the first place - nothing
 verifies an address on its own, because nothing in this package sends mail on its own.
@@ -64,6 +72,8 @@ verifies an address on its own, because nothing in this package sends mail on it
 - `ToamaisutaaPasswordCredentials.EmailConfirmedAt` - the moment it was proven.
 - `ToamaisutaaUsers.Email` - the profile field, so the reset and invitation notifiers stop
   addressing mail to where this account used to be.
+- On any other account holding the same address unverified: its credential's `Email` and
+  `NormalizedEmail` are cleared. It typed the address in and never proved it; this account just did.
 
 **Sessions stay alive.** Proving an address is not a credential change, so the security stamp does
 not move and nobody is signed out. A *password* change is the other way round: it revokes the

@@ -61,6 +61,9 @@ internal sealed class MailRequestCooldown(IOptions<ToamaisutaaLocalLoginOptions>
     /// password does not cost the person a minute.</summary>
     internal void Release(string purpose, string email) => _lastRequested.TryRemove(Key(purpose, email), out _);
 
+    /// <summary>How long an address or account waits between requests.</summary>
+    internal TimeSpan Period => options.Value.MailRequestCooldown;
+
     /// <summary>The count this holds for testing: what is remembered right now.</summary>
     internal int Count => _lastRequested.Count;
 

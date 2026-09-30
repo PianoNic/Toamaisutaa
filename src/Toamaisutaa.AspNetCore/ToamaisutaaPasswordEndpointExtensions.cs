@@ -562,6 +562,12 @@ public static class ToamaisutaaPasswordEndpointExtensions
             : Results.BadRequest(new ValidationErrorResponse { Errors = result.Errors });
     }
 
+    /// <summary>The configured cooldown as a person reads it. "A minute" was hard-coded, and wrong
+    /// for any deployment that set a different one.</summary>
+    private static string Spoken(TimeSpan period) => period.TotalSeconds < 60
+        ? $"{Math.Ceiling(period.TotalSeconds)} seconds"
+        : Math.Ceiling(period.TotalMinutes) is 1 ? "a minute" : $"{Math.Ceiling(period.TotalMinutes)} minutes";
+
     private static async Task<IResult> ChangeEmailAsync(
         ChangeEmailRequest request,
         ICurrentUser currentUser,
@@ -582,7 +588,7 @@ public static class ToamaisutaaPasswordEndpointExtensions
         if (!cooldown.TryEnter("email-change", account))
         {
             return Results.Json(
-                new ValidationErrorResponse { Errors = ["A verification link was sent a moment ago. Wait a minute before asking for another."] },
+                new ValidationErrorResponse { Errors = [$"A verification link was sent a moment ago. Wait {Spoken(cooldown.Period)} before asking for another."] },
                 statusCode: StatusCodes.Status429TooManyRequests);
         }
 

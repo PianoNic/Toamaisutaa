@@ -105,13 +105,22 @@ user straight in.
 ```
 
 **`POST /auth/password`** - authenticated. Omit `currentPassword` when the account arrived through an
-identity provider and is gaining its first password. Answers 204 or 400.
+identity provider and is gaining its first password. Answers 204, 400, or 429 when the per-address
+rate limit refuses it.
 
 A first password has no current one to prove, so it needs a recent sign-in instead: the caller's
 token must carry an `auth_time` from the identity provider, or a `toa_2fa_at`, within
 `LocalLogin:FirstPasswordProofWindow` (five minutes by default). Otherwise a stolen access token would
 be enough to add a password that outlives it. Send the user back through the identity provider with
 `max_age` or `prompt=login` first, so the token they come back with is fresh.
+
+::: warning The access token has to carry `auth_time`
+It is read off the token presented here, which is the access token, and many providers put
+`auth_time` only in the ID token. Entra and Auth0 leave it out of access tokens by default, and
+`prompt=login` does not change that. Configure the provider to include it - an optional or custom
+claim on the access token - or these accounts will get 400 however recently they signed in. Keycloak
+includes it by default.
+:::
 
 The new credential signs in with the user name and carries no email address. The provider's email is
 only what the provider asserted, and copying it in made it a reset address for a mailbox nobody had
@@ -136,6 +145,13 @@ queue, so a real account takes no longer to answer than an unknown address: wait
 server inside the request told the clock what the body would not. A second request for the same
 address inside `LocalLogin:MailRequestCooldown` (a minute by default) is dropped, whether or not the
 address has an account.
+
+::: warning Your notifier runs without a request
+`IPasswordResetNotifier.SendAsync` is called after the 204, in a scope of its own, with no
+`HttpContext`. A notifier that builds its link from `IHttpContextAccessor` or the request's host
+throws there, the failure is only logged, and reset mail stops arriving. Build the link from
+configuration.
+:::
 
 ```json
 { "email": "ada@example.com" }
@@ -401,7 +417,7 @@ hands you - rather than expecting to construct one.
 | `LocalLogin:MinimumPasswordLength` | `8` | NIST: a length floor, no composition rules |
 | `LocalLogin:MaximumPasswordLength` | `128` | Not a strength rule - a bound on an anonymous endpoint |
 | `LocalLogin:PasswordResetTokenLifetime` | `01:00:00` | Single use |
-| `LocalLogin:MailRequestCooldown` | `00:01:00` | One reset or magic-link request per address; zero turns it off |
+| `LocalLogin:MailRequestCooldown` | `00:01:00` | One reset or magic-link request per address, and one email-change link per account; zero turns it off |
 | `LocalLogin:InvitationTokenLifetime` | `7.00:00:00` | Single use |
 | `LocalLogin:EmailVerificationTokenLifetime` | `1.00:00:00` | Single use |
 | `LocalLogin:MagicLinkTokenLifetime` | `00:15:00` | Single use. See [magic-link sign-in](/magic-link) |
@@ -410,6 +426,6 @@ hands you - rather than expecting to construct one.
 | `LocalLogin:EndpointPrefix` | `/auth` | |
 | `LocalLogin:SessionEndpointPrefix` | `/sessions` | Appended to `EndpointPrefix`. See [sessions](/sessions) |
 | `LocalLogin:IpAddressStorage` | `None` | What a session row keeps of the caller's address |
-| `LocalLogin:RateLimit:Enabled` | `true` | Per caller address, fixed window |
+| `LocalLogin:RateLimit:Enabled` | `true` | Per caller address, fixed window. One budget across the anonymous endpoints and the signed-in ones that take a password or code as proof |
 | `LocalLogin:RateLimit:PermitLimit` / `Window` | `10` / `00:01:00` | |
 | `LocalLogin:TokenCleanupInterval` | `06:00:00` | Only used by `AddToamaisutaaTokenCleanup()` |

@@ -29,6 +29,11 @@ public interface IMagicLinkNotifier
     /// nowhere else. That is the verified address on the local credential, filled in for this call,
     /// which is the whole reason a link is allowed to be a credential at all. Do not look the user
     /// up again and mail the profile's address instead: an identity provider's sync writes that one.
+    /// <para>
+    /// Called from <c>POST /auth/magic-link</c> after the 204 has gone, on a background queue, in a
+    /// scope of its own. There is no <c>HttpContext</c>: build links from configuration, never from
+    /// the request's host. What this throws is logged and reaches nobody.
+    /// </para>
     /// </remarks>
     Task SendAsync(ToamaisutaaUser user, string magicLinkToken, CancellationToken cancellationToken = default);
 }
