@@ -148,10 +148,11 @@ internal sealed class PasswordAccountService(
             logger.LogInformation("Changed the password for user {UserId}.", userId);
         }
 
+        // Passkeys before the stamp: see RevokeAllPasskeysAsync.
+        await RevokeAllPasskeysAsync(userId, "password-changed", cancellationToken);
         await users.UpdateSecurityStampAsync(userId, SecureTokens.Create(), cancellationToken);
         await RevokeAllSessionsAsync(userId, "password-changed", now, cancellationToken);
         await trustedDevices.RevokeAllAsync(userId, "password-changed", now, cancellationToken);
-        await RevokeAllPasskeysAsync(userId, "password-changed", cancellationToken);
         await RetireOutstandingLinksAsync(userId, now, cancellationToken);
 
         await events.PublishAsync(new PasswordChanged { OccurredAt = now, UserId = userId }, cancellationToken);
@@ -280,10 +281,10 @@ internal sealed class PasswordAccountService(
 
         // Ahead of the notifier: the hash is already committed, and a throwing notifier must not
         // leave the sessions, devices and links of the person being locked out alive.
+        await RevokeAllPasskeysAsync(userId, "admin-password-set", cancellationToken);
         await users.UpdateSecurityStampAsync(userId, SecureTokens.Create(), cancellationToken);
         await RevokeAllSessionsAsync(userId, "admin-password-set", now, cancellationToken);
         await trustedDevices.RevokeAllAsync(userId, "admin-password-set", now, cancellationToken);
-        await RevokeAllPasskeysAsync(userId, "admin-password-set", cancellationToken);
         await RetireOutstandingLinksAsync(userId, now, cancellationToken);
 
         await events.PublishAsync(
@@ -858,10 +859,10 @@ internal sealed class PasswordAccountService(
 
         await RetireOutstandingLinksAsync(stored.UserId, now, cancellationToken);
 
+        await RevokeAllPasskeysAsync(stored.UserId, "password-reset", cancellationToken);
         await users.UpdateSecurityStampAsync(stored.UserId, SecureTokens.Create(), cancellationToken);
         await RevokeAllSessionsAsync(stored.UserId, "password-reset", now, cancellationToken);
         await trustedDevices.RevokeAllAsync(stored.UserId, "password-reset", now, cancellationToken);
-        await RevokeAllPasskeysAsync(stored.UserId, "password-reset", cancellationToken);
 
         await events.PublishAsync(new PasswordReset { OccurredAt = now, UserId = stored.UserId }, cancellationToken);
 
@@ -873,6 +874,10 @@ internal sealed class PasswordAccountService(
     /// A passkey signs in on its own, so one registered by an intruder would outlive everything else
     /// revoked here. Resolved lazily because the passkey package is optional.
     /// </summary>
+    /// <remarks>
+    /// Call before the stamp moves. A passkey sign-in reads the stamp and then checks its credential is
+    /// still there, so it either sees the credential gone or signs in with a stamp that is about to die.
+    /// </remarks>
     private async Task RevokeAllPasskeysAsync(Guid userId, string reason, CancellationToken cancellationToken)
     {
         var passkeys = serviceProvider.GetService<IPasskeyCredentialStore>();
