@@ -55,6 +55,40 @@ public class ConcurrentCredentialWriteHttpTests
         await Assert.That(stored!.PasswordHash).IsEqualTo("reset-hash");
     }
 
+    /// <summary>
+    /// One failure whose window has run out: every reservation restarts the window at a count of one,
+    /// so the count never changes, and a write conditional on the count let a whole burst of stale
+    /// reservations through unlimited.
+    /// </summary>
+    [Test]
+    public async Task A_window_restart_from_a_stale_read_conflicts_with_one_that_landed()
+    {
+        await using var app = await TestApp.StartAsync();
+        var account = await Account.RegisterAsync(app);
+        var userId = Guid.Parse(account.Claims().String("sub")!);
+
+        await app.Client.PostJson("/auth/login", new { identifier = account.UserName, password = "not the password" });
+        app.Time.Advance(TimeSpan.FromHours(1));
+
+        await using var first = app.Services.CreateAsyncScope();
+        await using var second = app.Services.CreateAsyncScope();
+
+        var firstStore = first.ServiceProvider.GetRequiredService<IPasswordCredentialStore>();
+        var secondStore = second.ServiceProvider.GetRequiredService<IPasswordCredentialStore>();
+
+        var winner = (await firstStore.FindByUserIdAsync(userId))!;
+        var stale = (await secondStore.FindByUserIdAsync(userId))!;
+
+        await Assert.That(winner.FailedAttemptCount).IsEqualTo(1);
+
+        winner.FirstFailedAttemptAt = app.Time.Now;
+        await firstStore.UpdateAsync(winner);
+
+        stale.FirstFailedAttemptAt = app.Time.Now.AddSeconds(1);
+
+        await Assert.That(async () => await secondStore.UpdateAsync(stale)).Throws<CredentialConcurrencyException>();
+    }
+
     /// <summary>A lock resets the count to zero, so a stale write conditional on the count alone would
     /// still match and clear the lock.</summary>
     [Test]

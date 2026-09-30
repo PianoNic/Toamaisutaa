@@ -34,6 +34,10 @@ public sealed class ToamaisutaaPasswordCredentialConfiguration : IEntityTypeConf
         builder.Property(credential => credential.FailedAttemptCount).IsConcurrencyToken();
         builder.Property(credential => credential.LockedOutUntil).IsConcurrencyToken();
 
+        // A window restart at a count of one writes the same count back, so without this a burst of
+        // stale reservations all match and all get checked.
+        builder.Property(credential => credential.FirstFailedAttemptAt).IsConcurrencyToken();
+
         builder.HasIndex(credential => credential.NormalizedUserName).IsUnique();
 
         // Nullable and unique relies on the providers treating NULLs as distinct.
