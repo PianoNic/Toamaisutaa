@@ -200,7 +200,8 @@ public class TwoFactorLockoutHttpTests
         await Task.WhenAll(Enumerable.Range(0, 20).Select(_ =>
             app.Client.PostJson("/auth/2fa/verify", new { challenge, code = wrong })));
 
-        await Assert.That(probe.Total).IsLessThanOrEqualTo(Threshold);
+        // Exactly, not at most: a probe bound to a renamed instrument counts nothing, and zero is at most.
+        await Assert.That(probe.Total).IsEqualTo(Threshold);
     }
 
     [Test]
@@ -216,7 +217,8 @@ public class TwoFactorLockoutHttpTests
 
         // A refusal of a locked account runs the dummy derivation too, for the clock, and is tagged
         // no_credential. Only the checks against the real hash are counted.
-        await Assert.That(probe.Results.Count(result => result == "failed")).IsLessThanOrEqualTo(Threshold);
+        // Exactly, not at most: a renamed instrument or tag counts nothing, and zero is at most.
+        await Assert.That(probe.Results.Count(result => result == "failed")).IsEqualTo(Threshold);
     }
 
     private static async Task<string> ChallengeAsync(Account account)
