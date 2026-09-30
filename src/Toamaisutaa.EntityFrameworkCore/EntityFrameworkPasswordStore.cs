@@ -22,12 +22,17 @@ internal sealed class EntityFrameworkPasswordStore<TContext>(TContext context)
 
     public async Task<ToamaisutaaPasswordCredential?> FindByIdentifierAsync(string normalizedIdentifier, CancellationToken cancellationToken = default)
     {
-        var matches = await context.Set<ToamaisutaaPasswordCredential>()
+        // Filtered ordinally after the query: MySQL's collation would also hand back rows that match
+        // only by ignoring accents, and a sign-in has no business resolving an alias.
+        var matches = (await context.Set<ToamaisutaaPasswordCredential>()
             .AsTracking()
             .Where(credential => credential.NormalizedUserName == normalizedIdentifier
                 || credential.NormalizedEmail == normalizedIdentifier)
+            .ToListAsync(cancellationToken))
+            .Where(credential => string.Equals(credential.NormalizedUserName, normalizedIdentifier, StringComparison.Ordinal)
+                || string.Equals(credential.NormalizedEmail, normalizedIdentifier, StringComparison.Ordinal))
             .Take(2)
-            .ToListAsync(cancellationToken);
+            .ToList();
 
         if (matches.Count < 2)
             return matches.SingleOrDefault();
@@ -234,14 +239,17 @@ internal sealed class EntityFrameworkPasswordStore<TContext>(TContext context)
             .Where(token => token.ExpiresAt <= expiredBefore)
             .ExecuteDeleteAsync(cancellationToken);
 
+    // Re-compared ordinally for the reason FindByNormalizedEmailAsync gives: on MySQL an accented
+    // address found, reused and revoked the invitation of the plain one.
     async Task<ToamaisutaaInvitationToken?> IInvitationTokenStore.FindOpenByEmailAsync(
         string normalizedEmail,
         DateTimeOffset now,
         CancellationToken cancellationToken) =>
-        await context.Set<ToamaisutaaInvitationToken>()
+        (await context.Set<ToamaisutaaInvitationToken>()
             .Where(token => token.NormalizedEmail == normalizedEmail && token.ConsumedAt == null && token.ExpiresAt > now)
             .OrderByDescending(token => token.CreatedAt)
-            .FirstOrDefaultAsync(cancellationToken);
+            .ToListAsync(cancellationToken))
+        .FirstOrDefault(token => string.Equals(token.NormalizedEmail, normalizedEmail, StringComparison.Ordinal));
 
     async Task IInvitationTokenStore.InvalidateAllForUserAsync(Guid userId, DateTimeOffset consumedAt, CancellationToken cancellationToken) =>
         await context.Set<ToamaisutaaInvitationToken>()
