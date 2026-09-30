@@ -9,7 +9,10 @@ internal sealed class DefaultEmailVerificationEmailTemplate(IOptions<Toamaisutaa
 {
     public EmailVerificationEmailContent Build(ToamaisutaaUser user, string email, string verificationToken)
     {
-        var link = BuildLink(verificationToken);
+        var link = LinkTemplates.Build(
+            options.Value.EmailVerificationLinkTemplate,
+            nameof(ToamaisutaaSmtpEmailOptions.EmailVerificationLinkTemplate),
+            verificationToken);
 
         // No name, deliberately. This goes to an address nobody has proven yet, chosen by whoever is
         // signed in, and the name is whatever they registered with - a sentence and a URL, if they
@@ -39,18 +42,5 @@ internal sealed class DefaultEmailVerificationEmailTemplate(IOptions<Toamaisutaa
                 <p>If you did not request this, you can ignore this email. Nothing changes until the link is used.</p>
                 """,
         };
-    }
-
-    private string BuildLink(string verificationToken)
-    {
-        var template = options.Value.EmailVerificationLinkTemplate;
-
-        // Validated at startup, so this is only reachable if the option was never set - which is
-        // itself a caller error, since the default template cannot invent a page it knows nothing
-        // about. A missing link is better than a wrong one.
-        if (string.IsNullOrWhiteSpace(template))
-            throw new InvalidOperationException("Email:Smtp:EmailVerificationLinkTemplate is not set.");
-
-        return template.Replace("{token}", Uri.EscapeDataString(verificationToken), StringComparison.Ordinal);
     }
 }

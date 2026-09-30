@@ -12,7 +12,7 @@ internal sealed class DefaultAdminPasswordIssuedEmailTemplate(IOptions<Toamaisut
 
     public AdminPasswordIssuedEmailContent Build(ToamaisutaaUser user, string rawPassword)
     {
-        var name = string.IsNullOrWhiteSpace(user.DisplayName) ? user.UserName ?? "there" : user.DisplayName;
+        var name = Greeting.NameOf(user);
         var userName = user.UserName;
         var signInUrl = options.Value.SignInUrl;
 

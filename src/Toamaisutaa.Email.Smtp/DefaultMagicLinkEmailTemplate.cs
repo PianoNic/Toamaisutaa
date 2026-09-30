@@ -16,7 +16,10 @@ internal sealed class DefaultMagicLinkEmailTemplate(
 {
     public MagicLinkEmailContent Build(ToamaisutaaUser user, string magicLinkToken)
     {
-        var link = BuildLink(magicLinkToken);
+        var link = LinkTemplates.Build(
+            options.Value.MagicLinkTemplate,
+            nameof(ToamaisutaaSmtpEmailOptions.MagicLinkTemplate),
+            magicLinkToken);
         var minutes = (int)Math.Ceiling(localLogin.Value.MagicLinkTokenLifetime.TotalMinutes);
 
         // No name, for the reason the verification mail gives: it is whatever the account registered
@@ -47,18 +50,5 @@ internal sealed class DefaultMagicLinkEmailTemplate(
                 you can ignore this email.</p>
                 """,
         };
-    }
-
-    private string BuildLink(string magicLinkToken)
-    {
-        var template = options.Value.MagicLinkTemplate;
-
-        // Validated at startup, so this is only reachable if the option was never set - which is
-        // itself a caller error, since the default template cannot invent a page it knows nothing
-        // about. A missing link is better than a wrong one.
-        if (string.IsNullOrWhiteSpace(template))
-            throw new InvalidOperationException("Email:Smtp:MagicLinkTemplate is not set.");
-
-        return template.Replace("{token}", Uri.EscapeDataString(magicLinkToken), StringComparison.Ordinal);
     }
 }

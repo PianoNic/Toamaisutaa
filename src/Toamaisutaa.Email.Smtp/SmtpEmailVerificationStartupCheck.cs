@@ -18,26 +18,14 @@ internal sealed class SmtpEmailVerificationStartupCheck(
         if (template is not DefaultEmailVerificationEmailTemplate)
             return Task.CompletedTask;
 
-        var linkTemplate = options.Value.EmailVerificationLinkTemplate;
+        var problem = LinkTemplates.Problem(
+            options.Value.EmailVerificationLinkTemplate,
+            nameof(ToamaisutaaSmtpEmailOptions.EmailVerificationLinkTemplate),
+            "verification",
+            nameof(IEmailVerificationEmailTemplate));
 
-        if (string.IsNullOrWhiteSpace(linkTemplate))
-        {
-            throw new InvalidOperationException(
-                "Toamaisutaa SMTP email verification is registered but not usable:"
-                + Environment.NewLine
-                + "  - Email:Smtp:EmailVerificationLinkTemplate is not set. The default template needs it to build the "
-                + "link the verification email points at - or register your own IEmailVerificationEmailTemplate that "
-                + "does not need it.");
-        }
-
-        if (!linkTemplate.Contains("{token}", StringComparison.Ordinal))
-        {
-            throw new InvalidOperationException(
-                "Toamaisutaa SMTP email verification is registered but not usable:"
-                + Environment.NewLine
-                + "  - Email:Smtp:EmailVerificationLinkTemplate does not contain \"{token}\", so every verification link "
-                + "would point at the same place.");
-        }
+        if (problem is not null)
+            throw StartupProblems.Refusal("Toamaisutaa SMTP email verification is registered but not usable:", [problem]);
 
         return Task.CompletedTask;
     }

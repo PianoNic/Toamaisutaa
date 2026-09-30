@@ -18,25 +18,14 @@ internal sealed class SmtpMagicLinkStartupCheck(
         if (template is not DefaultMagicLinkEmailTemplate)
             return Task.CompletedTask;
 
-        var linkTemplate = options.Value.MagicLinkTemplate;
+        var problem = LinkTemplates.Problem(
+            options.Value.MagicLinkTemplate,
+            nameof(ToamaisutaaSmtpEmailOptions.MagicLinkTemplate),
+            "sign-in",
+            nameof(IMagicLinkEmailTemplate));
 
-        if (string.IsNullOrWhiteSpace(linkTemplate))
-        {
-            throw new InvalidOperationException(
-                "Toamaisutaa SMTP magic-link email is registered but not usable:"
-                + Environment.NewLine
-                + "  - Email:Smtp:MagicLinkTemplate is not set. The default template needs it to build the link the "
-                + "sign-in email points at - or register your own IMagicLinkEmailTemplate that does not need it.");
-        }
-
-        if (!linkTemplate.Contains("{token}", StringComparison.Ordinal))
-        {
-            throw new InvalidOperationException(
-                "Toamaisutaa SMTP magic-link email is registered but not usable:"
-                + Environment.NewLine
-                + "  - Email:Smtp:MagicLinkTemplate does not contain \"{token}\", so every sign-in link would point at "
-                + "the same place.");
-        }
+        if (problem is not null)
+            throw StartupProblems.Refusal("Toamaisutaa SMTP magic-link email is registered but not usable:", [problem]);
 
         return Task.CompletedTask;
     }

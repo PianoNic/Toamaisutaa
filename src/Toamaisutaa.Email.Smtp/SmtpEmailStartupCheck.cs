@@ -25,24 +25,17 @@ internal sealed class SmtpEmailStartupCheck(
         if (string.IsNullOrWhiteSpace(settings.From) || !MailboxAddress.TryParse(settings.From, out _))
             problems.Add("Email:Smtp:From is not set or is not a valid email address.");
 
-        if (string.IsNullOrWhiteSpace(settings.PasswordResetLinkTemplate))
-        {
-            problems.Add(
-                "Email:Smtp:PasswordResetLinkTemplate is not set. The default template needs it to build the link "
-                + "the reset email points at - or register your own IPasswordResetEmailTemplate that does not need it.");
-        }
-        else if (!settings.PasswordResetLinkTemplate.Contains("{token}", StringComparison.Ordinal))
-        {
-            problems.Add("Email:Smtp:PasswordResetLinkTemplate does not contain \"{token}\", so every reset link would point at the same place.");
-        }
+        var resetLink = LinkTemplates.Problem(
+            settings.PasswordResetLinkTemplate,
+            nameof(ToamaisutaaSmtpEmailOptions.PasswordResetLinkTemplate),
+            "reset",
+            nameof(IPasswordResetEmailTemplate));
+
+        if (resetLink is not null)
+            problems.Add(resetLink);
 
         if (problems.Count > 0)
-        {
-            throw new InvalidOperationException(
-                "Toamaisutaa SMTP email is registered but not usable:"
-                + Environment.NewLine
-                + string.Join(Environment.NewLine, problems.Select(problem => "  - " + problem)));
-        }
+            throw StartupProblems.Refusal("Toamaisutaa SMTP email is registered but not usable:", problems);
 
         if (settings.SkipCertificateVerification)
             logger.LogWarning("Email:Smtp:SkipCertificateVerification is on - the SMTP server's TLS certificate is not being checked.");

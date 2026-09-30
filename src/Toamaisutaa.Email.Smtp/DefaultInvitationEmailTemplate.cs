@@ -10,11 +10,14 @@ internal sealed class DefaultInvitationEmailTemplate(IOptions<ToamaisutaaSmtpEma
 {
     public InvitationEmailContent Build(ToamaisutaaUser user, string invitationToken)
     {
-        var link = BuildLink(invitationToken);
+        var link = LinkTemplates.Build(
+            options.Value.InvitationLinkTemplate,
+            nameof(ToamaisutaaSmtpEmailOptions.InvitationLinkTemplate),
+            invitationToken);
 
         // A reserved row has neither a user name nor a display name until the invitation is
         // completed, so this greeting is usually the unnamed one.
-        var name = string.IsNullOrWhiteSpace(user.DisplayName) ? user.UserName ?? "there" : user.DisplayName;
+        var name = Greeting.NameOf(user);
 
         return new InvitationEmailContent
         {
@@ -37,18 +40,5 @@ internal sealed class DefaultInvitationEmailTemplate(IOptions<ToamaisutaaSmtpEma
                 <p>If you were not expecting this, you can ignore this email.</p>
                 """,
         };
-    }
-
-    private string BuildLink(string invitationToken)
-    {
-        var template = options.Value.InvitationLinkTemplate;
-
-        // Validated at startup, so this is only reachable if the option was never set - which is
-        // itself a caller error, since the default template cannot invent a page it knows nothing
-        // about. A missing link is better than a wrong one.
-        if (string.IsNullOrWhiteSpace(template))
-            throw new InvalidOperationException("Email:Smtp:InvitationLinkTemplate is not set.");
-
-        return template.Replace("{token}", Uri.EscapeDataString(invitationToken), StringComparison.Ordinal);
     }
 }
