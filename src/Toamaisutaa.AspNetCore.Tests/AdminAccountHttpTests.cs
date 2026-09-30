@@ -46,6 +46,41 @@ public class AdminAccountHttpTests
         await Assert.That(login.StatusCode).IsEqualTo(HttpStatusCode.OK);
     }
 
+    /// <summary>Generated and sent nowhere, the password was known to nobody and the call answered
+    /// success.</summary>
+    [Test]
+    public async Task A_generated_password_with_no_address_to_send_it_to_is_refused()
+    {
+        await using var app = await TestApp.StartAsync();
+        var admin = await Account.RegisterAsync(app, TestApp.AdminUserName);
+
+        var created = await app.Client.PostJson(
+            "/auth/users",
+            new { userName = "noaddress", email = (string?)null, password = (string?)null },
+            admin.AccessToken);
+
+        await Assert.That(created.StatusCode).IsEqualTo(HttpStatusCode.BadRequest);
+        await Assert.That(app.IssuedPasswords).IsEmpty();
+
+        // Given a password, the same account is fine: the admin knows it.
+        var typed = await app.Client.PostJson(
+            "/auth/users",
+            new { userName = "noaddress", email = (string?)null, password = "a chosen password" },
+            admin.AccessToken);
+
+        await Assert.That(typed.StatusCode).IsEqualTo(HttpStatusCode.Created);
+        var userId = (await typed.Json()).String("userId");
+
+        var set = await app.Client.PostJson($"/auth/users/{userId}/password", new { password = (string?)null }, admin.AccessToken);
+
+        await Assert.That(set.StatusCode).IsEqualTo(HttpStatusCode.BadRequest);
+        await Assert.That(app.IssuedPasswords.Count).IsEqualTo(1);
+
+        // Nothing changed: the password it had still signs in.
+        var login = await app.Client.PostJson("/auth/login", new { identifier = "noaddress", password = "a chosen password" });
+        await Assert.That(login.StatusCode).IsEqualTo(HttpStatusCode.OK);
+    }
+
     [Test]
     public async Task Creating_a_user_requires_authentication()
     {
