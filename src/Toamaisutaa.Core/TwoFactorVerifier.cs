@@ -73,10 +73,6 @@ internal sealed class TwoFactorVerifier(
 
             metrics.TwoFactorVerified(TwoFactorSource.Otp, succeeded: true);
 
-            // Kept in sync here too, or the rewrap below writes back the old step and undoes the
-            // replay protection.
-            enrolment.LastUsedStep = matchedStep;
-
             if (protector.NeedsRewrap(enrolment.EncryptionKeyVersion))
                 await RewrapAsync(enrolment, secret, now, cancellationToken);
 
@@ -158,13 +154,17 @@ internal sealed class TwoFactorVerifier(
     {
         var rewrapped = protector.Protect(secret);
 
-        enrolment.SecretCiphertext = rewrapped.Ciphertext;
-        enrolment.SecretNonce = rewrapped.Nonce;
-        enrolment.SecretTag = rewrapped.Tag;
-        enrolment.EncryptionKeyVersion = rewrapped.KeyVersion;
-        enrolment.UpdatedAt = now;
-
-        await enrolments.UpsertAsync(enrolment, cancellationToken);
+        // Lost to another request's rewrap or re-enrolment, which already left a current secret.
+        if (!await enrolments.RewrapSecretAsync(
+                enrolment.UserId,
+                enrolment.EncryptionKeyVersion,
+                rewrapped.Ciphertext,
+                rewrapped.Nonce,
+                rewrapped.Tag,
+                rewrapped.KeyVersion,
+                now,
+                cancellationToken))
+            return;
 
         logger.LogInformation(
             "Re-encrypted the two-factor secret for user {UserId} under key version {KeyVersion}.",

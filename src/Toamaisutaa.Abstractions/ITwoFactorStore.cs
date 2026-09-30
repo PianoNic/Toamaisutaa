@@ -27,6 +27,40 @@ public interface ITwoFactorStore
         return true;
     }
 
+    /// <summary>
+    /// Writes the secret re-encrypted under the current key, and nothing else, if it is still stored
+    /// under <paramref name="expectedKeyVersion"/>.
+    /// </summary>
+    /// <returns>False when the row is gone or another request rewrapped or replaced it first.</returns>
+    /// <remarks>
+    /// Only the secret columns: a whole-row write from the verifying request puts back the used step
+    /// and wrong-code count it read, which another request may have moved since, reopening a spent
+    /// code. The default here reads and writes the whole row, which a store that can should replace
+    /// with one conditional write of these columns.
+    /// </remarks>
+    async Task<bool> RewrapSecretAsync(
+        Guid userId,
+        string expectedKeyVersion,
+        byte[] secretCiphertext,
+        byte[] secretNonce,
+        byte[] secretTag,
+        string keyVersion,
+        DateTimeOffset updatedAt,
+        CancellationToken cancellationToken = default)
+    {
+        if (await FindAsync(userId, cancellationToken) is not { } enrolment || enrolment.EncryptionKeyVersion != expectedKeyVersion)
+            return false;
+
+        enrolment.SecretCiphertext = secretCiphertext;
+        enrolment.SecretNonce = secretNonce;
+        enrolment.SecretTag = secretTag;
+        enrolment.EncryptionKeyVersion = keyVersion;
+        enrolment.UpdatedAt = updatedAt;
+
+        await UpsertAsync(enrolment, cancellationToken);
+        return true;
+    }
+
     Task DeleteAsync(Guid userId, CancellationToken cancellationToken = default);
 
     /// <summary>Records the accepted time step, which is what makes a replay fail.</summary>

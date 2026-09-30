@@ -68,6 +68,37 @@ internal sealed class EntityFrameworkTwoFactorStore<TContext>(TContext context)
         return true;
     }
 
+    public async Task<bool> RewrapSecretAsync(
+        Guid userId,
+        string expectedKeyVersion,
+        byte[] secretCiphertext,
+        byte[] secretNonce,
+        byte[] secretTag,
+        string keyVersion,
+        DateTimeOffset updatedAt,
+        CancellationToken cancellationToken = default)
+    {
+        var written = await context.Set<ToamaisutaaUserTwoFactor>()
+            .Where(enrolment => enrolment.UserId == userId && enrolment.EncryptionKeyVersion == expectedKeyVersion)
+            .ExecuteUpdateAsync(
+                setters => setters
+                    .SetProperty(enrolment => enrolment.SecretCiphertext, secretCiphertext)
+                    .SetProperty(enrolment => enrolment.SecretNonce, secretNonce)
+                    .SetProperty(enrolment => enrolment.SecretTag, secretTag)
+                    .SetProperty(enrolment => enrolment.EncryptionKeyVersion, keyVersion)
+                    .SetProperty(enrolment => enrolment.UpdatedAt, updatedAt),
+                cancellationToken) == 1;
+
+        // Bypassed the tracker; reloaded so a later whole-row write cannot put the old ciphertext back.
+        var tracked = context.ChangeTracker.Entries<ToamaisutaaUserTwoFactor>()
+            .FirstOrDefault(entry => entry.Entity.UserId == userId);
+
+        if (tracked is not null)
+            await tracked.ReloadAsync(cancellationToken);
+
+        return written;
+    }
+
     public async Task DeleteAsync(Guid userId, CancellationToken cancellationToken = default)
     {
         // Detach first, or the next SaveChanges on this request writes the deleted row back.
