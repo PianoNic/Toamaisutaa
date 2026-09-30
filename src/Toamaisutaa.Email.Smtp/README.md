@@ -37,6 +37,12 @@ matter, only that both run.
 
 All of the above are checked at startup, not at the first password reset request.
 
+**Upgrading from 0.7:** `Auto` used to fall back to plaintext on a server that offered no STARTTLS.
+It now refuses, so a local relay that speaks only plaintext - Mailpit or MailHog on 1025, say - fails
+every send until it is configured as what it is: set `Email:Smtp:Security` to `None` for it.
+Invitations answer 502 while it is wrong, and reset and magic-link mail is dropped with an error in
+the log.
+
 ## The other four emails
 
 `AddToamaisutaaSmtpEmail` sends the reset email and nothing else. The others are added one at a

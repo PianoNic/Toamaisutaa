@@ -32,7 +32,7 @@ Everything binds from the `Oidc` section.
 | `Oidc:Scope` | `openid profile email roles` | Served to the client |
 | `Oidc:RedirectUri` | derived | Falls back to `PublicUrl`, then the request origin |
 | `Oidc:PostLogoutRedirectUri` | `RedirectUri` | |
-| `Oidc:PublicUrl` | | Used to derive the two above. Set it in production: without it the redirect URI comes from the request's Host header, which the caller controls, and a warning is logged. Every response built from `IToamaisutaaClientConfigurationProvider`, on `/api/app` or an endpoint of your own, is sent `Cache-Control: no-store` |
+| `Oidc:PublicUrl` | | Used to derive the two above. Set it in production: without it the redirect URI comes from the request's Host header, which the caller controls, and a warning is logged once, on the first request, outside Development. Every response built from `IToamaisutaaClientConfigurationProvider`, on `/api/app` or an endpoint of your own, is sent `Cache-Control: no-store` |
 | `Oidc:AdminRole` | | Registers the `Toamaisutaa.Admin` policy when set, which is also what maps the [admin provisioning endpoints](/provisioning-accounts#the-three-admin-endpoints-need-an-admin-role) |
 | `Oidc:RequireAdminRoleGlobally` | `false` | Makes every endpoint that is not anonymous admin-only - a bare `[Authorize]`, one naming a policy or roles of its own, and this package's own. Enforced in the `IAuthorizationMiddlewareResultHandler`, wrapping any registered before `AddToamaisutaaAuthorization`; register yours earlier, since one registered after replaces it |
 | `Oidc:QueryToken:IncludePaths:0` | | Path prefixes where `?access_token=` is honoured, for SignalR |

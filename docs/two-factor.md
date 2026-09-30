@@ -30,10 +30,10 @@ enrol, be handed recovery codes, and never once be challenged.
 | Method | Route | Auth | Answers |
 |---|---|---|---|
 | GET | `/auth/2fa` | Authenticated | 200 with status |
-| POST | `/auth/2fa/begin` | Authenticated | 200 with a secret and an `otpauth://` URI |
-| POST | `/auth/2fa/confirm` | Authenticated | 200 with recovery codes, or 400 |
-| POST | `/auth/2fa/disable` | Authenticated **and proof** | 204, or 400 |
-| POST | `/auth/2fa/recovery-codes` | Authenticated **and proof** | 200 with new codes, or 400 |
+| POST | `/auth/2fa/begin` | Authenticated **and proof** | 200 with a secret and an `otpauth://` URI, or 400 |
+| POST | `/auth/2fa/confirm` | Authenticated | 200 with recovery codes, 400, or 429 |
+| POST | `/auth/2fa/disable` | Authenticated **and proof** | 204, 400, or 429 |
+| POST | `/auth/2fa/recovery-codes` | Authenticated **and proof** | 200 with new codes, 400, or 429 |
 | POST | `/auth/2fa/verify` | Anonymous | 200 with a token pair, or 401 |
 | POST | `/auth/2fa/step-up` | Authenticated | 200 with a challenge, 400, or 401 |
 | POST | `/auth/2fa/step-up/verify` | Authenticated | 200 with a new access token, 400, or 401 |
@@ -61,6 +61,10 @@ Send the current password:
 An account with no password - one an identity provider owns, or a passkey-only one - sends no body
 and instead needs a sign-in within `TwoFactor:EnrolmentProofWindow` (five minutes by default), read
 off the token's `auth_time` or `toa_2fa_at`. A wrong password counts toward the account lockout.
+
+That token is the access token, and many providers put `auth_time` only in the ID token - Entra and
+Auth0 leave it out of access tokens by default, and `prompt=login` does not change that. Configure
+the provider to include it, or a provider-only account gets 400 here however recently it signed in.
 
 Render `uri` as a QR code; show `secret` for anyone typing it in by hand.
 

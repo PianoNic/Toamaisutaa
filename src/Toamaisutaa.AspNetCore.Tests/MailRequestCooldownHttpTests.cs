@@ -80,6 +80,20 @@ public class MailRequestCooldownHttpTests
         await Assert.That(retry.StatusCode).IsEqualTo(HttpStatusCode.NoContent);
     }
 
+    /// <summary>"Wait a minute" was written into the answer, whatever the cooldown was set to.</summary>
+    [Test]
+    public async Task The_email_change_cooldown_answer_names_the_configured_wait()
+    {
+        await using var app = await TestApp.StartAsync(configure: settings => settings["LocalLogin:MailRequestCooldown"] = "00:10:00");
+        var account = await Account.RegisterAsync(app);
+
+        await app.Client.PostJson("/auth/email", new { newEmail = account.Email, currentPassword = account.Password }, account.AccessToken);
+        var again = await app.Client.PostJson("/auth/email", new { newEmail = account.Email, currentPassword = account.Password }, account.AccessToken);
+
+        await Assert.That(again.StatusCode).IsEqualTo(HttpStatusCode.TooManyRequests);
+        await Assert.That(string.Join(" ", (await again.Json()).Strings("errors"))).Contains("10 minutes");
+    }
+
     private sealed class FailsOnce : IEmailVerificationNotifier
     {
         private int _calls;

@@ -49,14 +49,16 @@ public static class ToamaisutaaTwoFactorExtensions
     }
 
     /// <summary>
-    /// Makes the enrolment policy work for users who sign in through an identity provider, by
-    /// looking up their local enrolment and adding <c>amr</c> to the token it issued.
+    /// Tells a policy about the local enrolment of users who sign in through an identity provider,
+    /// by adding <c>toa_2fa_enrolled</c> - or <c>toa_2fa_required</c>, under <c>RequiredForAll</c>,
+    /// when they have not enrolled - to the token the provider issued.
     /// </summary>
     /// <remarks>
     /// Opt-in and off by default because it costs a database read on every authenticated request.
-    /// It is also the only thing that can be done for those users: the identity provider owns that
-    /// sign-in and Toamaisutaa never sees it, so this makes a policy enforceable rather than making
-    /// the provider ask for a second factor.
+    /// It never adds <c>amr</c>: being enrolled is not having presented a second factor, and the
+    /// provider owns that sign-in, so Toamaisutaa cannot say what was proved there. A policy that
+    /// needs <c>amr=mfa</c> from a provider's user needs the provider to assert it, or a local
+    /// step-up.
     /// </remarks>
     public static IServiceCollection AddToamaisutaaTwoFactorClaims(this IServiceCollection services)
     {

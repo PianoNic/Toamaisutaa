@@ -13,6 +13,10 @@ what maps the two endpoints - neither exists on the wire without it - and it is 
 `IPasswordAccountService.RequestMagicLinkAsync` work at all; calling it without one throws, at the
 call site rather than at startup.
 
+`SendAsync` is called after `POST /auth/magic-link` has answered 204, in a scope of its own, with no
+`HttpContext`. Build the link from configuration, not from the request's host: a notifier that reads
+the request throws there, and the failure is only logged.
+
 If SMTP is what you want, `Toamaisutaa.Email.Smtp` supplies a notifier:
 
 ```csharp

@@ -232,8 +232,9 @@ internal sealed class TwoFactorService(
     /// unthrottled six-digit oracle whose prize is the second factor itself.
     /// </summary>
     /// <remarks>
-    /// The count lives on the password credential, so an account with none - one an identity
-    /// provider owns - is left to the rate limiter.
+    /// The count lives on the password credential, alongside wrong passwords, or on the enrolment
+    /// for an account that has no credential - one an identity provider owns, or a passkey-only one.
+    /// Either way it is reserved before the code is checked.
     /// </remarks>
     private async Task<(TwoFactorVerification Verification, string? Refusal)> VerifyProofAsync(
         Guid userId,

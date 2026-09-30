@@ -27,7 +27,8 @@ internal sealed class ToamaisutaaClientConfigurationProvider(
         if (configured is null && !environment.IsDevelopment() && Interlocked.Exchange(ref _warnedAboutHost, 1) == 0)
         {
             logger.LogWarning(
-                "Neither Oidc:PublicUrl nor Oidc:RedirectUri is set, so the redirect URI in /config is built from the "
+                "Neither Oidc:PublicUrl nor Oidc:RedirectUri is set, so the redirect URI the client configuration serves "
+                + "(/api/app by default) is built from the "
                 + "request's Host header, which the caller controls. Set Oidc:PublicUrl.");
         }
 

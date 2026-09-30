@@ -83,6 +83,9 @@ means mail is being asked for faster than the mail server takes it, which is wor
 ## What the rate-limit counter covers
 
 `toamaisutaa.rate_limit.rejections` counts the 429s from this package's own limiter on the
-unauthenticated password, two-factor and device endpoints. It is deliberately not the framework's
+anonymous password, two-factor and device endpoints, and on the signed-in ones that take a password
+or a code as proof - `/auth/password`, `/auth/email`, `/auth/2fa/confirm`, `/disable` and
+`/recovery-codes`. They share one budget per address, so callers behind one NAT spend it together
+whichever of these they call. It is deliberately not the framework's
 rate limiter - see [customizing local login](/customizing-password-login) - so it does not appear in
 `aspnetcore.rate_limiting.*`, and the framework's own counters say nothing about it.
