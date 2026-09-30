@@ -6,6 +6,27 @@ public interface ITwoFactorStore
 
     Task UpsertAsync(ToamaisutaaUserTwoFactor enrolment, CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Writes a new pending enrolment, replacing one nobody has confirmed, but never one that has been.
+    /// </summary>
+    /// <returns>False when the stored enrolment is confirmed, including by a request that confirmed it
+    /// while this one was being prepared; nothing is written then.</returns>
+    /// <remarks>
+    /// Must be conditional on the row still being unconfirmed in the same write: a begin that checked
+    /// first and wrote later switched off a second factor confirmed in between. The default here
+    /// checks and then writes, which a store that can should replace with one conditional write.
+    /// </remarks>
+    async Task<bool> ReplacePendingAsync(ToamaisutaaUserTwoFactor enrolment, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(enrolment);
+
+        if (await FindAsync(enrolment.UserId, cancellationToken) is { ConfirmedAt: not null })
+            return false;
+
+        await UpsertAsync(enrolment, cancellationToken);
+        return true;
+    }
+
     Task DeleteAsync(Guid userId, CancellationToken cancellationToken = default);
 
     /// <summary>Records the accepted time step, which is what makes a replay fail.</summary>

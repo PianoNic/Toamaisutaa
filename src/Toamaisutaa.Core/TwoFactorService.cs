@@ -74,7 +74,14 @@ internal sealed class TwoFactorService(
             enrolment.LastUsedStep = null;
             enrolment.UpdatedAt = now;
 
-            await enrolments.UpsertAsync(enrolment, cancellationToken);
+            // Conditional on still being unconfirmed: the proof above takes long enough for another
+            // request to confirm, and writing over that switched the second factor off.
+            if (!await enrolments.ReplacePendingAsync(enrolment, cancellationToken))
+            {
+                throw new TwoFactorEnrolmentException(
+                    "This account already has a confirmed second factor. Disable it before enrolling again, so that "
+                    + "generating a new secret always requires proof of the old one.");
+            }
 
             // Never log any part of the secret or URI: a log line outlives every rotation.
             logger.LogInformation("Started two-factor enrolment for user {UserId}. Nothing is enabled until it is confirmed.", userId);
