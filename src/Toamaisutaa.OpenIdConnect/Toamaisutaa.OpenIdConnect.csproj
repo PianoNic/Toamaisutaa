@@ -20,5 +20,7 @@
   </ItemGroup>
   <ItemGroup>
     <InternalsVisibleTo Include="Toamaisutaa.AspNetCore.Tests" />
+    <!-- Registers the loopback check that sits here, the lowest layer that can see the server. -->
+    <InternalsVisibleTo Include="Toamaisutaa.AspNetCore" />
   </ItemGroup>
 </Project>

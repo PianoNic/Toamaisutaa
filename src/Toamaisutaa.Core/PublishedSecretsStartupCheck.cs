@@ -32,9 +32,28 @@ internal sealed class PublishedSecretsStartupCheck(IServiceProvider provider, IH
 
     public Task StartAsync(CancellationToken cancellationToken)
     {
+        // In Development they are accepted - that is what they are for - but only on loopback, which
+        // is checked once the server has bound its addresses, where ASP.NET can see them.
         if (environment.IsDevelopment())
             return Task.CompletedTask;
 
+        var problems = PublishedValuesInUse(provider);
+
+        if (problems.Count > 0)
+        {
+            throw new InvalidOperationException(
+                $"Toamaisutaa refuses to start in the {environment.EnvironmentName} environment with values from the public sample. "
+                + "Generate your own and set them from the environment or a secret store:"
+                + Environment.NewLine
+                + string.Join(Environment.NewLine, problems.Select(problem => "  - " + problem)));
+        }
+
+        return Task.CompletedTask;
+    }
+
+    /// <summary>One line for each configured value the sample publishes; empty when there are none.</summary>
+    internal static List<string> PublishedValuesInUse(IServiceProvider provider)
+    {
         var problems = new List<string>();
         var local = provider.GetRequiredService<IOptions<ToamaisutaaLocalLoginOptions>>().Value;
         var twoFactor = provider.GetRequiredService<IOptions<ToamaisutaaTwoFactorOptions>>().Value;
@@ -51,16 +70,7 @@ internal sealed class PublishedSecretsStartupCheck(IServiceProvider provider, IH
         if (IsPublishedBase64(twoFactor.EncryptionKey) || twoFactor.RetiredEncryptionKeys.Values.Any(IsPublishedBase64))
             problems.Add("TwoFactor:EncryptionKey (or a retired one) is the sample's published key. Anyone can decrypt the stored TOTP secrets.");
 
-        if (problems.Count > 0)
-        {
-            throw new InvalidOperationException(
-                $"Toamaisutaa refuses to start in the {environment.EnvironmentName} environment with values from the public sample. "
-                + "Generate your own and set them from the environment or a secret store:"
-                + Environment.NewLine
-                + string.Join(Environment.NewLine, problems.Select(problem => "  - " + problem)));
-        }
-
-        return Task.CompletedTask;
+        return problems;
     }
 
     public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;

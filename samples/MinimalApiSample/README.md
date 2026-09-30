@@ -5,7 +5,9 @@ A bearer-protected minimal API using Toamaisutaa, with provisioning on SQLite.
 The signing key, the pepper and the two-factor encryption key are in `appsettings.Development.json`,
 which loads only in Development. They are public - they are in this repository - so do not copy that
 file into anything real: tokens signed with them can be forged by anyone. Outside Development the
-sample refuses to start until real ones come from the environment, which is the point.
+sample refuses to start until real ones come from the environment, which is the point - and in
+Development it refuses them on any address that is not loopback, so binding it to `0.0.0.0` in a
+container needs real keys too.
 
 ## Run it
 
