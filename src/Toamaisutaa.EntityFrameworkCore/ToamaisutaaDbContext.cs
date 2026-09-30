@@ -5,7 +5,8 @@ namespace Toamaisutaa.EntityFrameworkCore;
 
 /// <summary>
 /// Carries the Toamaisutaa tables on its own, for consumers who would rather not touch their
-/// existing context. The alternative is <see cref="ToamaisutaaModelBuilderExtensions.ApplyToamaisutaaConfiguration"/>
+/// existing context. The alternative is
+/// <see cref="ToamaisutaaModelBuilderExtensions.ApplyToamaisutaaConfiguration(ModelBuilder, Microsoft.EntityFrameworkCore.Infrastructure.DatabaseFacade)"/>
 /// inside a context you already have.
 /// </summary>
 public class ToamaisutaaDbContext : DbContext
@@ -57,6 +58,6 @@ public class ToamaisutaaDbContext : DbContext
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
-        modelBuilder.ApplyToamaisutaaConfiguration();
+        modelBuilder.ApplyToamaisutaaConfiguration(Database);
     }
 }

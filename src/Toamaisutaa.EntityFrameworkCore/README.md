@@ -17,7 +17,7 @@ builder.Services.AddToamaisutaaDbContext(db => db.UseNpgsql(
 
 ```csharp
 protected override void OnModelCreating(ModelBuilder modelBuilder) =>
-    modelBuilder.ApplyToamaisutaaConfiguration();
+    modelBuilder.ApplyToamaisutaaConfiguration(Database);
 ```
 
 ```csharp

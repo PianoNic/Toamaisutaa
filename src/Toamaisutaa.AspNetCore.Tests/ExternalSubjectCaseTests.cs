@@ -1,5 +1,6 @@
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.Extensions.DependencyInjection;
 using Toamaisutaa.Abstractions;
 using Toamaisutaa.EntityFrameworkCore;
@@ -82,6 +83,35 @@ public class ExternalSubjectCaseTests
         var refused = await Assert.That(async () => await provisioner.ProvisionAsync(Subject("ALICE"))).Throws<InvalidOperationException>();
 
         await Assert.That(refused!.Message).Contains("collation");
+    }
+
+    /// <summary>
+    /// The model each provider gets, built without connecting to anything. The collation is what
+    /// lets a second subject that differs only in case exist at all under their default collations;
+    /// applying it to a real server is verified separately, because MySQL's provider generated a
+    /// migration that silently dropped it.
+    /// </summary>
+    [Test]
+    [Arguments("sqlserver", "Latin1_General_100_BIN2")]
+    [Arguments("mysql", "utf8mb4_bin")]
+    [Arguments("sqlite", null)]
+    public async Task Subjects_compare_exactly_on_every_provider(string provider, string? collation)
+    {
+        var builder = new DbContextOptionsBuilder<ToamaisutaaDbContext>();
+
+        _ = provider switch
+        {
+            "sqlserver" => builder.UseSqlServer("Server=unused;Database=unused"),
+            "mysql" => builder.UseMySQL("Server=unused;Database=unused"),
+            _ => builder.UseSqlite("DataSource=:memory:"),
+        };
+
+        await using var context = new ToamaisutaaDbContext(builder.Options);
+        // The design-time model: the runtime one drops what only a migration needs, collation included.
+        var model = context.GetService<Microsoft.EntityFrameworkCore.Metadata.IDesignTimeModel>().Model;
+        var subject = model.FindEntityType(typeof(ToamaisutaaExternalLogin))!.FindProperty(nameof(ToamaisutaaExternalLogin.Subject))!;
+
+        await Assert.That(subject.GetCollation()).IsEqualTo(collation);
     }
 
     private sealed class CaseInsensitiveContext(DbContextOptions<CaseInsensitiveContext> options) : ToamaisutaaDbContext(options)

@@ -18,6 +18,9 @@
          to catch, because every one of them was correct until it reached the wire. -->
     <PackageReference Include="Microsoft.AspNetCore.TestHost" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" />
+    <!-- Only to build the model each provider sees; nothing here connects to either. -->
+    <PackageReference Include="Microsoft.EntityFrameworkCore.SqlServer" />
+    <PackageReference Include="MySql.EntityFrameworkCore" />
     <!-- Same reason as the SQLite migrations package: Microsoft.EntityFrameworkCore.Sqlite pulls in
          SQLitePCLRaw.lib.e_sqlite3 2.1.11, which carries GHSA-2m69-gcr7-jv3q. Named here to force
          the patched version rather than build with a known advisory. -->
