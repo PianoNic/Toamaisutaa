@@ -82,6 +82,40 @@ public class UserInfoCacheTests
         await Assert.That(userInfo.Calls).IsEqualTo(2);
     }
 
+    /// <summary>Userinfo answers per grant, so groups fetched for a token with the groups scope went
+    /// to a token for the same person that was never granted it.</summary>
+    [Test]
+    public async Task A_token_without_a_scope_is_not_served_what_one_with_it_fetched()
+    {
+        var userInfo = new CountingUserInfo(RolesBody);
+        userInfo.Release.SetResult();
+
+        var enricher = Enricher(userInfo);
+
+        await enricher.EnrichAsync(Context("sub-1", scope: "openid groups", client: "trusted"));
+        await enricher.EnrichAsync(Context("sub-1", scope: "openid", client: "integration"));
+
+        await Assert.That(userInfo.Calls).IsEqualTo(2);
+    }
+
+    [Test]
+    public async Task Two_tokens_with_the_same_grant_share_an_entry()
+    {
+        var userInfo = new CountingUserInfo(RolesBody);
+        userInfo.Release.SetResult();
+
+        var enricher = Enricher(userInfo);
+
+        await enricher.EnrichAsync(Context("sub-1", scope: "openid groups", client: "trusted"));
+
+        // Same grant in another order, on another token.
+        var second = Context("sub-1", scope: "groups openid", client: "trusted");
+        await enricher.EnrichAsync(second);
+
+        await Assert.That(userInfo.Calls).IsEqualTo(1);
+        await Assert.That(Roles(second)).IsEquivalentTo(new[] { "admin", "staff" });
+    }
+
     [Test]
     public async Task A_userinfo_endpoint_answering_500_leaves_the_token_claims_deciding()
     {
@@ -224,10 +258,18 @@ public class UserInfoCacheTests
         ShareUserInfoCacheAcrossInstances = true,
     };
 
-    private static TokenValidatedContext Context(string subject)
+    private static TokenValidatedContext Context(string subject, string? scope = null, string? client = null)
     {
         var httpContext = new DefaultHttpContext();
-        httpContext.Request.Headers.Authorization = $"Bearer token-for-{subject}";
+        httpContext.Request.Headers.Authorization = $"Bearer token-for-{subject}-{client}-{scope}";
+
+        List<Claim> claims = [new Claim("sub", subject)];
+
+        if (scope is not null)
+            claims.Add(new Claim("scope", scope));
+
+        if (client is not null)
+            claims.Add(new Claim("azp", client));
 
         var options = new JwtBearerOptions
         {
@@ -241,7 +283,7 @@ public class UserInfoCacheTests
 
         return new TokenValidatedContext(httpContext, scheme, options)
         {
-            Principal = new ClaimsPrincipal(new ClaimsIdentity([new Claim("sub", subject)], "Test")),
+            Principal = new ClaimsPrincipal(new ClaimsIdentity(claims, "Test")),
         };
     }
 
