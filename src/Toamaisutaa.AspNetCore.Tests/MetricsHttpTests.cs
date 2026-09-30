@@ -68,6 +68,27 @@ public class SignInMetricTagHttpTests
     }
 }
 
+public class LockoutMetricHttpTests
+{
+    /// <summary>Wrong current passwords lock the account like wrong sign-ins do, and the lockout
+    /// counter missed it, so an attack through a stolen token never showed on it.</summary>
+    [Test]
+    public async Task A_lockout_from_wrong_current_passwords_is_counted()
+    {
+        await using var app = await TestApp.StartAsync();
+        var account = await Account.RegisterAsync(app);
+
+        using var probe = new InstrumentProbe(app, "toamaisutaa.lockouts");
+
+        for (var i = 0; i < 5; i++)
+            await app.Client.PostJson("/auth/password", new { currentPassword = "not the password", newPassword = "a different passphrase" }, account.AccessToken);
+
+        // Locked: the right password is refused too.
+        await Assert.That((await account.LoginAsync()).StatusCode).IsEqualTo(HttpStatusCode.Unauthorized);
+        await Assert.That(probe.Total).IsEqualTo(1);
+    }
+}
+
 internal sealed class InstrumentProbe : IDisposable
 {
     private readonly MeterListener _listener = new();

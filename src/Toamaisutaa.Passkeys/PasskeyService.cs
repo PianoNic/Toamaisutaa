@@ -481,6 +481,7 @@ internal sealed class PasskeyService(
             proof.CurrentPassword,
             hasher,
             events,
+            metrics,
             localLogin.Value,
             logger,
             operation.Name,

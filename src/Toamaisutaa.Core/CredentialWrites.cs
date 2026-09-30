@@ -131,6 +131,7 @@ internal static class CredentialWrites
         string currentPassword,
         IPasswordHasher hasher,
         AuthenticationEventPublisher events,
+        ToamaisutaaMetrics? metrics,
         ToamaisutaaLocalLoginOptions options,
         ILogger logger,
         string action,
@@ -168,6 +169,8 @@ internal static class CredentialWrites
 
         if (reservation.LockedByThisAttempt && credential.LockedOutUntil is { } lockedOutUntil)
         {
+            metrics?.LockedOut();
+
             await events.PublishAsync(
                 new AccountLockedOut { OccurredAt = now, UserId = credential.UserId, LockedOutUntil = lockedOutUntil },
                 cancellationToken);

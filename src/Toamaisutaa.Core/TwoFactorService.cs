@@ -227,6 +227,7 @@ internal sealed class TwoFactorService(
             proof.CurrentPassword,
             hasher,
             events,
+            provider.GetService<ToamaisutaaMetrics>(),
             provider.GetRequiredService<IOptions<ToamaisutaaLocalLoginOptions>>().Value,
             logger,
             "Two-factor enrolment",
