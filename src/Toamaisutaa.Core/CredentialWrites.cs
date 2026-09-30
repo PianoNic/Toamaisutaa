@@ -238,8 +238,8 @@ internal static class CredentialWrites
     /// on guessing that account's code was the per-address rate limiter.
     /// </summary>
     /// <remarks>Reserved before the code is checked, for the reason the credential version gives.</remarks>
-    /// <returns>Whether the code may be checked, and whether this attempt is the one that locked it.</returns>
-    internal static async Task<(bool Allowed, bool LockedByThisAttempt)> ReserveAttemptAsync(
+    /// <returns>Whether the code may be checked, and when this attempt is the one that locked it, until when.</returns>
+    internal static async Task<(bool Allowed, DateTimeOffset? LockedUntil)> ReserveAttemptAsync(
         this ITwoFactorStore store,
         Guid userId,
         ToamaisutaaLocalLoginOptions options,
@@ -250,12 +250,12 @@ internal static class CredentialWrites
         {
             // Nothing to count on: the code is checked and fails on its own, since there is no secret.
             if (await store.FindAsync(userId, cancellationToken) is not { } enrolment)
-                return (true, false);
+                return (true, null);
 
             var current = LockoutState.Of(enrolment);
 
             if (LockoutPolicy.IsLockedOut(current, now))
-                return (false, false);
+                return (false, null);
 
             var next = LockoutPolicy.RegisterFailure(current, options, now);
 
@@ -269,13 +269,13 @@ internal static class CredentialWrites
                     next.LockedOutUntil,
                     cancellationToken))
             {
-                return (true, LockoutPolicy.IsLockedOut(next, now));
+                return (true, LockoutPolicy.IsLockedOut(next, now) ? next.LockedOutUntil : null);
             }
         }
 
         // The count kept moving under every try, which only a flood of attempts does. Refused rather
         // than checked uncounted.
-        return (false, false);
+        return (false, null);
     }
 
     /// <summary>Clears the enrolment's count once a code has been accepted.</summary>

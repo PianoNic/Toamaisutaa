@@ -62,6 +62,48 @@ public class PasswordlessTwoFactorLockoutTests
     }
 
     /// <summary>
+    /// A lock on the enrolment was set and said nothing: no <c>AccountLockedOut</c> for an audit sink,
+    /// and the lockout counter stood still, so a passkey-only account being guessed at was invisible.
+    /// </summary>
+    [Test]
+    public async Task Locking_an_account_with_no_password_at_sign_in_is_reported_once()
+    {
+        var harness = PasswordHarness.Create(withTwoFactor: true);
+        var user = harness.ProvisionExternalUser();
+        await harness.EnrolAsync(user.Id);
+        using var probe = new MeterProbe(harness.Metrics.Meter);
+
+        var challenge = await harness.Gate.IssueChallengeAsync(user.Id, harness.Clock.GetUtcNow(), CancellationToken.None);
+
+        for (var i = 0; i < harness.Options.MaxFailedAttempts + 1; i++)
+        {
+            harness.Clock.Now += TimeSpan.FromSeconds(30);
+            await harness.SignIn.VerifyTwoFactorAsync(new TwoFactorSignInRequest { ChallengeToken = challenge.Token, Code = "000000" });
+        }
+
+        await Assert.That(harness.Events.OfKind<AccountLockedOut>()).HasCount().EqualTo(1);
+        await Assert.That(probe.For("toamaisutaa.lockouts")).HasCount().EqualTo(1);
+    }
+
+    [Test]
+    public async Task Locking_an_account_with_no_password_with_proofs_is_reported_once()
+    {
+        var harness = PasswordHarness.Create(withTwoFactor: true);
+        var user = harness.ProvisionExternalUser();
+        await harness.EnrolAsync(user.Id);
+        using var probe = new MeterProbe(harness.Metrics.Meter);
+
+        for (var i = 0; i < harness.Options.MaxFailedAttempts + 1; i++)
+        {
+            harness.Clock.Now += TimeSpan.FromSeconds(30);
+            await harness.TwoFactor.DisableAsync(user.Id, "000000");
+        }
+
+        await Assert.That(harness.Events.OfKind<AccountLockedOut>()).HasCount().EqualTo(1);
+        await Assert.That(probe.For("toamaisutaa.lockouts")).HasCount().EqualTo(1);
+    }
+
+    /// <summary>
     /// The clear was one conditional write, and a wrong code that landed between its read and its
     /// write made it match nothing: the person was signed in with the count still standing, one
     /// typo from a lockout.

@@ -223,6 +223,7 @@ internal sealed class PasswordSignInService(
         // an account with no password - a passkey-only one - whose count lives on the enrolment.
         ToamaisutaaPasswordCredential? credential = null;
         AttemptReservation? reservation = null;
+        DateTimeOffset? enrolmentLockedUntil = null;
 
         var redemption = await twoFactor.RedeemChallengeAsync(
             request.ChallengeToken,
@@ -242,13 +243,17 @@ internal sealed class PasswordSignInService(
                     return !reservation.Value.Allowed;
                 }
 
-                return !(await twoFactor.ReserveEnrolmentAttemptAsync(userId, options.Value, now, cancellationToken)).Allowed;
+                var (allowed, lockedUntil) = await twoFactor.ReserveEnrolmentAttemptAsync(userId, options.Value, now, cancellationToken);
+                enrolmentLockedUntil = lockedUntil;
+                return !allowed;
             });
 
         if (redemption.Outcome != SignInOutcome.Succeeded)
         {
             if (redemption.Outcome == SignInOutcome.InvalidTwoFactorCode && reservation is { } reserved)
                 await ReportWrongCodeAsync(reserved, "Sign-in", now, cancellationToken);
+            else if (redemption.Outcome == SignInOutcome.InvalidTwoFactorCode && enrolmentLockedUntil is { } until)
+                await ReportLockedOutAsync(redemption.UserId!.Value, until, now, cancellationToken);
             else
                 await GiveBackLostRaceAsync(redemption.Outcome, reservation, now, cancellationToken);
 
@@ -938,12 +943,18 @@ internal sealed class PasswordSignInService(
             credential.LockedOutUntil is { } until ? $"; locked out until {until:O}" : string.Empty);
 
         if (lockedByThisAttempt && credential.LockedOutUntil is { } lockedOutUntil)
-        {
-            metrics.LockedOut();
+            await ReportLockedOutAsync(credential.UserId, lockedOutUntil, now, cancellationToken);
+    }
 
-            await events.PublishAsync(
-                new AccountLockedOut { OccurredAt = now, UserId = credential.UserId, LockedOutUntil = lockedOutUntil },
-                cancellationToken);
-        }
+    /// <summary>The lock, said once, by the attempt that set it - on a credential or, for an account
+    /// with no password, on the enrolment, which used to lock without telling anybody.</summary>
+    private async Task ReportLockedOutAsync(Guid userId, DateTimeOffset lockedOutUntil, DateTimeOffset now, CancellationToken cancellationToken)
+    {
+        logger.LogWarning("User {UserId} is locked out until {LockedOutUntil}.", userId, lockedOutUntil);
+        metrics.LockedOut();
+
+        await events.PublishAsync(
+            new AccountLockedOut { OccurredAt = now, UserId = userId, LockedOutUntil = lockedOutUntil },
+            cancellationToken);
     }
 }
