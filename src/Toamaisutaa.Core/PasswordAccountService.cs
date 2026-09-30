@@ -1021,7 +1021,8 @@ internal sealed class PasswordAccountService(
         string action,
         DateTimeOffset now,
         CancellationToken cancellationToken) =>
-        credentials.CheckCurrentPasswordAsync(credential, currentPassword, hasher, events, options.Value, logger, action, now, cancellationToken);
+        credentials.CheckCurrentPasswordAsync(
+            credential, currentPassword, hasher, events, serviceProvider.GetService<ToamaisutaaMetrics>(), options.Value, logger, action, now, cancellationToken);
 
     // replacing is the hash the current password was checked against; a retry finding another hash
     // lost a race with a reset and must not overwrite it. Null replaces unconditionally.
