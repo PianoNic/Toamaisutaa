@@ -16,6 +16,10 @@ internal sealed class HeldHasher : IPasswordHasher
 
     internal volatile string? Hold;
 
+    /// <summary>Holds only when <see cref="Hold"/> is hashed - a rehash - and lets its
+    /// verification through.</summary>
+    internal volatile bool HashingOnly;
+
     /// <summary>Completes once a request is being held.</summary>
     internal TaskCompletionSource Entered { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
@@ -41,7 +45,9 @@ internal sealed class HeldHasher : IPasswordHasher
 
     public PasswordVerificationResult Verify(string password, string hash)
     {
-        Wait(password);
+        if (!HashingOnly)
+            Wait(password);
+
         return _inner.Verify(password, hash);
     }
 

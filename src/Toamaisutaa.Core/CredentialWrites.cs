@@ -296,7 +296,8 @@ internal static class CredentialWrites
         ToamaisutaaPasswordCredential credential,
         AttemptReservation reservation,
         DateTimeOffset now,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        Rehash? rehash = null)
     {
         var refused = false;
 
@@ -314,6 +315,7 @@ internal static class CredentialWrites
                 if (refused)
                     return;
 
+                rehash?.ApplyTo(current);
                 LockoutPolicy.RegisterSuccess(current);
                 current.UpdatedAt = now;
             },
@@ -336,6 +338,18 @@ internal static class CredentialWrites
                 current.UpdatedAt = now;
             },
             cancellationToken);
+}
+
+/// <summary>A stored password rehashed under current parameters, waiting to be written.</summary>
+internal readonly record struct Rehash(string VerifiedHash, string NewHash)
+{
+    /// <summary>Only over the hash that was verified. A reset that landed in between wrote a new
+    /// password, and the rehash of the old one must not undo it.</summary>
+    internal void ApplyTo(ToamaisutaaPasswordCredential current)
+    {
+        if (current.PasswordHash == VerifiedHash)
+            current.PasswordHash = NewHash;
+    }
 }
 
 /// <summary>What reserving an attempt did: the credential as written, whether the attempt may be
