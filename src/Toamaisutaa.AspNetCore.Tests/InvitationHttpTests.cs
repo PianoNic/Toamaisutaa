@@ -98,6 +98,111 @@ public class InvitationHttpTests
         await Assert.That(complete.StatusCode).IsEqualTo(HttpStatusCode.BadRequest);
     }
 
+    /// <summary>Two invitations racing each found no reservation and each made one; revoking then
+    /// removed the newer and left the older link working.</summary>
+    [Test]
+    public async Task Revoking_takes_every_link_two_racing_invitations_made()
+    {
+        var race = new MeetBeforeLookingUp();
+        await using var app = await TestApp.StartAsync(configureServices: race.Register);
+        var admin = await Account.RegisterAsync(app, TestApp.AdminUserName);
+
+        race.Hold = true;
+        await Task.WhenAll(
+            app.Client.PostJson("/auth/invitations", new { email = "invited@example.com" }, admin.AccessToken),
+            app.Client.PostJson("/auth/invitations", new { email = "invited@example.com" }, admin.AccessToken));
+        race.Hold = false;
+
+        await Assert.That(app.IssuedInvitations.Select(invitation => invitation.UserId).Distinct().Count()).IsEqualTo(2);
+
+        var revoked = await app.Client.PostJson("/auth/invitations/revoke", new { email = "invited@example.com" }, admin.AccessToken);
+        await Assert.That(revoked.StatusCode).IsEqualTo(HttpStatusCode.NoContent);
+
+        foreach (var (invitation, index) in app.IssuedInvitations.Select((invitation, index) => (invitation, index)))
+        {
+            var complete = await app.Client.PostJson(
+                "/auth/invitations/complete",
+                new { token = invitation.Token, userName = $"invited{index}", password = Account.DefaultPassword });
+
+            await Assert.That(complete.StatusCode).IsEqualTo(HttpStatusCode.BadRequest);
+        }
+    }
+
+    [Test]
+    public async Task Inviting_again_retires_every_link_two_racing_invitations_made()
+    {
+        var race = new MeetBeforeLookingUp();
+        await using var app = await TestApp.StartAsync(configureServices: race.Register);
+        var admin = await Account.RegisterAsync(app, TestApp.AdminUserName);
+
+        race.Hold = true;
+        await Task.WhenAll(
+            app.Client.PostJson("/auth/invitations", new { email = "invited@example.com" }, admin.AccessToken),
+            app.Client.PostJson("/auth/invitations", new { email = "invited@example.com" }, admin.AccessToken));
+        race.Hold = false;
+
+        await Assert.That(app.IssuedInvitations.Select(invitation => invitation.UserId).Distinct().Count()).IsEqualTo(2);
+
+        await app.Client.PostJson("/auth/invitations", new { email = "invited@example.com" }, admin.AccessToken);
+
+        for (var index = 0; index < 2; index++)
+        {
+            var complete = await app.Client.PostJson(
+                "/auth/invitations/complete",
+                new { token = app.IssuedInvitations[index].Token, userName = $"invited{index}", password = Account.DefaultPassword });
+
+            await Assert.That(complete.StatusCode).IsEqualTo(HttpStatusCode.BadRequest);
+        }
+
+        var latest = await app.Client.PostJson(
+            "/auth/invitations/complete",
+            new { token = app.IssuedInvitations[2].Token, userName = "invited", password = Account.DefaultPassword });
+
+        await Assert.That(latest.StatusCode).IsEqualTo(HttpStatusCode.Created);
+    }
+
+    /// <summary>Both requests past the lookup before either writes, which is where a real race puts them.</summary>
+    private sealed class MeetBeforeLookingUp
+    {
+        private readonly CountdownEvent _arrived = new(2);
+
+        internal volatile bool Hold;
+
+        internal void Register(IServiceCollection services) =>
+            services.Decorate<IInvitationTokenStore>(inner => new Store(this, inner));
+
+        private sealed class Store(MeetBeforeLookingUp owner, IInvitationTokenStore inner) : IInvitationTokenStore
+        {
+            public Task CreateAsync(ToamaisutaaInvitationToken token, CancellationToken cancellationToken = default) =>
+                inner.CreateAsync(token, cancellationToken);
+
+            public Task<ToamaisutaaInvitationToken?> FindByHashAsync(string tokenHash, CancellationToken cancellationToken = default) =>
+                inner.FindByHashAsync(tokenHash, cancellationToken);
+
+            public Task<bool> MarkConsumedAsync(Guid tokenId, DateTimeOffset consumedAt, CancellationToken cancellationToken = default) =>
+                inner.MarkConsumedAsync(tokenId, consumedAt, cancellationToken);
+
+            public Task<int> DeleteExpiredAsync(DateTimeOffset expiredBefore, CancellationToken cancellationToken = default) =>
+                inner.DeleteExpiredAsync(expiredBefore, cancellationToken);
+
+            public Task InvalidateAllForUserAsync(Guid userId, DateTimeOffset consumedAt, CancellationToken cancellationToken = default) =>
+                inner.InvalidateAllForUserAsync(userId, consumedAt, cancellationToken);
+
+            public async Task<ToamaisutaaInvitationToken?> FindOpenByEmailAsync(string normalizedEmail, DateTimeOffset now, CancellationToken cancellationToken = default)
+            {
+                var found = await inner.FindOpenByEmailAsync(normalizedEmail, now, cancellationToken);
+
+                if (owner.Hold && !owner._arrived.IsSet)
+                {
+                    owner._arrived.Signal();
+                    owner._arrived.Wait(TimeSpan.FromSeconds(30));
+                }
+
+                return found;
+            }
+        }
+    }
+
     [Test]
     public async Task Revoking_never_touches_an_account_that_was_completed()
     {
