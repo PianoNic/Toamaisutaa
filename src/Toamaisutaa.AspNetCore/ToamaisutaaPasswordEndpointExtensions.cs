@@ -178,7 +178,9 @@ public static class ToamaisutaaPasswordEndpointExtensions
                 .Produces<ValidationErrorResponse>(StatusCodes.Status400BadRequest)
                 .Produces<ValidationErrorResponse>(StatusCodes.Status409Conflict)
                 .Produces<ErrorResponse>(StatusCodes.Status401Unauthorized)
-                .Produces(StatusCodes.Status429TooManyRequests);
+
+                // With a body, unlike the limiter's 429 elsewhere: the per-account cooldown says why.
+                .Produces<ValidationErrorResponse>(StatusCodes.Status429TooManyRequests);
 
             group.MapPost("/email/verify", VerifyEmailAsync)
                 .AllowAnonymous()
@@ -311,6 +313,7 @@ public static class ToamaisutaaPasswordEndpointExtensions
                         "404 when the address has no open invitation - including one already completed into "
                         + "an account, which this never touches. Requires the admin role `Oidc:AdminRole` names.")
                     .Produces(StatusCodes.Status204NoContent)
+                    .Produces(StatusCodes.Status400BadRequest)
                     .Produces(StatusCodes.Status403Forbidden)
                     .Produces(StatusCodes.Status404NotFound);
             }

@@ -116,6 +116,22 @@ public class OpenApiDocumentHttpTests
         await Assert.That(Schemes(document).Names()).IsEquivalentTo(new[] { "Bearer" });
     }
 
+    /// <summary>A generated client knows only the statuses and bodies declared here, so one the
+    /// endpoint gives and the document leaves out arrives as an error nobody wrote code for.</summary>
+    [Test]
+    public async Task The_document_declares_the_statuses_and_bodies_these_endpoints_give()
+    {
+        await using var app = await TestApp.StartAsync(includeOpenApi: true);
+
+        var paths = (await Document(app)).GetProperty("paths");
+
+        var revoke = paths.GetProperty("/auth/invitations/revoke").GetProperty("post").GetProperty("responses");
+        await Assert.That(revoke.TryGetProperty("400", out _)).IsTrue();
+
+        var cooledDown = paths.GetProperty("/auth/email").GetProperty("post").GetProperty("responses").GetProperty("429");
+        await Assert.That(cooledDown.TryGetProperty("content", out _)).IsTrue();
+    }
+
     [Test]
     public async Task An_anonymous_endpoint_carries_an_empty_requirement_and_a_protected_one_carries_none()
     {
