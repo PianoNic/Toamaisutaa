@@ -1,3 +1,4 @@
+using System.Net;
 using System.Text.Json;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
@@ -53,7 +54,45 @@ public class PublishedSecretsStartupCheckTests
         }
     }
 
-    private static async Task<string?> StartAsync(string which, string environment, string? url = null)
+    /// <summary>A same-host reverse proxy leaves the server bound to loopback, so only the request
+    /// shows it came from elsewhere.</summary>
+    [Test]
+    public async Task In_development_the_samples_values_are_not_served_through_a_proxy()
+    {
+        HttpStatusCode? direct = null, proxied = null;
+
+        var message = await StartAsync("signing", Environments.Development, whileRunning: async app =>
+        {
+            var client = app.GetTestClient();
+            direct = (await client.GetAsync("/ping")).StatusCode;
+
+            using var request = new HttpRequestMessage(HttpMethod.Get, "/ping");
+            request.Headers.Add("X-Forwarded-For", "203.0.113.7");
+            proxied = (await client.SendAsync(request)).StatusCode;
+        });
+
+        await Assert.That(message).IsNull();
+        await Assert.That(direct).IsEqualTo(HttpStatusCode.OK);
+        await Assert.That(proxied).IsEqualTo(HttpStatusCode.InternalServerError);
+    }
+
+    [Test]
+    public async Task Own_keys_are_served_through_a_proxy_in_development()
+    {
+        HttpStatusCode? proxied = null;
+
+        var message = await StartAsync("none", Environments.Development, whileRunning: async app =>
+        {
+            using var request = new HttpRequestMessage(HttpMethod.Get, "/ping");
+            request.Headers.Add("X-Forwarded-For", "203.0.113.7");
+            proxied = (await app.GetTestClient().SendAsync(request)).StatusCode;
+        });
+
+        await Assert.That(message).IsNull();
+        await Assert.That(proxied).IsEqualTo(HttpStatusCode.OK);
+    }
+
+    private static async Task<string?> StartAsync(string which, string environment, string? url = null, Func<WebApplication, Task>? whileRunning = null)
     {
         var sample = JsonDocument.Parse(await File.ReadAllTextAsync(SampleSettingsPath())).RootElement;
         var local = sample.GetProperty("LocalLogin");
@@ -73,6 +112,9 @@ public class PublishedSecretsStartupCheckTests
             case "pepper":
                 settings["LocalLogin:Pepper"] = local.GetProperty("Pepper").GetString();
                 break;
+            case "none":
+                settings["LocalLogin:SigningKey"] = Convert.ToBase64String(System.Security.Cryptography.RandomNumberGenerator.GetBytes(32));
+                break;
             default:
                 settings["TwoFactor:EncryptionKey"] = sample.GetProperty("TwoFactor").GetProperty("EncryptionKey").GetString();
                 break;
@@ -91,10 +133,15 @@ public class PublishedSecretsStartupCheckTests
         builder.Services.Configure<ToamaisutaaTwoFactorOptions>(builder.Configuration.GetSection("TwoFactor"));
 
         var app = builder.Build();
+        app.MapGet("/ping", () => "pong");
 
         try
         {
             await app.StartAsync();
+
+            if (whileRunning is not null)
+                await whileRunning(app);
+
             return null;
         }
         catch (InvalidOperationException exception)
