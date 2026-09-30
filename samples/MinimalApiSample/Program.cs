@@ -25,6 +25,8 @@ builder.Services.AddToamaisutaaDbContext(db => db.UseSqlite(
     sqlite => sqlite.MigrationsAssembly("Toamaisutaa.EntityFrameworkCore.Migrations.Sqlite")));
 builder.Services.AddToamaisutaaCurrentUser();
 
+// Deleting this line strands every Argon2id hash already stored, since PBKDF2 cannot read them. To
+// move off it, set PasswordHashing:Argon2:VerifyOnly and delete the line once those have drained.
 builder.Services.AddToamaisutaaArgon2PasswordHashing(builder.Configuration);
 
 builder.Services.AddToamaisutaaPasswordLogin(builder.Configuration);
