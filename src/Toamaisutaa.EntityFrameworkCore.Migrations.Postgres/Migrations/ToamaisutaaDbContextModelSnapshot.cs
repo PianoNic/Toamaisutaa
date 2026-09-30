@@ -288,6 +288,7 @@ namespace Toamaisutaa.EntityFrameworkCore.Migrations.Postgres.Migrations
                         .HasColumnType("integer");
 
                     b.Property<long?>("FirstFailedAttemptAt")
+                        .IsConcurrencyToken()
                         .HasColumnType("bigint");
 
                     b.Property<long?>("LockedOutUntil")

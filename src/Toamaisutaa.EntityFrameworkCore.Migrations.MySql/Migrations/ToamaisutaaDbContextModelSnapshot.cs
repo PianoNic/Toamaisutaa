@@ -286,6 +286,7 @@ namespace Toamaisutaa.EntityFrameworkCore.Migrations.MySql.Migrations
                         .HasColumnType("int");
 
                     b.Property<long?>("FirstFailedAttemptAt")
+                        .IsConcurrencyToken()
                         .HasColumnType("bigint");
 
                     b.Property<long?>("LockedOutUntil")

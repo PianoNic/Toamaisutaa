@@ -283,6 +283,7 @@ namespace Toamaisutaa.EntityFrameworkCore.Migrations.Sqlite.Migrations
                         .HasColumnType("INTEGER");
 
                     b.Property<long?>("FirstFailedAttemptAt")
+                        .IsConcurrencyToken()
                         .HasColumnType("INTEGER");
 
                     b.Property<long?>("LockedOutUntil")
