@@ -125,23 +125,36 @@ internal sealed class EntityFrameworkPasswordStore<TContext>(TContext context)
             .Where(token => token.Id == tokenId && token.RotatedAt == null && token.RevokedAt == null)
             .ExecuteUpdateAsync(setters => setters.SetProperty(token => token.RotatedAt, rotatedAt), cancellationToken) == 1;
 
-    public async Task RevokeFamilyAsync(Guid familyId, string reason, DateTimeOffset revokedAt, CancellationToken cancellationToken = default) =>
-        await context.Set<ToamaisutaaRefreshToken>()
-            .Where(token => token.FamilyId == familyId && token.RevokedAt == null)
-            .ExecuteUpdateAsync(
-                setters => setters
-                    .SetProperty(token => token.RevokedAt, revokedAt)
-                    .SetProperty(token => token.RevokedReason, reason),
-                cancellationToken);
+    public Task RevokeFamilyAsync(Guid familyId, string reason, DateTimeOffset revokedAt, CancellationToken cancellationToken = default) =>
+        RevokeUntilNoneLeftAsync(token => token.FamilyId == familyId && token.RevokedAt == null, reason, revokedAt, cancellationToken);
 
-    public async Task RevokeAllForUserAsync(Guid userId, string reason, DateTimeOffset revokedAt, CancellationToken cancellationToken = default) =>
-        await context.Set<ToamaisutaaRefreshToken>()
-            .Where(token => token.UserId == userId && token.RevokedAt == null)
-            .ExecuteUpdateAsync(
-                setters => setters
-                    .SetProperty(token => token.RevokedAt, revokedAt)
-                    .SetProperty(token => token.RevokedReason, reason),
-                cancellationToken);
+    public Task RevokeAllForUserAsync(Guid userId, string reason, DateTimeOffset revokedAt, CancellationToken cancellationToken = default) =>
+        RevokeUntilNoneLeftAsync(token => token.UserId == userId && token.RevokedAt == null, reason, revokedAt, cancellationToken);
+
+    // Repeated until it matches nothing. On PostgreSQL, and SQL Server under snapshot reads, one
+    // UPDATE never sees a row inserted after it started, and a rotation checking its parent right
+    // then does not see this revocation either - so the new token stayed live. The next statement
+    // starts after this one committed, and catches it.
+    private async Task RevokeUntilNoneLeftAsync(
+        System.Linq.Expressions.Expression<Func<ToamaisutaaRefreshToken, bool>> live,
+        string reason,
+        DateTimeOffset revokedAt,
+        CancellationToken cancellationToken)
+    {
+        for (var pass = 0; pass < 10; pass++)
+        {
+            var revoked = await context.Set<ToamaisutaaRefreshToken>()
+                .Where(live)
+                .ExecuteUpdateAsync(
+                    setters => setters
+                        .SetProperty(token => token.RevokedAt, revokedAt)
+                        .SetProperty(token => token.RevokedReason, reason),
+                    cancellationToken);
+
+            if (revoked == 0)
+                return;
+        }
+    }
 
     public async Task<IReadOnlyList<ToamaisutaaRefreshToken>> ListActiveAsync(Guid userId, CancellationToken cancellationToken = default) =>
         await context.Set<ToamaisutaaRefreshToken>()
