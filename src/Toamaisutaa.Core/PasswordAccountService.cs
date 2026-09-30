@@ -153,6 +153,7 @@ internal sealed class PasswordAccountService(
         await users.UpdateSecurityStampAsync(userId, SecureTokens.Create(), cancellationToken);
         await RevokeAllSessionsAsync(userId, "password-changed", now, cancellationToken);
         await trustedDevices.RevokeAllAsync(userId, "password-changed", now, cancellationToken);
+        await RevokeAllPasskeysAsync(userId, "password-changed", cancellationToken);
         await RetireOutstandingLinksAsync(userId, now, cancellationToken);
 
         await events.PublishAsync(new PasswordChanged { OccurredAt = now, UserId = userId }, cancellationToken);
@@ -285,6 +286,7 @@ internal sealed class PasswordAccountService(
         await users.UpdateSecurityStampAsync(userId, SecureTokens.Create(), cancellationToken);
         await RevokeAllSessionsAsync(userId, "admin-password-set", now, cancellationToken);
         await trustedDevices.RevokeAllAsync(userId, "admin-password-set", now, cancellationToken);
+        await RevokeAllPasskeysAsync(userId, "admin-password-set", cancellationToken);
         await RetireOutstandingLinksAsync(userId, now, cancellationToken);
 
         await events.PublishAsync(
@@ -863,6 +865,7 @@ internal sealed class PasswordAccountService(
         await users.UpdateSecurityStampAsync(stored.UserId, SecureTokens.Create(), cancellationToken);
         await RevokeAllSessionsAsync(stored.UserId, "password-reset", now, cancellationToken);
         await trustedDevices.RevokeAllAsync(stored.UserId, "password-reset", now, cancellationToken);
+        await RevokeAllPasskeysAsync(stored.UserId, "password-reset", cancellationToken);
 
         await events.PublishAsync(new PasswordReset { OccurredAt = now, UserId = stored.UserId }, cancellationToken);
 
@@ -875,8 +878,10 @@ internal sealed class PasswordAccountService(
     /// revoked here. Resolved lazily because the passkey package is optional.
     /// </summary>
     /// <remarks>
-    /// Call before the stamp moves. A passkey sign-in reads the stamp and then checks its credential is
-    /// still there, so it either sees the credential gone or signs in with a stamp that is about to die.
+    /// Called on both sides of the stamp moving. Before: a passkey sign-in reads the stamp and then
+    /// checks its credential is still there, so it either sees the credential gone or signs in with a
+    /// stamp about to die. After: a registration checks the stamp once it has inserted, so one that
+    /// checked before the stamp moved is caught by the second delete.
     /// </remarks>
     private async Task RevokeAllPasskeysAsync(Guid userId, string reason, CancellationToken cancellationToken)
     {

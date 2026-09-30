@@ -14,6 +14,13 @@ internal sealed class EntityFrameworkStore<TContext>(TContext context, TimeProvi
     public async Task<ToamaisutaaUser?> FindByIdAsync(Guid id, CancellationToken cancellationToken = default) =>
         await context.Set<ToamaisutaaUser>().FirstOrDefaultAsync(user => user.Id == id, cancellationToken);
 
+    // A projection, so the identity map cannot hand back the row as this request first read it.
+    public async Task<string?> ReadSecurityStampAsync(Guid userId, CancellationToken cancellationToken = default) =>
+        await context.Set<ToamaisutaaUser>()
+            .Where(user => user.Id == userId)
+            .Select(user => user.SecurityStamp)
+            .FirstOrDefaultAsync(cancellationToken);
+
     public async Task<ToamaisutaaUser?> FindByEmailAsync(string email, CancellationToken cancellationToken = default)
     {
         // Upper-cased on both sides rather than trusting the collation; unindexed by design, since it

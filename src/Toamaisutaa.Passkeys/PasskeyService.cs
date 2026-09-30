@@ -87,6 +87,10 @@ internal sealed class PasskeyService(
         ArgumentNullException.ThrowIfNull(request);
 
         var now = timeProvider.GetUtcNow();
+
+        // As this request first read it, which is the stamp its caller was authenticated against.
+        var stampAtStart = (await users.FindByIdAsync(userId, cancellationToken))?.SecurityStamp;
+
         var stored = await RedeemAsync(request.Challenge, PasskeyCeremony.Registration, now, cancellationToken);
 
         if (stored is null || stored.UserId != userId)
@@ -158,6 +162,18 @@ internal sealed class PasskeyService(
         };
 
         await credentials.CreateAsync(credential, cancellationToken);
+
+        // A credential change that finished while this was verifying already deleted every passkey,
+        // and missed this one; it would sign in on its own after the owner locked everyone out.
+        if (!string.Equals(await users.ReadSecurityStampAsync(userId, cancellationToken), stampAtStart, StringComparison.Ordinal))
+        {
+            await credentials.DeleteAsync(userId, credential.Id, cancellationToken);
+
+            logger.LogWarning("Passkey registration refused for user {UserId}: the account's credentials changed while it was being registered.", userId);
+
+            throw new PasskeyRegistrationException(
+                "Your account's credentials changed while this passkey was being registered, so it was not kept. Sign in again and register it.");
+        }
 
         await events.PublishAsync(
             new PasskeyRegistered

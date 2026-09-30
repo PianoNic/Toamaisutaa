@@ -32,6 +32,18 @@ public interface IUserStore
     Task UpdateSecurityStampAsync(Guid userId, string securityStamp, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// The stamp as stored right now, never a copy read earlier in the request. Null when the user is
+    /// gone.
+    /// </summary>
+    /// <remarks>
+    /// Checked after a write that must not outlive a credential change landing alongside it. The
+    /// default reads through <see cref="FindByIdAsync"/>, which a store that caches rows per request
+    /// should replace, or the check compares a stamp with itself.
+    /// </remarks>
+    async Task<string?> ReadSecurityStampAsync(Guid userId, CancellationToken cancellationToken = default) =>
+        (await FindByIdAsync(userId, cancellationToken))?.SecurityStamp;
+
+    /// <summary>
     /// Sets the user name and display name on an existing row, when completing a reserved invitation.
     /// </summary>
     Task SetUserNameAsync(Guid userId, string userName, CancellationToken cancellationToken = default);
