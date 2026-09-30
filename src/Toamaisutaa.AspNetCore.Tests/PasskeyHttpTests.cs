@@ -36,6 +36,28 @@ public class PasskeyHttpTests
         await Assert.That(entries[0].Has("lastUsedAt")).IsFalse();
     }
 
+    /// <summary>A passkey signs in on its own, so on an account with a second factor the password
+    /// alone registered a way in that skipped the code. It now takes a fresh step-up.</summary>
+    [Test]
+    public async Task On_an_account_with_a_second_factor_registering_a_passkey_takes_that_factor()
+    {
+        // A one-second window, so the second factor from signing in is stale after a minute while the
+        // tokens stay inside the bearer handler's clock skew, which reads real time.
+        await using var app = await TestApp.StartAsync(configure: settings => settings["Passkeys:RegistrationProofWindow"] = "00:00:01");
+        var account = await Account.RegisterAsync(app);
+        await account.EnrolAsync();
+
+        app.Time.Advance(TimeSpan.FromMinutes(1));
+
+        var passwordOnly = await Passkeys.BeginRegistrationAsync(app, account.AccessToken);
+        await Assert.That(passwordOnly.StatusCode).IsEqualTo(HttpStatusCode.BadRequest);
+
+        var stepped = (await (await account.StepUpAsync()).Json()).String("access_token")!;
+
+        var withSecondFactor = await Passkeys.BeginRegistrationAsync(app, stepped, currentPassword: null);
+        await Assert.That(withSecondFactor.StatusCode).IsEqualTo(HttpStatusCode.OK);
+    }
+
     [Test]
     public async Task Registering_a_passkey_takes_more_than_a_bearer_token()
     {
