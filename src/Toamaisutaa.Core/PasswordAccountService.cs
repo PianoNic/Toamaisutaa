@@ -555,7 +555,13 @@ internal sealed class PasswordAccountService(
             cancellationToken);
 
         if (existing is not null)
+        {
             await invitationTokens.InvalidateAllForUserAsync(existing.Id, now, cancellationToken);
+
+            // With its own links retired, anything still found is a duplicate an earlier race made.
+            while (await FindReservationAsync(email, now, cancellationToken) is { } duplicate)
+                await RemoveReservationAsync(duplicate.Id, now, cancellationToken);
+        }
 
         var raw = SecureTokens.Create();
         var tokenId = Guid.CreateVersion7(now);
@@ -614,16 +620,25 @@ internal sealed class PasswordAccountService(
         ArgumentNullException.ThrowIfNull(email);
 
         var now = timeProvider.GetUtcNow();
-        var reservation = await FindReservationAsync(email, now, cancellationToken);
-        if (reservation is null)
-            return false;
+        var revoked = false;
 
-        // Tokens first, so a store that does not cascade the delete still leaves nothing redeemable.
-        await invitationTokens.InvalidateAllForUserAsync(reservation.Id, now, cancellationToken);
-        await users.DeleteAsync(reservation.Id, cancellationToken);
+        // Every reservation, not the newest: two invitations racing each made one, and the older
+        // link would outlive a revoke that stopped at the first.
+        while (await FindReservationAsync(email, now, cancellationToken) is { } reservation)
+        {
+            await RemoveReservationAsync(reservation.Id, now, cancellationToken);
+            logger.LogInformation("Invitation for user {UserId} revoked, and the reserved account removed.", reservation.Id);
+            revoked = true;
+        }
 
-        logger.LogInformation("Invitation for user {UserId} revoked, and the reserved account removed.", reservation.Id);
-        return true;
+        return revoked;
+    }
+
+    // Tokens first, so a store that does not cascade the delete still leaves nothing redeemable.
+    private async Task RemoveReservationAsync(Guid userId, DateTimeOffset now, CancellationToken cancellationToken)
+    {
+        await invitationTokens.InvalidateAllForUserAsync(userId, now, cancellationToken);
+        await users.DeleteAsync(userId, cancellationToken);
     }
 
     /// <summary>
