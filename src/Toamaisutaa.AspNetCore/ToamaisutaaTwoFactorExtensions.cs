@@ -111,6 +111,8 @@ public static class ToamaisutaaTwoFactorExtensions
                 services,
                 provider.GetRequiredService<IOptions<ToamaisutaaTwoFactorOptions>>())));
 
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IHostedService, PublishedSecretsStartupCheck>());
+
         return services;
     }
 }
