@@ -74,11 +74,16 @@ internal sealed class PasswordRateLimiter : IDisposable
         var bytes = address.GetAddressBytes();
 
         // A NAT64 gateway puts every IPv4 client in one /64, so key on the embedded IPv4 address instead.
-        foreach (var prefix in WellKnownNat64.Concat(ParseNat64Prefixes(nat64Prefixes)))
-        {
-            if (prefix.Contains(address))
-                return new IPAddress(EmbeddedIpv4(bytes, prefix.PrefixLength)).ToString();
-        }
+        // Longest match wins: an operator's /96 carved from the well-known /48 embeds the client after
+        // its own prefix, where the /48 layout reads only zeros.
+        var matched = WellKnownNat64.Concat(ParseNat64Prefixes(nat64Prefixes))
+            .Where(prefix => prefix.Contains(address))
+            .OrderByDescending(prefix => prefix.PrefixLength)
+            .Cast<IPNetwork?>()
+            .FirstOrDefault();
+
+        if (matched is { } nat64)
+            return new IPAddress(EmbeddedIpv4(bytes, nat64.PrefixLength)).ToString();
 
         Array.Clear(bytes, 8, 8);
 
