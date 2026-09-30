@@ -23,7 +23,7 @@ public class ConcurrentRedemptionHttpTests
         var attempts = await Task.WhenAll(Enumerable.Range(0, Parallel).Select(_ =>
             app.Client.PostJson("/auth/magic-link/verify", new { token })));
 
-        await Assert.That(attempts.Count(response => response.StatusCode == HttpStatusCode.OK)).IsLessThanOrEqualTo(1);
+        await Assert.That(attempts.Count(response => response.StatusCode == HttpStatusCode.OK)).IsEqualTo(1);
     }
 
     [Test]
@@ -42,7 +42,7 @@ public class ConcurrentRedemptionHttpTests
         var attempts = await Task.WhenAll(Enumerable.Range(0, Parallel).Select(index =>
             app.Client.PostJson("/auth/password/reset", new { token, newPassword = $"a new password number {index}" })));
 
-        await Assert.That(attempts.Count(response => response.StatusCode == HttpStatusCode.NoContent)).IsLessThanOrEqualTo(1);
+        await Assert.That(attempts.Count(response => response.StatusCode == HttpStatusCode.NoContent)).IsEqualTo(1);
     }
 
     [Test]
@@ -59,7 +59,7 @@ public class ConcurrentRedemptionHttpTests
         var attempts = await Task.WhenAll(Enumerable.Range(0, Parallel).Select(_ =>
             app.Client.PostJson("/auth/2fa/verify", new { challenge, code })));
 
-        await Assert.That(attempts.Count(response => response.StatusCode == HttpStatusCode.OK)).IsLessThanOrEqualTo(1);
+        await Assert.That(attempts.Count(response => response.StatusCode == HttpStatusCode.OK)).IsEqualTo(1);
     }
 
     /// <summary>
@@ -84,7 +84,33 @@ public class ConcurrentRedemptionHttpTests
         var attempts = await Task.WhenAll(challenges.Select(challenge =>
             app.Client.PostJson("/auth/2fa/verify", new { challenge, code })));
 
-        await Assert.That(attempts.Count(response => response.StatusCode == HttpStatusCode.OK)).IsLessThanOrEqualTo(1);
+        await Assert.That(attempts.Count(response => response.StatusCode == HttpStatusCode.OK)).IsEqualTo(1);
+    }
+
+    /// <summary>
+    /// The parallel test above sends one TOTP code ten times, and the recorded step refuses nine of
+    /// them before the challenge is ever asked. Ten different recovery codes each pass on their own,
+    /// so only the challenge's conditional spend can keep this to one session.
+    /// </summary>
+    [Test]
+    public async Task A_challenge_answered_with_different_recovery_codes_in_parallel_signs_in_once()
+    {
+        await using var app = await TestApp.StartAsync();
+        var account = await Account.RegisterAsync(app);
+
+        var begin = await app.Client.PostJson("/auth/2fa/begin", new { currentPassword = account.Password }, account.AccessToken);
+        var secret = (await begin.Json()).String("secret")!;
+
+        app.Time.AdvanceToNextTotpStep();
+        var confirm = await app.Client.PostJson("/auth/2fa/confirm", new { code = Totp.Code(secret, app.Time.Now) }, account.AccessToken);
+        var codes = (await confirm.Json()).GetProperty("recoveryCodes").EnumerateArray().Select(code => code.GetString()!).ToList();
+
+        var challenge = (await (await account.LoginAsync()).Json()).String("challenge");
+
+        var attempts = await Task.WhenAll(codes.Select(code =>
+            app.Client.PostJson("/auth/2fa/verify", new { challenge, code })));
+
+        await Assert.That(attempts.Count(response => response.StatusCode == HttpStatusCode.OK)).IsEqualTo(1);
     }
 
     /// <summary>
@@ -289,7 +315,7 @@ public class ConcurrentRedemptionHttpTests
         var attempts = await Task.WhenAll(Enumerable.Range(0, Parallel).Select(_ =>
             app.Client.PostJson("/auth/email/verify", new { token })));
 
-        await Assert.That(attempts.Count(response => response.StatusCode == HttpStatusCode.NoContent)).IsLessThanOrEqualTo(1);
+        await Assert.That(attempts.Count(response => response.StatusCode == HttpStatusCode.NoContent)).IsEqualTo(1);
     }
 
     /// <summary>
@@ -320,7 +346,7 @@ public class ConcurrentRedemptionHttpTests
         var attempts = await Task.WhenAll(challenges.Select(challenge =>
             app.Client.PostJson("/auth/2fa/verify", new { challenge, code = recoveryCode })));
 
-        await Assert.That(attempts.Count(response => response.StatusCode == HttpStatusCode.OK)).IsLessThanOrEqualTo(1);
+        await Assert.That(attempts.Count(response => response.StatusCode == HttpStatusCode.OK)).IsEqualTo(1);
     }
 
     private sealed class ResetCapture(List<string> issued) : IPasswordResetNotifier

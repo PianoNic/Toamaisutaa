@@ -9,7 +9,10 @@ namespace Toamaisutaa.AspNetCore.Tests;
 /// </summary>
 public class SignInTimingHttpTests
 {
-    private static readonly TimeSpan Floor = TimeSpan.FromMilliseconds(600);
+    // Far above anything a refusal takes on its own, even with the whole suite running beside it.
+    // At 600ms a loaded machine could take that long without any floor, and the test went green with
+    // the delay deleted.
+    private static readonly TimeSpan Floor = TimeSpan.FromSeconds(5);
 
     /// <summary>
     /// An unknown name answered after one lookup and a dummy hash; a real one also wrote its failure
@@ -22,7 +25,7 @@ public class SignInTimingHttpTests
     public async Task A_refused_sign_in_takes_at_least_the_floor(string identifier, string password)
     {
         await using var app = await TestApp.StartAsync(configure: settings =>
-            settings["LocalLogin:SignInRefusalFloor"] = "00:00:00.600");
+            settings["LocalLogin:SignInRefusalFloor"] = Floor.ToString());
 
         await Account.RegisterAsync(app);
 

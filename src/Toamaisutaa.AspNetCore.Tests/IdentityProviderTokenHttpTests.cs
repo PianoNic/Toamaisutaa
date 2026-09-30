@@ -474,7 +474,8 @@ public class IdentityProviderTokenHttpTests
         var secret = (await begin.Json()).String("secret")!;
 
         app.Time.AdvanceToNextTotpStep();
-        await app.Client.PostJson("/auth/2fa/confirm", new { code = Totp.Code(secret, app.Time.Now) }, token);
+        var confirmed = await app.Client.PostJson("/auth/2fa/confirm", new { code = Totp.Code(secret, app.Time.Now) }, token);
+        await Assert.That(confirmed.StatusCode).IsEqualTo(HttpStatusCode.OK);
 
         for (var i = 0; i < 5; i++)
         {
@@ -510,7 +511,8 @@ public class IdentityProviderTokenHttpTests
         var secret = (await begin.Json()).String("secret")!;
 
         app.Time.AdvanceToNextTotpStep();
-        await app.Client.PostJson("/auth/2fa/confirm", new { code = Totp.Code(secret, app.Time.Now) }, token);
+        var confirmed = await app.Client.PostJson("/auth/2fa/confirm", new { code = Totp.Code(secret, app.Time.Now) }, token);
+        await Assert.That(confirmed.StatusCode).IsEqualTo(HttpStatusCode.OK);
 
         app.Time.AdvanceToNextTotpStep();
         var code = Totp.Code(secret, app.Time.Now);
@@ -522,7 +524,9 @@ public class IdentityProviderTokenHttpTests
         app.Time.AdvanceToNextTotpStep();
         var right = await app.Client.PostJson("/auth/2fa/recovery-codes", new { proof = Totp.Code(secret, app.Time.Now) }, token);
 
+        // 400 also answers an account with nothing enrolled, so it only means locked if this holds.
         await Assert.That(right.StatusCode).IsEqualTo(HttpStatusCode.BadRequest);
+        await Assert.That((await app.Client.Get("/auth/2fa", token)).Json().Result.Bool("enabled")).IsTrue();
     }
 
     /// <summary>

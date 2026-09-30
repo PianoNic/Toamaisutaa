@@ -43,6 +43,47 @@ public class ExternalSubjectCaseTests
         await Assert.That(await logins.FindAsync(ToamaisutaaDefaults.ProviderKey, "ALICE")).IsNull();
     }
 
+    /// <summary>
+    /// The lookup above is right, which sends <c>ALICE</c> down the create path - into a unique index
+    /// that says <c>alice</c> is the same subject. The retry met the same index, and the conflict
+    /// escaped as a 500 naming nothing. Refused with the reason instead, because only a collation
+    /// change fixes it.
+    /// </summary>
+    [Test]
+    public async Task Provisioning_a_subject_the_database_folds_into_another_says_why()
+    {
+        await using var connection = new SqliteConnection("DataSource=:memory:");
+        await connection.OpenAsync();
+
+        var services = new ServiceCollection()
+            .AddDbContext<CaseInsensitiveContext>(options => options.UseSqlite(connection))
+            .AddToamaisutaaEntityFrameworkStores<CaseInsensitiveContext>()
+            .BuildServiceProvider();
+
+        await using var scope = services.CreateAsyncScope();
+        await scope.ServiceProvider.GetRequiredService<CaseInsensitiveContext>().Database.EnsureCreatedAsync();
+
+        var options = Microsoft.Extensions.Options.Options.Create(new ToamaisutaaProvisioningOptions());
+        var provisioner = new Toamaisutaa.Core.ExternalLoginProvisioner(
+            new Toamaisutaa.Core.DefaultClaimsProfileMapper(options),
+            new Toamaisutaa.Core.DefaultProvisioningPolicy(),
+            scope.ServiceProvider.GetRequiredService<IUserStore>(),
+            scope.ServiceProvider.GetRequiredService<IExternalLoginStore>(),
+            options,
+            Microsoft.Extensions.Options.Options.Create(new ToamaisutaaLocalLoginOptions()),
+            TimeProvider.System,
+            Microsoft.Extensions.Logging.Abstractions.NullLogger<Toamaisutaa.Core.ExternalLoginProvisioner>.Instance);
+
+        static System.Security.Claims.ClaimsPrincipal Subject(string subject) =>
+            new(new System.Security.Claims.ClaimsIdentity([new System.Security.Claims.Claim("sub", subject)], "test"));
+
+        await provisioner.ProvisionAsync(Subject("alice"));
+
+        var refused = await Assert.That(async () => await provisioner.ProvisionAsync(Subject("ALICE"))).Throws<InvalidOperationException>();
+
+        await Assert.That(refused!.Message).Contains("collation");
+    }
+
     private sealed class CaseInsensitiveContext(DbContextOptions<CaseInsensitiveContext> options) : ToamaisutaaDbContext(options)
     {
         protected override void OnModelCreating(ModelBuilder modelBuilder)

@@ -441,7 +441,7 @@ public class PasskeyHttpTests
         var responses = await Task.WhenAll(assertions.Select(assertion =>
             app.Client.PostJson("/auth/passkeys/assertion/complete", assertion)));
 
-        await Assert.That(responses.Count(response => response.StatusCode == HttpStatusCode.OK)).IsLessThanOrEqualTo(1);
+        await Assert.That(responses.Count(response => response.StatusCode == HttpStatusCode.OK)).IsEqualTo(1);
     }
 
     /// <summary>

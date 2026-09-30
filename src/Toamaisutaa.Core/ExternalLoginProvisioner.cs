@@ -45,7 +45,21 @@ internal sealed class ExternalLoginProvisioner(
                 "Concurrent first sign-in for provider {ProviderKey}; re-reading the row the other request created.",
                 options.Value.ProviderKey);
 
-            return await RunAsync(profile, cancellationToken);
+            try
+            {
+                return await RunAsync(profile, cancellationToken);
+            }
+            catch (ExternalLoginConflictException again)
+            {
+                // Still no row that matches exactly, and still a unique index that says one exists:
+                // the database thinks two subjects are the same that differ in case or accents.
+                throw new InvalidOperationException(
+                    $"Cannot provision subject '{profile.Subject}' for provider '{options.Value.ProviderKey}': the database "
+                    + "treats it as equal to an existing subject that differs only in case or accents. OIDC subjects are "
+                    + "case-sensitive; give ToamaisutaaExternalLogins.Subject a case- and accent-sensitive collation "
+                    + "(utf8mb4_bin on MySQL, Latin1_General_BIN2 on SQL Server).",
+                    again);
+            }
         }
     }
 

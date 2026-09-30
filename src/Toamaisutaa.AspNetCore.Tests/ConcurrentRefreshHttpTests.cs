@@ -24,6 +24,9 @@ public class ConcurrentRefreshHttpTests
         var attempts = await Task.WhenAll(Enumerable.Range(0, 10).Select(_ =>
             app.Client.PostJson("/auth/refresh", new { refreshToken })));
 
+        // At most one, not exactly one: every loser is reuse, reuse revokes the family, and the
+        // winner's new token belongs to that family - so a winner that checks after a loser has
+        // revoked is refused too. None at all is a right answer here.
         await Assert.That(attempts.Count(response => response.StatusCode == HttpStatusCode.OK)).IsLessThanOrEqualTo(1);
     }
 
