@@ -41,6 +41,28 @@ public class RateLimitPartitionHttpTests
     }
 
     /// <summary>
+    /// A NAT64 gateway puts every IPv4 client it translates in one /64, so one of them sending ten
+    /// wrong passwords a minute gave every IPv4 user behind it 429. The address inside is the caller.
+    /// </summary>
+    [Test]
+    [Arguments("64:ff9b::cb00:7101", "64:ff9b::cb00:7102")]
+    [Arguments("64:ff9b:1:cb00:71:100::", "64:ff9b:1:cb00:71:200::")]
+    public async Task Ipv4_clients_behind_nat64_keep_separate_budgets(string first, string second)
+    {
+        await using var app = await StartLimitedAsync(permitLimit: 1);
+
+        var one = await LoginFromAsync(app, first);
+        var other = await LoginFromAsync(app, second);
+        var again = await LoginFromAsync(app, first);
+
+        await Assert.That(one.StatusCode).IsNotEqualTo(HttpStatusCode.TooManyRequests);
+        await Assert.That(other.StatusCode).IsNotEqualTo(HttpStatusCode.TooManyRequests);
+
+        // Still one budget per IPv4 client, not none.
+        await Assert.That(again.StatusCode).IsEqualTo(HttpStatusCode.TooManyRequests);
+    }
+
+    /// <summary>
     /// Behind a proxy with forwarded headers left unconfigured, every caller is the proxy and shares
     /// one limit - ten junk logins a minute and the whole site answers 429. Nothing at startup can
     /// see that, so the first request that shows it says so.
