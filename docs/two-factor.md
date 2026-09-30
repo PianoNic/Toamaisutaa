@@ -224,6 +224,16 @@ Stored as a plain hash, one offline sweep recovered every user's codes; keyed, t
 enough to check a guess. Codes hashed under a retired key, or issued before codes were keyed, are
 still accepted until the set is regenerated.
 
+The ones issued before keying are still plain hashes, and a copy of the table still gives them up.
+They are the rows with a `HashVersion` of 0, so they can be counted:
+
+```sql
+SELECT COUNT(*) FROM "ToamaisutaaRecoveryCodes" WHERE "HashVersion" = 0 AND "ConsumedAt" IS NULL;
+```
+
+When that is small enough to ask the people left to regenerate, set
+`TwoFactor:AcceptUnkeyedRecoveryCodes` to `false` and delete those rows.
+
 Each is single-use. Regenerating invalidates every previous one, because otherwise a printout that
 leaked stays good forever. When few remain, a redemption sets `recovery_codes_running_low` on the
 response so your application can prompt before somebody runs out and needs a support ticket.
@@ -402,6 +412,7 @@ their own account, so it says exactly what is wrong.
 | `EnrolmentProofWindow` | `00:05:00` | How recent a sign-in must be to enrol without the current password |
 | `RecoveryCodeCount` | `10` | |
 | `RecoveryCodeLowWaterMark` | `3` | At or below this, a redemption warns |
+| `AcceptUnkeyedRecoveryCodes` | `true` | Whether codes stored before keying are still accepted |
 | `ChallengeLifetime` | `00:05:00` | |
 | `Enforcement` | `Optional` | |
 | `EnrolledPolicyName` | `Toamaisutaa.TwoFactor` | |

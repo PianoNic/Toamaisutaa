@@ -97,11 +97,16 @@ internal sealed class TwoFactorVerifier(
         var normalized = RecoveryCodeProvider.Normalize(code);
         ToamaisutaaRecoveryCode? stored = null;
 
-        foreach (var hash in RecoveryCodeHashes.Candidates(options.Value, normalized))
+        foreach (var (hash, version) in RecoveryCodeHashes.Candidates(options.Value, normalized))
         {
             stored = await recoveryCodes.FindUnusedAsync(userId, hash, cancellationToken);
-            if (stored is not null)
+
+            // Only against a row actually stored that way. A keyed row matching the unkeyed hash
+            // would mean the code had been checked as something it never was.
+            if (stored is not null && stored.HashVersion == version)
                 break;
+
+            stored = null;
         }
 
         if (stored is null)

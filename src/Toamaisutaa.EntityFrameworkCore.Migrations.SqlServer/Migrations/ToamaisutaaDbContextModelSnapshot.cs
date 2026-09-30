@@ -378,6 +378,9 @@ namespace Toamaisutaa.EntityFrameworkCore.Migrations.SqlServer.Migrations
                     b.Property<long>("CreatedAt")
                         .HasColumnType("bigint");
 
+                    b.Property<int>("HashVersion")
+                        .HasColumnType("int");
+
                     b.Property<Guid>("UserId")
                         .HasColumnType("uniqueidentifier");
 

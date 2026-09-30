@@ -330,6 +330,7 @@ internal sealed class TwoFactorService(
                 Id = Guid.CreateVersion7(now),
                 UserId = userId,
                 CodeHash = RecoveryCodeHashes.Hash(options.Value, RecoveryCodeProvider.Normalize(code)),
+                HashVersion = RecoveryCodeHashes.KeyedVersion,
                 CreatedAt = now,
             })],
             cancellationToken);
