@@ -113,6 +113,8 @@ public static class ToamaisutaaPasswordLoginExtensions
                 provider.GetRequiredService<DummyPasswordHash>(),
                 provider.GetRequiredService<LocalSigningKeyRing>())));
 
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IHostedService, PublishedSecretsStartupCheck>());
+
         return services;
     }
 }
