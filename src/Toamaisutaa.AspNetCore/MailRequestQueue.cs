@@ -79,8 +79,10 @@ internal sealed class MailRequestQueue(IServiceScopeFactory scopes, ToamaisutaaM
 
                 try
                 {
-                    await using var scope = scopes.CreateAsyncScope();
-                    await work(scope.ServiceProvider, deadline.Token);
+                    // Stops waiting at the deadline even when the job ignores its token, and off this
+                    // thread, because a synchronous SMTP send blocks before it returns a task to wait
+                    // on. The job keeps its scope until it does finish.
+                    await Task.Run(() => RunInScopeAsync(work, deadline.Token), CancellationToken.None).WaitAsync(deadline.Token);
                 }
                 catch (OperationCanceledException) when (deadline.IsCancellationRequested && !stoppingToken.IsCancellationRequested)
                 {
@@ -103,5 +105,11 @@ internal sealed class MailRequestQueue(IServiceScopeFactory scopes, ToamaisutaaM
         catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
         {
         }
+    }
+
+    private async Task RunInScopeAsync(Func<IServiceProvider, CancellationToken, Task> work, CancellationToken cancellationToken)
+    {
+        await using var scope = scopes.CreateAsyncScope();
+        await work(scope.ServiceProvider, cancellationToken);
     }
 }

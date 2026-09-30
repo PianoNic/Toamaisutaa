@@ -35,9 +35,41 @@ public class MailRequestQueueHttpTests
         var queue = app.Services.GetRequiredService<MailRequestQueue>();
         queue.JobTimeout = TimeSpan.FromMilliseconds(200);
 
-        queue.Enqueue((_, cancellationToken) => Task.Delay(Timeout.Infinite, cancellationToken));
+        // Ignores its token, as SmtpClient.Send or any call made without it does. One that honoured
+        // the token would finish on cancellation and prove only that the token was cancelled.
+        // Half hand back a task that never completes, half block the calling thread before returning one.
+        var never = new TaskCompletionSource();
+        using var blocked = new ManualResetEventSlim();
 
+        for (var i = 0; i < MailRequestQueue.Readers; i++)
+        {
+            if (i % 2 == 0)
+            {
+                queue.Enqueue((_, _) => never.Task);
+            }
+            else
+            {
+                queue.Enqueue((_, _) =>
+                {
+                    blocked.Wait();
+                    return Task.CompletedTask;
+                });
+            }
+        }
+
+        var ran = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        queue.Enqueue((_, _) =>
+        {
+            ran.TrySetResult();
+            return Task.CompletedTask;
+        });
+
+        // Every reader was holding a stuck job, so this runs only if they let go of them.
+        await ran.Task.WaitAsync(TimeSpan.FromSeconds(10));
         await queue.WhenIdleAsync().WaitAsync(TimeSpan.FromSeconds(10));
+
+        never.SetResult();
+        blocked.Set();
     }
 
     [Test]
