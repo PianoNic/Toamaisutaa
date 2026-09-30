@@ -414,6 +414,7 @@ their own account, so it says exactly what is wrong.
 | `SecretSizeBytes` | `20` | The RFC 4226 recommendation |
 | `Issuer` | `Toamaisutaa` | The name the authenticator app shows |
 | `EnrolmentProofWindow` | `00:05:00` | How recent a sign-in must be to enrol without the current password |
+| `EnrolmentLifetime` | `00:15:00` | How long a begun enrolment can still be confirmed; past it, begin again for a new secret |
 | `RecoveryCodeCount` | `10` | |
 | `RecoveryCodeLowWaterMark` | `3` | At or below this, a redemption warns |
 | `AcceptUnkeyedRecoveryCodes` | `true` | Whether codes stored before keying are still accepted |

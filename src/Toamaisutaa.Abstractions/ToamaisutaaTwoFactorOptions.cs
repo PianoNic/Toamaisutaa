@@ -50,6 +50,16 @@ public sealed class ToamaisutaaTwoFactorOptions
     /// </summary>
     public TimeSpan EnrolmentProofWindow { get; set; } = TimeSpan.FromMinutes(5);
 
+    /// <summary>
+    /// How long a begun enrolment can still be confirmed. Past it, confirming is refused and the
+    /// enrolment has to begin again, with a new secret.
+    /// </summary>
+    /// <remarks>
+    /// The secret was handed out in the clear when it began. One abandoned for good - a closed tab,
+    /// a QR code somebody photographed - used to stay confirmable for ever.
+    /// </remarks>
+    public TimeSpan EnrolmentLifetime { get; set; } = TimeSpan.FromMinutes(15);
+
     // ── Recovery codes ──
 
     public int RecoveryCodeCount { get; set; } = 10;
