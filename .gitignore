@@ -443,3 +443,6 @@ docs/.vitepress/cache/
 
 # Playwright MCP scratch output (page snapshots, console logs)
 .playwright-mcp/
+
+# Claude Code agent worktrees: separate checkouts of local branches, never part of the repository
+.claude/worktrees/
