@@ -35,8 +35,9 @@ public interface ITwoFactorStore
     /// <remarks>
     /// Only the secret columns: a whole-row write from the verifying request puts back the used step
     /// and wrong-code count it read, which another request may have moved since, reopening a spent
-    /// code. The default here reads and writes the whole row, which a store that can should replace
-    /// with one conditional write of these columns.
+    /// code. Not <see cref="ToamaisutaaUserTwoFactor.UpdatedAt"/> either, which dates the enrolment
+    /// rather than its encryption. The default here reads and writes the whole row, which a store
+    /// that can should replace with one conditional write of these columns.
     /// </remarks>
     async Task<bool> RewrapSecretAsync(
         Guid userId,
@@ -45,7 +46,6 @@ public interface ITwoFactorStore
         byte[] secretNonce,
         byte[] secretTag,
         string keyVersion,
-        DateTimeOffset updatedAt,
         CancellationToken cancellationToken = default)
     {
         if (await FindAsync(userId, cancellationToken) is not { } enrolment || enrolment.EncryptionKeyVersion != expectedKeyVersion)
@@ -55,7 +55,33 @@ public interface ITwoFactorStore
         enrolment.SecretNonce = secretNonce;
         enrolment.SecretTag = secretTag;
         enrolment.EncryptionKeyVersion = keyVersion;
-        enrolment.UpdatedAt = updatedAt;
+
+        await UpsertAsync(enrolment, cancellationToken);
+        return true;
+    }
+
+    /// <summary>
+    /// Confirms the pending enrolment, writing only <see cref="ToamaisutaaUserTwoFactor.ConfirmedAt"/>
+    /// and <see cref="ToamaisutaaUserTwoFactor.UpdatedAt"/>, if it is still unconfirmed and still the
+    /// one begun at <paramref name="expectedUpdatedAt"/>.
+    /// </summary>
+    /// <returns>False when it was confirmed, replaced by another begin, or removed first.</returns>
+    /// <remarks>
+    /// A whole-row write from the confirming request put back the used step it read before the code
+    /// was recorded, so the code that confirmed worked again at sign-in. The default here reads and
+    /// writes the whole row, which a store that can should replace with one conditional write.
+    /// </remarks>
+    async Task<bool> ConfirmPendingAsync(
+        Guid userId,
+        DateTimeOffset expectedUpdatedAt,
+        DateTimeOffset confirmedAt,
+        CancellationToken cancellationToken = default)
+    {
+        if (await FindAsync(userId, cancellationToken) is not { ConfirmedAt: null } enrolment || enrolment.UpdatedAt != expectedUpdatedAt)
+            return false;
+
+        enrolment.ConfirmedAt = confirmedAt;
+        enrolment.UpdatedAt = confirmedAt;
 
         await UpsertAsync(enrolment, cancellationToken);
         return true;

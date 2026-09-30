@@ -1,4 +1,7 @@
 using System.Net;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
+using Toamaisutaa.EntityFrameworkCore;
 
 namespace Toamaisutaa.AspNetCore.Tests;
 
@@ -92,6 +95,32 @@ public class TwoFactorEnrolmentHttpTests
         // Still on: a sign-in stops for the second factor, which it only does for a confirmed one.
         var signIn = await (await account.LoginAsync()).Json();
         await Assert.That(signIn.String("challenge")).IsNotNull();
+    }
+
+    /// <summary>Under a no-tracking context the confirm wrote back the whole row it read before the
+    /// code was recorded, so the code that confirmed was accepted again at sign-in.</summary>
+    [Test]
+    public async Task The_code_that_confirmed_does_not_work_again_under_a_no_tracking_context()
+    {
+        await using var app = await TestApp.StartAsync(configureServices: services =>
+            services.ConfigureDbContext<ToamaisutaaDbContext>(db => db.UseQueryTrackingBehavior(QueryTrackingBehavior.NoTracking)));
+
+        var account = await Account.RegisterAsync(app);
+
+        var begin = await app.Client.PostJson("/auth/2fa/begin", new { currentPassword = account.Password }, account.AccessToken);
+        var secret = (await begin.Json()).String("secret")!;
+
+        app.Time.AdvanceToNextTotpStep();
+        var code = Totp.Code(secret, app.Time.Now);
+
+        var confirm = await app.Client.PostJson("/auth/2fa/confirm", new { code }, account.AccessToken);
+        await Assert.That(confirm.StatusCode).IsEqualTo(HttpStatusCode.OK);
+
+        var challenge = (await account.LoginAsync()).Json().Result.String("challenge")!;
+        var replayed = await app.Client.PostJson("/auth/2fa/verify", new { challenge, code });
+
+        await Assert.That(replayed.StatusCode).IsNotEqualTo(HttpStatusCode.OK);
+        await Assert.That((await replayed.Json()).Has("access_token")).IsFalse();
     }
 
     [Test]

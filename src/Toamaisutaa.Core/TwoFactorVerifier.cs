@@ -74,7 +74,7 @@ internal sealed class TwoFactorVerifier(
             metrics.TwoFactorVerified(TwoFactorSource.Otp, succeeded: true);
 
             if (protector.NeedsRewrap(enrolment.EncryptionKeyVersion))
-                await RewrapAsync(enrolment, secret, now, cancellationToken);
+                await RewrapAsync(enrolment, secret, cancellationToken);
 
             return new TwoFactorVerification
             {
@@ -149,7 +149,6 @@ internal sealed class TwoFactorVerifier(
     private async Task RewrapAsync(
         ToamaisutaaUserTwoFactor enrolment,
         byte[] secret,
-        DateTimeOffset now,
         CancellationToken cancellationToken)
     {
         var rewrapped = protector.Protect(secret);
@@ -162,7 +161,6 @@ internal sealed class TwoFactorVerifier(
                 rewrapped.Nonce,
                 rewrapped.Tag,
                 rewrapped.KeyVersion,
-                now,
                 cancellationToken))
             return;
 

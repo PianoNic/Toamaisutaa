@@ -75,7 +75,6 @@ internal sealed class EntityFrameworkTwoFactorStore<TContext>(TContext context)
         byte[] secretNonce,
         byte[] secretTag,
         string keyVersion,
-        DateTimeOffset updatedAt,
         CancellationToken cancellationToken = default)
     {
         var written = await context.Set<ToamaisutaaUserTwoFactor>()
@@ -85,18 +84,39 @@ internal sealed class EntityFrameworkTwoFactorStore<TContext>(TContext context)
                     .SetProperty(enrolment => enrolment.SecretCiphertext, secretCiphertext)
                     .SetProperty(enrolment => enrolment.SecretNonce, secretNonce)
                     .SetProperty(enrolment => enrolment.SecretTag, secretTag)
-                    .SetProperty(enrolment => enrolment.EncryptionKeyVersion, keyVersion)
-                    .SetProperty(enrolment => enrolment.UpdatedAt, updatedAt),
+                    .SetProperty(enrolment => enrolment.EncryptionKeyVersion, keyVersion),
                 cancellationToken) == 1;
 
-        // Bypassed the tracker; reloaded so a later whole-row write cannot put the old ciphertext back.
+        await ReloadTrackedAsync(userId, cancellationToken);
+        return written;
+    }
+
+    public async Task<bool> ConfirmPendingAsync(
+        Guid userId,
+        DateTimeOffset expectedUpdatedAt,
+        DateTimeOffset confirmedAt,
+        CancellationToken cancellationToken = default)
+    {
+        var written = await context.Set<ToamaisutaaUserTwoFactor>()
+            .Where(enrolment => enrolment.UserId == userId && enrolment.ConfirmedAt == null && enrolment.UpdatedAt == expectedUpdatedAt)
+            .ExecuteUpdateAsync(
+                setters => setters
+                    .SetProperty(enrolment => enrolment.ConfirmedAt, confirmedAt)
+                    .SetProperty(enrolment => enrolment.UpdatedAt, confirmedAt),
+                cancellationToken) == 1;
+
+        await ReloadTrackedAsync(userId, cancellationToken);
+        return written;
+    }
+
+    // A write that bypassed the tracker; reloaded so a later whole-row write cannot put old values back.
+    private async Task ReloadTrackedAsync(Guid userId, CancellationToken cancellationToken)
+    {
         var tracked = context.ChangeTracker.Entries<ToamaisutaaUserTwoFactor>()
             .FirstOrDefault(entry => entry.Entity.UserId == userId);
 
         if (tracked is not null)
             await tracked.ReloadAsync(cancellationToken);
-
-        return written;
     }
 
     public async Task DeleteAsync(Guid userId, CancellationToken cancellationToken = default)

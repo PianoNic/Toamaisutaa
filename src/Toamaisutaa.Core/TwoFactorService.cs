@@ -134,9 +134,14 @@ internal sealed class TwoFactorService(
 
         var now = timeProvider.GetUtcNow();
 
-        enrolment.ConfirmedAt = now;
-        enrolment.UpdatedAt = now;
-        await enrolments.UpsertAsync(enrolment, cancellationToken);
+        // Only the confirm columns, and only on the enrolment the code was checked against: a
+        // whole-row write put back the used step read before the code was recorded, so the code
+        // that confirmed worked once more at sign-in.
+        if (!await enrolments.ConfirmPendingAsync(userId, enrolment.UpdatedAt, now, cancellationToken))
+        {
+            logger.LogWarning("Two-factor confirmation refused for user {UserId}: the enrolment changed while it was being confirmed.", userId);
+            throw new TwoFactorEnrolmentException("This enrolment changed while it was being confirmed. Check the status, and begin again if it is not enabled.");
+        }
 
         var codes = await IssueRecoveryCodesAsync(userId, now, cancellationToken);
         await BumpSecurityStampAsync(userId, "two-factor-enabled", now, cancellationToken);
