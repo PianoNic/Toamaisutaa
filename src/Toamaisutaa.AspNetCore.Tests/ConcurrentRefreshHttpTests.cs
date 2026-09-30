@@ -70,6 +70,13 @@ public class ConcurrentRefreshHttpTests
 
         await Assert.That((await refresh).StatusCode).IsEqualTo(HttpStatusCode.Unauthorized);
         await Assert.That(reuse.Total).IsEqualTo(0);
+
+        // A real replay counts on the same probe, so the zero above was measured rather than missed.
+        var replayed = (await (await account.LoginAsync()).Json()).String("refresh_token");
+        await app.Client.PostJson("/auth/refresh", new { refreshToken = replayed });
+        await app.Client.PostJson("/auth/refresh", new { refreshToken = replayed });
+
+        await Assert.That(reuse.Total).IsEqualTo(1);
     }
 
     private sealed class HeldRefreshTokenStore
