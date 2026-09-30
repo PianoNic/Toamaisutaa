@@ -36,6 +36,32 @@ public class CredentialWritesTests
             .Throws<CredentialConcurrencyException>();
     }
 
+    /// <summary>
+    /// A right attempt reserved first, then wrong ones reached the lock counting it. Its refund found
+    /// someone else's lock and gave nothing back, so the account stayed locked on four wrong guesses.
+    /// </summary>
+    [Test]
+    public async Task A_right_attempt_under_a_lock_another_attempt_set_still_comes_off()
+    {
+        var store = new FakePasswordStore();
+        var options = new ToamaisutaaLocalLoginOptions();
+        var now = DateTimeOffset.UtcNow;
+        var credential = new ToamaisutaaPasswordCredential { UserId = Guid.NewGuid(), UserName = "ada", NormalizedUserName = "ADA", PasswordHash = "h" };
+        await store.CreateAsync(credential);
+
+        var right = await store.ReserveAttemptAsync(credential, options, now, CancellationToken.None);
+
+        for (var i = 1; i < options.MaxFailedAttempts; i++)
+            await store.ReserveAttemptAsync(credential, options, now, CancellationToken.None);
+
+        await Assert.That(LockoutPolicy.IsLockedOut(credential, now)).IsTrue();
+
+        await store.RefundAsync(right, now, CancellationToken.None);
+
+        await Assert.That(LockoutPolicy.IsLockedOut(credential, now)).IsFalse();
+        await Assert.That(credential.FailedAttemptCount).IsEqualTo(options.MaxFailedAttempts - 1);
+    }
+
     private sealed class LosesFirst(FakePasswordStore inner, int times) : IPasswordCredentialStore
     {
         private int _lost;

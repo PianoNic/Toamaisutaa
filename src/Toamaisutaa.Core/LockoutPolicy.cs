@@ -49,13 +49,24 @@ internal static class LockoutPolicy
         bool lockedByThisAttempt,
         LockoutState before,
         LockoutState after,
+        ToamaisutaaLocalLoginOptions options,
         DateTimeOffset now)
     {
         if (lockedByThisAttempt && state == after)
             return before;
 
-        if (!IsLockedOut(state, now) && state.FailedAttemptCount > 0)
-            return state with { FailedAttemptCount = state.FailedAttemptCount - 1 };
+        if (!IsLockedOut(state, now))
+            return state.FailedAttemptCount > 0 ? state with { FailedAttemptCount = state.FailedAttemptCount - 1 } : null;
+
+        // Locked by another attempt's reservation. The account was open when this one reserved, so
+        // that lock was reached counting this right attempt, in this window: without it, the count
+        // stands one short of the threshold, unlocked. Outside the window the lock is someone else's.
+        if (!lockedByThisAttempt
+            && after.FirstFailedAttemptAt is { } windowStart
+            && now - windowStart <= options.LockoutWindow)
+        {
+            return new LockoutState(options.MaxFailedAttempts - 1, windowStart, null);
+        }
 
         return null;
     }

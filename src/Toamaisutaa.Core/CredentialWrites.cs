@@ -69,7 +69,7 @@ internal static class CredentialWrites
             },
             cancellationToken);
 
-        return new AttemptReservation(credential, allowed, before, after, LockoutPolicy.IsLockedOut(after, now) && allowed);
+        return new AttemptReservation(credential, allowed, before, after, LockoutPolicy.IsLockedOut(after, now) && allowed, options);
     }
 
     /// <summary>
@@ -90,6 +90,7 @@ internal static class CredentialWrites
                     reservation.LockedByThisAttempt,
                     reservation.Before,
                     reservation.After,
+                    reservation.Options,
                     now);
 
                 if (refunded is { } next)
@@ -238,7 +239,8 @@ internal static class CredentialWrites
                     LockedUntil: LockoutPolicy.IsLockedOut(next, now) ? next.LockedOutUntil : null,
                     Before: current,
                     After: next,
-                    Counted: true);
+                    Counted: true,
+                    Options: options);
             }
         }
 
@@ -263,7 +265,7 @@ internal static class CredentialWrites
 
             var state = LockoutState.Of(enrolment);
 
-            if (LockoutPolicy.Refund(state, reservation.LockedUntil is not null, reservation.Before, reservation.After, now) is not { } next)
+            if (LockoutPolicy.Refund(state, reservation.LockedUntil is not null, reservation.Before, reservation.After, reservation.Options!, now) is not { } next)
                 return;
 
             if (await TryMoveCountAsync(store, userId, state, next, cancellationToken))
@@ -361,7 +363,8 @@ internal readonly record struct EnrolmentReservation(
     DateTimeOffset? LockedUntil,
     LockoutState Before,
     LockoutState After,
-    bool Counted)
+    bool Counted,
+    ToamaisutaaLocalLoginOptions? Options = null)
 {
     internal static EnrolmentReservation Uncounted(bool allowed) =>
         new(allowed, null, LockoutState.Clear, LockoutState.Clear, Counted: false);
@@ -382,4 +385,5 @@ internal readonly record struct AttemptReservation(
     bool Allowed,
     LockoutState Before,
     LockoutState After,
-    bool LockedByThisAttempt);
+    bool LockedByThisAttempt,
+    ToamaisutaaLocalLoginOptions Options);
