@@ -12,7 +12,9 @@ namespace Toamaisutaa.OpenIdConnect;
 /// </summary>
 /// <remarks>
 /// Runs at <see cref="IHostedLifecycleService.StartedAsync"/> because the addresses exist only once
-/// the server has bound them.
+/// the server has bound them. Loopback-only is not unreachable: IIS out-of-process always binds
+/// Kestrel to loopback, so that is refused here too, and a same-host reverse proxy is caught per
+/// request by <see cref="PublishedSecretsProxyGuard"/>.
 /// </remarks>
 internal sealed class PublishedSecretsLoopbackCheck(IServiceProvider provider, IHostEnvironment environment, IServer server)
     : IHostedLifecycleService
@@ -25,6 +27,10 @@ internal sealed class PublishedSecretsLoopbackCheck(IServiceProvider provider, I
         var reachable = (server.Features.Get<IServerAddressesFeature>()?.Addresses ?? [])
             .Where(address => !IsLoopback(address))
             .ToList();
+
+        // Set by the ASP.NET Core Module when IIS forwards to this process.
+        if (Environment.GetEnvironmentVariable("ASPNETCORE_TOKEN") is { Length: > 0 })
+            reachable.Add("IIS (out-of-process)");
 
         if (reachable.Count == 0)
             return Task.CompletedTask;

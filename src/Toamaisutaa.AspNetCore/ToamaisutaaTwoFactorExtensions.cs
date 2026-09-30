@@ -107,6 +107,7 @@ public static class ToamaisutaaTwoFactorExtensions
 
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IHostedService, PublishedSecretsStartupCheck>());
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IHostedService, Toamaisutaa.OpenIdConnect.PublishedSecretsLoopbackCheck>());
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<Microsoft.AspNetCore.Hosting.IStartupFilter, Toamaisutaa.OpenIdConnect.PublishedSecretsProxyGuard>());
 
         return services;
     }

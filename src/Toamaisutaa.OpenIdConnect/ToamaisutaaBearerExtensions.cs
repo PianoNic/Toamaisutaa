@@ -74,6 +74,7 @@ public static class ToamaisutaaBearerExtensions
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IHostedService, AudienceStartupWarning>());
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IHostedService, PublishedSecretsStartupCheck>());
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IHostedService, Toamaisutaa.OpenIdConnect.PublishedSecretsLoopbackCheck>());
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<Microsoft.AspNetCore.Hosting.IStartupFilter, Toamaisutaa.OpenIdConnect.PublishedSecretsProxyGuard>());
 
         // Here rather than in Core, which carries no JWT library.
         services.TryAddSingleton<IAccessTokenIssuer, LocalAccessTokenIssuer>();
