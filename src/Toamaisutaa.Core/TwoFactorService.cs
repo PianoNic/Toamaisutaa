@@ -264,6 +264,7 @@ internal sealed class TwoFactorService(
         bool allowed;
         DateTimeOffset? lockedUntil;
         AttemptReservation? reservation = null;
+        EnrolmentReservation? enrolmentReservation = null;
 
         if (credential is not null)
         {
@@ -274,7 +275,8 @@ internal sealed class TwoFactorService(
         }
         else
         {
-            (allowed, lockedUntil) = await enrolments.ReserveAttemptAsync(userId, localLogin, now, cancellationToken);
+            enrolmentReservation = await enrolments.ReserveAttemptAsync(userId, localLogin, now, cancellationToken);
+            (allowed, lockedUntil) = (enrolmentReservation.Value.Allowed, enrolmentReservation.Value.LockedUntil);
         }
 
         if (!allowed)
@@ -305,6 +307,8 @@ internal sealed class TwoFactorService(
         {
             if (reservation is { } lost)
                 await passwords!.TryRefundAsync(lost, now, cancellationToken);
+            else if (enrolmentReservation is { } lostOnEnrolment)
+                await enrolments.TryRefundAttemptAsync(userId, lostOnEnrolment, now, cancellationToken);
 
             return (verification, "That code was just used by another request. Wait for the next one.");
         }

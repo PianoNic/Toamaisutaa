@@ -223,7 +223,7 @@ internal sealed class PasswordSignInService(
         // an account with no password - a passkey-only one - whose count lives on the enrolment.
         ToamaisutaaPasswordCredential? credential = null;
         AttemptReservation? reservation = null;
-        DateTimeOffset? enrolmentLockedUntil = null;
+        EnrolmentReservation? enrolmentReservation = null;
 
         var redemption = await twoFactor.RedeemChallengeAsync(
             request.ChallengeToken,
@@ -243,19 +243,18 @@ internal sealed class PasswordSignInService(
                     return !reservation.Value.Allowed;
                 }
 
-                var (allowed, lockedUntil) = await twoFactor.ReserveEnrolmentAttemptAsync(userId, options.Value, now, cancellationToken);
-                enrolmentLockedUntil = lockedUntil;
-                return !allowed;
+                enrolmentReservation = await twoFactor.ReserveEnrolmentAttemptAsync(userId, options.Value, now, cancellationToken);
+                return !enrolmentReservation.Value.Allowed;
             });
 
         if (redemption.Outcome != SignInOutcome.Succeeded)
         {
             if (redemption.Outcome == SignInOutcome.InvalidTwoFactorCode && reservation is { } reserved)
                 await ReportWrongCodeAsync(reserved, "Sign-in", now, cancellationToken);
-            else if (redemption.Outcome == SignInOutcome.InvalidTwoFactorCode && enrolmentLockedUntil is { } until)
+            else if (redemption.Outcome == SignInOutcome.InvalidTwoFactorCode && enrolmentReservation?.LockedUntil is { } until)
                 await ReportLockedOutAsync(redemption.UserId!.Value, until, now, cancellationToken);
             else
-                await GiveBackLostRaceAsync(redemption.Outcome, reservation, now, cancellationToken);
+                await GiveBackLostRaceAsync(redemption.Outcome, redemption.UserId, reservation, enrolmentReservation, now, cancellationToken);
 
             await events.PublishAsync(
                 new TwoFactorFailed { OccurredAt = now, UserId = redemption.UserId, Reason = redemption.Outcome },
@@ -456,7 +455,7 @@ internal sealed class PasswordSignInService(
             if (redemption.Outcome == SignInOutcome.InvalidTwoFactorCode && reservation is { } reserved)
                 await ReportWrongCodeAsync(reserved, "Step-up", now, cancellationToken);
             else
-                await GiveBackLostRaceAsync(redemption.Outcome, reservation, now, cancellationToken);
+                await GiveBackLostRaceAsync(redemption.Outcome, request.UserId, reservation, null, now, cancellationToken);
 
             await events.PublishAsync(
                 new TwoFactorFailed { OccurredAt = now, UserId = request.UserId, Reason = redemption.Outcome },
@@ -893,21 +892,27 @@ internal sealed class PasswordSignInService(
         metrics.PasswordVerified(started, result: null);
     }
 
-    /// <summary>The count comes off only when a sign-in or step-up has finished, never after a
-    /// first factor that still owes a second.</summary>
     /// <summary>
     /// A right code that lost its challenge, or the code itself, to another request was counted as
     /// a wrong one: a double-click on Verify left a failure behind after the winning request had
-    /// already cleared the count. Its reservation is given back instead.
+    /// already cleared the count. Its reservation is given back instead - on the credential, or on
+    /// the enrolment for an account without a password.
     /// </summary>
     private async Task GiveBackLostRaceAsync(
         SignInOutcome outcome,
+        Guid? userId,
         AttemptReservation? reservation,
+        EnrolmentReservation? enrolmentReservation,
         DateTimeOffset now,
         CancellationToken cancellationToken)
     {
-        if (outcome == SignInOutcome.ChallengeAlreadyUsed && reservation is { Allowed: true } reserved)
+        if (outcome != SignInOutcome.ChallengeAlreadyUsed)
+            return;
+
+        if (reservation is { Allowed: true } reserved)
             await credentials.TryRefundAsync(reserved, now, cancellationToken);
+        else if (enrolmentReservation is { } enrolmentReserved && userId is { } id)
+            await twoFactor.TryRefundEnrolmentAttemptAsync(id, enrolmentReserved, now, cancellationToken);
     }
 
     private async Task<SignInResult> LockedWhileVerifyingAsync(Guid userId, DateTimeOffset now, CancellationToken cancellationToken)
@@ -921,6 +926,8 @@ internal sealed class PasswordSignInService(
         return Refused(SignInOutcome.LockedOut);
     }
 
+    /// <summary>The count comes off only when a sign-in or step-up has finished, never after a
+    /// first factor that still owes a second.</summary>
     private Task RegisterSuccessAsync(ToamaisutaaPasswordCredential credential, DateTimeOffset now, CancellationToken cancellationToken) =>
         credentials.RegisterSuccessAsync(credential, now, cancellationToken);
 

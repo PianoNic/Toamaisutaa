@@ -218,12 +218,15 @@ internal sealed class TwoFactorGate(
 
     /// <summary>For an account with no password credential, whose wrong-code count lives on the
     /// enrolment rather than on a credential it does not have.</summary>
-    internal Task<(bool Allowed, DateTimeOffset? LockedUntil)> ReserveEnrolmentAttemptAsync(
+    internal Task<EnrolmentReservation> ReserveEnrolmentAttemptAsync(
         Guid userId,
         ToamaisutaaLocalLoginOptions localLogin,
         DateTimeOffset now,
         CancellationToken cancellationToken) =>
         Required<ITwoFactorStore>().ReserveAttemptAsync(userId, localLogin, now, cancellationToken);
+
+    internal Task TryRefundEnrolmentAttemptAsync(Guid userId, EnrolmentReservation reservation, DateTimeOffset now, CancellationToken cancellationToken) =>
+        Required<ITwoFactorStore>().TryRefundAttemptAsync(userId, reservation, now, cancellationToken);
 
     internal Task RegisterEnrolmentSuccessAsync(Guid userId, CancellationToken cancellationToken) =>
         Required<ITwoFactorStore>().RegisterSuccessAsync(userId, cancellationToken);

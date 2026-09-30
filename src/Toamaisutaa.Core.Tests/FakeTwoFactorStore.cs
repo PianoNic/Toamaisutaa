@@ -30,8 +30,18 @@ internal sealed class FakeTwoFactorStore : ITwoFactorStore, IRecoveryCodeStore, 
         return Task.CompletedTask;
     }
 
+    /// <summary>Set to make the next recorded step lose, as if another request had used the same code
+    /// a moment earlier.</summary>
+    internal bool LoseNextStep { get; set; }
+
     public Task<bool> RecordUsedStepAsync(Guid userId, long step, CancellationToken cancellationToken = default)
     {
+        if (LoseNextStep)
+        {
+            LoseNextStep = false;
+            return Task.FromResult(false);
+        }
+
         var enrolment = Enrolments.FirstOrDefault(entry => entry.UserId == userId);
 
         if (enrolment is null || enrolment.LastUsedStep >= step)
