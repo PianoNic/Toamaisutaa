@@ -34,7 +34,7 @@ Everything binds from the `Oidc` section.
 | `Oidc:PostLogoutRedirectUri` | `RedirectUri` | |
 | `Oidc:PublicUrl` | | Used to derive the two above. Set it in production: without it the redirect URI comes from the request's Host header, which the caller controls, and a warning is logged. Every response built from `IToamaisutaaClientConfigurationProvider`, on `/api/app` or an endpoint of your own, is sent `Cache-Control: no-store` |
 | `Oidc:AdminRole` | | Registers the `Toamaisutaa.Admin` policy when set, which is also what maps the [admin provisioning endpoints](/provisioning-accounts#the-three-admin-endpoints-need-an-admin-role) |
-| `Oidc:RequireAdminRoleGlobally` | `false` | Puts the admin role in the fallback policy and the default policy, so every endpoint that is not anonymous - a bare `[Authorize]` and this package's own included - is admin-only |
+| `Oidc:RequireAdminRoleGlobally` | `false` | Makes every endpoint that is not anonymous admin-only - a bare `[Authorize]`, one naming a policy or roles of its own, and this package's own. Enforced in the `IAuthorizationMiddlewareResultHandler`, wrapping any registered before `AddToamaisutaaAuthorization`; register yours earlier, since one registered after replaces it |
 | `Oidc:QueryToken:IncludePaths:0` | | Path prefixes where `?access_token=` is honoured, for SignalR |
 | `Oidc:QueryToken:ExcludePaths:0` | | Carved back out of the above |
 | `Oidc:HealthCheck:RefreshInterval` | `00:05:00` | How long the health check trusts a successful fetch, and remembers a failed one |
