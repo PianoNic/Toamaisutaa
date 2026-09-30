@@ -70,6 +70,24 @@ judgement about either: Pomelo has no EF Core 10 release, and its latest version
 of this package. If Pomelo ships for EF Core 10 and you would rather use it, the swap is a provider
 package and a regenerated migration - nothing in the schema changes.
 
+### Subjects are case-sensitive, and SQL Server and MySQL are not
+
+An OpenID Connect subject is compared exactly. The default collations on SQL Server and MySQL ignore
+case, and MySQL's ignores accents as well. Lookups compare again in code, so `ALICE` never signs in
+as `alice`. But the unique index on `(ProviderKey, Subject)` still treats them as one, so the second
+of two subjects that differ only that way cannot be provisioned: it is refused with an error naming
+the collation. Identity providers that issue GUIDs never meet this. If yours issues names, give the
+column a binary collation:
+
+```sql
+-- MySQL
+ALTER TABLE ToamaisutaaExternalLogins MODIFY Subject varchar(256) COLLATE utf8mb4_bin NOT NULL;
+-- SQL Server: drop and recreate the unique index around this
+ALTER TABLE ToamaisutaaExternalLogins ALTER COLUMN Subject nvarchar(256) COLLATE Latin1_General_BIN2 NOT NULL;
+```
+
+PostgreSQL and SQLite compare exactly by default.
+
 ## Not using Entity Framework at all
 
 `Toamaisutaa.EntityFrameworkCore` is one implementation of a set of interfaces, not the storage

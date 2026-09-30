@@ -93,7 +93,7 @@ public class TrustedDeviceHttpTests
         var attempts = await Task.WhenAll(account.LoginAsync(deviceToken: issued), account.LoginAsync(deviceToken: issued));
         var bodies = await Task.WhenAll(attempts.Select(response => response.Json()));
 
-        await Assert.That(bodies.Count(body => body.Has("access_token"))).IsLessThanOrEqualTo(1);
+        await Assert.That(bodies.Count(body => body.Has("access_token"))).IsEqualTo(1);
     }
 
     /// <summary>The real store, except that the first two rotations wait for each other.</summary>

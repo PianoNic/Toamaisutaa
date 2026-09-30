@@ -14,7 +14,13 @@ internal static class CredentialWrites
 {
     /// <summary>Enough for any real contention on one account. Past it, something is wrong and
     /// failing the request says so rather than looping.</summary>
-    private const int MaxAttempts = 10;
+    /// <remarks>
+    /// Each attempt is now counted before it is checked and given back or cleared after, so a burst
+    /// of n requests on one account is about 2n writes to one row, and a request can lose each of
+    /// them in turn. Ten parallel second factors could exhaust a limit of ten and answer 500 to the
+    /// one with the right code.
+    /// </remarks>
+    private const int MaxAttempts = 50;
 
     /// <returns>The credential as written, which is a different instance after a retry. Read what
     /// happened off this one, not the one passed in.</returns>
