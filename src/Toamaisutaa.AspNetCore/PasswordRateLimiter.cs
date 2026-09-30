@@ -94,6 +94,17 @@ internal sealed class PasswordRateLimiter : IDisposable
             return address.ToString();
 
         var bytes = address.GetAddressBytes();
+
+        // A NAT64 gateway puts every IPv4 client it translates in one /64, so one of them sending a
+        // few wrong passwords used to cost all the others their budget. The IPv4 address is inside,
+        // where RFC 6052 puts it for these two prefixes.
+        // ponytail: well-known prefixes only - a setting for network-specific ones when someone runs one.
+        if (bytes is [0x00, 0x64, 0xff, 0x9b, 0, 0, 0, 0, 0, 0, 0, 0, ..])
+            return new IPAddress(bytes[12..16]).ToString();
+
+        if (bytes is [0x00, 0x64, 0xff, 0x9b, 0x00, 0x01, ..])
+            return new IPAddress([bytes[6], bytes[7], bytes[9], bytes[10]]).ToString();
+
         Array.Clear(bytes, 8, 8);
 
         return $"{new IPAddress(bytes)}/64";
