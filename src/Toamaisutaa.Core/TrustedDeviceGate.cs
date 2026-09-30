@@ -133,6 +133,20 @@ internal sealed class TrustedDeviceGate(
             },
             cancellationToken);
 
+        // Re-read after the insert: a revocation landing between rotation and insert missed the new
+        // row, so either this sees the revocation or the revocation saw the row.
+        if (await devices.FindByHashAsync(stored.TokenHash, cancellationToken) is { RevokedAt: not null } revoked)
+        {
+            logger.LogWarning(
+                "Trusted device {FamilyId} for user {UserId} was revoked while it was being rotated; refusing it "
+                + "and requiring a second factor.",
+                stored.FamilyId,
+                stored.UserId);
+
+            await RevokeFamilyAsync(devices, stored, revoked.RevokedReason ?? "revoked-during-rotation", now, cancellationToken);
+            return DeviceTrustResult.NotTrusted;
+        }
+
         logger.LogInformation("Second factor satisfied from trusted device {FamilyId} for user {UserId}.", stored.FamilyId, stored.UserId);
 
         return new DeviceTrustResult
