@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Authorization.Policy;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
@@ -87,6 +88,26 @@ public static class ToamaisutaaAuthorizationExtensions
         services.AddAuthorization();
         services.TryAddEnumerable(
             ServiceDescriptor.Singleton<IConfigureOptions<AuthorizationOptions>, ConfigureToamaisutaaAuthorizationOptions>());
+
+        // The fallback and default policies cannot reach an endpoint that names a policy or roles of
+        // its own, so RequireAdminRoleGlobally is enforced on the result instead, which every
+        // authorized endpoint passes through. Wraps whatever handler is registered by now.
+        if (!services.Any(descriptor => descriptor.ServiceType == typeof(AdminRoleResultHandler)))
+        {
+            var existing = services.LastOrDefault(descriptor => descriptor.ServiceType == typeof(IAuthorizationMiddlewareResultHandler));
+
+            services.AddSingleton<AdminRoleResultHandler>(provider => new AdminRoleResultHandler(
+                provider.GetRequiredService<IOptions<ToamaisutaaAuthorizationOptions>>(),
+                existing switch
+                {
+                    { ImplementationInstance: IAuthorizationMiddlewareResultHandler instance } => instance,
+                    { ImplementationFactory: { } factory } => (IAuthorizationMiddlewareResultHandler)factory(provider),
+                    { ImplementationType: { } type } => (IAuthorizationMiddlewareResultHandler)ActivatorUtilities.CreateInstance(provider, type),
+                    _ => new AuthorizationMiddlewareResultHandler(),
+                }));
+
+            services.AddSingleton<IAuthorizationMiddlewareResultHandler>(provider => provider.GetRequiredService<AdminRoleResultHandler>());
+        }
 
         return services;
     }

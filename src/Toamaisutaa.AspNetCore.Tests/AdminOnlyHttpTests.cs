@@ -1,5 +1,6 @@
 using System.Net;
 using Microsoft.AspNetCore.Builder;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Toamaisutaa.AspNetCore.Tests;
 
@@ -29,6 +30,27 @@ public class AdminOnlyHttpTests
 
         await Assert.That((await app.Client.Get("/test/authorized", admin.AccessToken)).StatusCode).IsEqualTo(HttpStatusCode.OK);
         await Assert.That((await app.Client.Get("/test/unmarked", admin.AccessToken)).StatusCode).IsEqualTo(HttpStatusCode.OK);
+    }
+
+    /// <summary>
+    /// An endpoint naming a policy of its own never consults the default or the fallback policy, so
+    /// anybody that policy admitted got through - including the two-factor policy this package
+    /// documents for exactly such endpoints.
+    /// </summary>
+    [Test]
+    public async Task An_endpoint_naming_its_own_policy_is_admin_only_too()
+    {
+        await using var app = await TestApp.StartAsync(
+            configure: settings => settings["Oidc:RequireAdminRoleGlobally"] = "true",
+            mapExtra: endpoints => endpoints.MapGet("/test/named", () => "ok").RequireAuthorization("AnyoneSignedIn"),
+            configureServices: services => services.AddAuthorization(options =>
+                options.AddPolicy("AnyoneSignedIn", policy => policy.RequireAuthenticatedUser())));
+
+        var ordinary = await Account.RegisterAsync(app);
+        var admin = await Account.RegisterAsync(app, TestApp.AdminUserName);
+
+        await Assert.That((await app.Client.Get("/test/named", ordinary.AccessToken)).StatusCode).IsEqualTo(HttpStatusCode.Forbidden);
+        await Assert.That((await app.Client.Get("/test/named", admin.AccessToken)).StatusCode).IsEqualTo(HttpStatusCode.OK);
     }
 
     /// <summary>Without the flag, a plain authorization requirement is still just "signed in".</summary>
