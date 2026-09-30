@@ -59,10 +59,16 @@ public class ToamaisutaaRecoveryCode
 
     public Guid UserId { get; set; }
 
-    /// <summary>Unsalted SHA-256, for the reason documented on the token helper: these are
-    /// high-entropy random values, so there is no dictionary to defend against and nothing for a
-    /// salt to do.</summary>
+    /// <summary>An HMAC under a key derived from <c>TwoFactor:EncryptionKey</c>, or, on a row with a
+    /// <see cref="HashVersion"/> of 0, the unkeyed SHA-256 codes were stored as before that.</summary>
     public string CodeHash { get; set; } = default!;
+
+    /// <summary>
+    /// 1 for a keyed hash, 0 for the unkeyed SHA-256 of rows written before keying existed. Both are
+    /// 32 bytes of base64, so without this nothing could tell them apart, count the old ones, or keep
+    /// the unkeyed hash from being tried against a row that was never stored that way.
+    /// </summary>
+    public int HashVersion { get; set; }
 
     public DateTimeOffset CreatedAt { get; set; }
 

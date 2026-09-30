@@ -57,6 +57,17 @@ public sealed class ToamaisutaaTwoFactorOptions
     /// <summary>At or below this many unused codes, a redemption tells the caller to regenerate.</summary>
     public int RecoveryCodeLowWaterMark { get; set; } = 3;
 
+    /// <summary>
+    /// Whether a recovery code stored before codes were keyed - a row with a <c>HashVersion</c> of 0 -
+    /// is still accepted. On by default, so nobody's printout stops working on upgrade.
+    /// </summary>
+    /// <remarks>
+    /// Those rows are plain SHA-256 of a fifty-bit code, which a copy of the table gives up to one
+    /// GPU sweep. Turn this off once the ones left are few enough to ask their owners to regenerate,
+    /// and then delete them: the count is in the two-factor docs.
+    /// </remarks>
+    public bool AcceptUnkeyedRecoveryCodes { get; set; } = true;
+
     // ── Challenge ──
 
     /// <summary>How long the half-finished sign-in stays usable.</summary>

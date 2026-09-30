@@ -25,6 +25,12 @@ internal static class RecoveryCodeHashes
 {
     private static readonly byte[] Purpose = "toamaisutaa:recovery-codes"u8.ToArray();
 
+    /// <summary>The <c>HashVersion</c> of a row stored unkeyed, before keying existed.</summary>
+    internal const int UnkeyedVersion = 0;
+
+    /// <summary>The <c>HashVersion</c> every code is stored with now.</summary>
+    internal const int KeyedVersion = 1;
+
     /// <summary>What a newly issued code is stored as.</summary>
     internal static string Hash(ToamaisutaaTwoFactorOptions options, string normalizedCode)
     {
@@ -34,16 +40,18 @@ internal static class RecoveryCodeHashes
         return Keyed(Convert.FromBase64String(options.EncryptionKey), normalizedCode);
     }
 
-    /// <summary>Every form a code still in use could be stored as, current key first.</summary>
-    internal static IEnumerable<string> Candidates(ToamaisutaaTwoFactorOptions options, string normalizedCode)
+    /// <summary>Every form a code still in use could be stored as, current key first, each with the
+    /// <c>HashVersion</c> a row stored that way carries.</summary>
+    internal static IEnumerable<(string Hash, int Version)> Candidates(ToamaisutaaTwoFactorOptions options, string normalizedCode)
     {
         if (!string.IsNullOrWhiteSpace(options.EncryptionKey))
-            yield return Keyed(Convert.FromBase64String(options.EncryptionKey), normalizedCode);
+            yield return (Keyed(Convert.FromBase64String(options.EncryptionKey), normalizedCode), KeyedVersion);
 
         foreach (var retired in options.RetiredEncryptionKeys.Values)
-            yield return Keyed(Convert.FromBase64String(retired), normalizedCode);
+            yield return (Keyed(Convert.FromBase64String(retired), normalizedCode), KeyedVersion);
 
-        yield return SecureTokens.HashToken(normalizedCode);
+        if (options.AcceptUnkeyedRecoveryCodes)
+            yield return (SecureTokens.HashToken(normalizedCode), UnkeyedVersion);
     }
 
     private static string Keyed(byte[] encryptionKey, string normalizedCode)

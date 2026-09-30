@@ -25,7 +25,7 @@ public class RecoveryCodeHashesTests
             RetiredEncryptionKeys = { ["1"] = old },
         };
 
-        await Assert.That(RecoveryCodeHashes.Candidates(after, "ABCDEFGHJK")).Contains(stored);
+        await Assert.That(RecoveryCodeHashes.Candidates(after, "ABCDEFGHJK").Select(candidate => candidate.Hash)).Contains(stored);
     }
 
     /// <summary>The whole point of keying it: without the key, the stored value says nothing.</summary>

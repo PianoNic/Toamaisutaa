@@ -374,6 +374,9 @@ namespace Toamaisutaa.EntityFrameworkCore.Migrations.MySql.Migrations
                     b.Property<long>("CreatedAt")
                         .HasColumnType("bigint");
 
+                    b.Property<int>("HashVersion")
+                        .HasColumnType("int");
+
                     b.Property<Guid>("UserId")
                         .HasColumnType("char(36)");
 
