@@ -3,6 +3,7 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Toamaisutaa.Abstractions;
+using Toamaisutaa.Core;
 
 namespace Toamaisutaa.PasswordHashing.Argon2;
 
@@ -62,12 +63,7 @@ internal sealed class Argon2HashingStartupCheck(
         }
 
         if (problems.Count > 0)
-        {
-            throw new InvalidOperationException(
-                "Toamaisutaa Argon2 password hashing is registered but not usable:"
-                + Environment.NewLine
-                + string.Join(Environment.NewLine, problems.Select(problem => "  - " + problem)));
-        }
+            throw StartupProblems.Refusal("Toamaisutaa Argon2 password hashing is registered but not usable:", problems);
 
         return Task.CompletedTask;
     }

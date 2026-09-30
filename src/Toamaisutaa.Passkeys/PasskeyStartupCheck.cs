@@ -2,6 +2,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
 using Toamaisutaa.Abstractions;
+using Toamaisutaa.Core;
 
 namespace Toamaisutaa.Passkeys;
 
@@ -24,12 +25,7 @@ internal sealed class PasskeyStartupCheck(
         CheckCeremony(settings, problems);
 
         if (problems.Count > 0)
-        {
-            throw new InvalidOperationException(
-                "Toamaisutaa passkeys are registered but not usable:"
-                + Environment.NewLine
-                + string.Join(Environment.NewLine, problems.Select(problem => "  - " + problem)));
-        }
+            throw StartupProblems.Refusal("Toamaisutaa passkeys are registered but not usable:", problems);
 
         return Task.CompletedTask;
     }

@@ -41,11 +41,10 @@ internal sealed class PublishedSecretsStartupCheck(IServiceProvider provider, IH
 
         if (problems.Count > 0)
         {
-            throw new InvalidOperationException(
+            throw StartupProblems.Refusal(
                 $"Toamaisutaa refuses to start in the {environment.EnvironmentName} environment with values from the public sample. "
-                + "Generate your own and set them from the environment or a secret store:"
-                + Environment.NewLine
-                + string.Join(Environment.NewLine, problems.Select(problem => "  - " + problem)));
+                + "Generate your own and set them from the environment or a secret store:",
+                problems);
         }
 
         return Task.CompletedTask;

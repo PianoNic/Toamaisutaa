@@ -27,12 +27,7 @@ internal sealed class TwoFactorStartupCheck(
         CheckRecoveryCodes(settings, problems);
 
         if (problems.Count > 0)
-        {
-            throw new InvalidOperationException(
-                "Toamaisutaa two-factor authentication is registered but not usable:"
-                + Environment.NewLine
-                + string.Join(Environment.NewLine, problems.Select(problem => "  - " + problem)));
-        }
+            throw StartupProblems.Refusal("Toamaisutaa two-factor authentication is registered but not usable:", problems);
 
         return Task.CompletedTask;
     }

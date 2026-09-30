@@ -48,12 +48,7 @@ internal sealed class TrustedDeviceStartupCheck(
             problems.Add($"TrustedDevices:MaxDevicesPerUser is {settings.MaxDevicesPerUser}; use 0 for unlimited.");
 
         if (problems.Count > 0)
-        {
-            throw new InvalidOperationException(
-                "Toamaisutaa trusted devices are registered but not usable:"
-                + Environment.NewLine
-                + string.Join(Environment.NewLine, problems.Select(problem => "  - " + problem)));
-        }
+            throw StartupProblems.Refusal("Toamaisutaa trusted devices are registered but not usable:", problems);
 
         return Task.CompletedTask;
     }

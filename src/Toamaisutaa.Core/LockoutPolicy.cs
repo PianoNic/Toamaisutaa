@@ -47,6 +47,27 @@ internal static class LockoutPolicy
 
     internal static void RegisterSuccess(ToamaisutaaPasswordCredential credential) =>
         LockoutState.Clear.ApplyTo(credential);
+
+    /// <summary>
+    /// The count after giving back one reservation whose attempt was right, or null when there is
+    /// nothing to give back. Only this attempt's share comes off: the lock it set, if that still
+    /// stands untouched, undone to what it replaced; otherwise one failure off an unlocked count.
+    /// </summary>
+    internal static LockoutState? Refund(
+        LockoutState state,
+        bool lockedByThisAttempt,
+        LockoutState before,
+        LockoutState after,
+        DateTimeOffset now)
+    {
+        if (lockedByThisAttempt && state == after)
+            return before;
+
+        if (!IsLockedOut(state, now) && state.FailedAttemptCount > 0)
+            return state with { FailedAttemptCount = state.FailedAttemptCount - 1 };
+
+        return null;
+    }
 }
 
 /// <summary>A failure count, when it started, and the lock it led to, if any.</summary>
