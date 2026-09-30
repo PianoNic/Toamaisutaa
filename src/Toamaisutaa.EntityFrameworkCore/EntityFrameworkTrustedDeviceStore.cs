@@ -7,7 +7,9 @@ internal sealed class EntityFrameworkTrustedDeviceStore<TContext>(TContext conte
     where TContext : DbContext
 {
     public async Task<ToamaisutaaTrustedDevice?> FindByHashAsync(string tokenHash, CancellationToken cancellationToken = default) =>
+        // Untracked, or the re-read after rotating answers from the identity map and misses a revocation.
         await context.Set<ToamaisutaaTrustedDevice>()
+            .AsNoTracking()
             .FirstOrDefaultAsync(device => device.TokenHash == tokenHash, cancellationToken);
 
     public async Task<IReadOnlyList<ToamaisutaaTrustedDevice>> ListActiveAsync(Guid userId, CancellationToken cancellationToken = default) =>

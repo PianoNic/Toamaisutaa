@@ -75,6 +75,81 @@ public class TrustedDeviceHttpTests
         await Assert.That(bodies.Count(body => body.Has("access_token"))).IsEqualTo(1);
     }
 
+    /// <summary>A revoke-all landing after the old row was rotated and before its successor was
+    /// inserted missed the successor, which kept skipping the second factor.</summary>
+    [Test]
+    public async Task A_revocation_between_rotating_and_inserting_takes_the_new_token_too()
+    {
+        var store = new RevokeAfterRotating();
+        await using var app = await TestApp.StartAsync(configureServices: store.Register);
+
+        var account = await Account.RegisterAsync(app);
+        await account.EnrolAsync();
+
+        var issued = (await account.SignInWithSecondFactorAsync(rememberDevice: true)).String("device_token")!;
+
+        store.Armed = true;
+        var raced = await (await account.LoginAsync(deviceToken: issued)).Json();
+
+        await Assert.That(store.Revoked).IsGreaterThan(0);
+        await Assert.That(raced.Has("two_factor_required")).IsTrue();
+        await Assert.That(raced.Has("device_token")).IsFalse();
+
+        await account.SignInWithSecondFactorAsync();
+        var devices = await (await app.Client.Get("/auth/devices", account.AccessToken)).Json();
+        await Assert.That(devices.GetArrayLength()).IsEqualTo(0);
+    }
+
+    private sealed class RevokeAfterRotating
+    {
+        internal volatile bool Armed;
+
+        internal int Revoked;
+
+        internal void Register(IServiceCollection services) =>
+            services.Decorate<ITrustedDeviceStore>(inner => new Store(this, inner));
+
+        private sealed class Store(RevokeAfterRotating owner, ITrustedDeviceStore inner) : ITrustedDeviceStore
+        {
+            private Guid _userId;
+
+            public async Task<ToamaisutaaTrustedDevice?> FindByHashAsync(string tokenHash, CancellationToken cancellationToken = default)
+            {
+                var device = await inner.FindByHashAsync(tokenHash, cancellationToken);
+                _userId = device?.UserId ?? _userId;
+                return device;
+            }
+
+            public Task<IReadOnlyList<ToamaisutaaTrustedDevice>> ListActiveAsync(Guid userId, CancellationToken cancellationToken = default) =>
+                inner.ListActiveAsync(userId, cancellationToken);
+
+            public Task CreateAsync(ToamaisutaaTrustedDevice device, CancellationToken cancellationToken = default) =>
+                inner.CreateAsync(device, cancellationToken);
+
+            public async Task<bool> MarkRotatedAsync(Guid deviceId, DateTimeOffset rotatedAt, CancellationToken cancellationToken = default)
+            {
+                var rotated = await inner.MarkRotatedAsync(deviceId, rotatedAt, cancellationToken);
+
+                if (rotated && owner.Armed)
+                {
+                    owner.Armed = false;
+                    owner.Revoked = await inner.RevokeAllForUserAsync(_userId, "user-revoked-all", rotatedAt, cancellationToken);
+                }
+
+                return rotated;
+            }
+
+            public Task RevokeFamilyAsync(Guid familyId, string reason, DateTimeOffset revokedAt, CancellationToken cancellationToken = default) =>
+                inner.RevokeFamilyAsync(familyId, reason, revokedAt, cancellationToken);
+
+            public Task<int> RevokeAllForUserAsync(Guid userId, string reason, DateTimeOffset revokedAt, CancellationToken cancellationToken = default) =>
+                inner.RevokeAllForUserAsync(userId, reason, revokedAt, cancellationToken);
+
+            public Task<int> DeleteExpiredAsync(DateTimeOffset expiredBefore, CancellationToken cancellationToken = default) =>
+                inner.DeleteExpiredAsync(expiredBefore, cancellationToken);
+        }
+    }
+
     private sealed class MeetBeforeRotating
     {
         private readonly CountdownEvent _arrived = new(2);
