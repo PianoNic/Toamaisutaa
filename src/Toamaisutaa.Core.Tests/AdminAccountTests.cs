@@ -2,15 +2,9 @@ using Toamaisutaa.Abstractions;
 
 namespace Toamaisutaa.Core.Tests;
 
-/// <summary>
-/// The invariant this whole feature exists for: a password an admin caused to exist reaches
-/// <c>IAdminPasswordIssuedNotifier</c>, and a password a person chose for themselves never does.
-/// </summary>
 public class AdminAccountTests
 {
     private const string Password = "correct horse battery";
-
-    // ── Creating an account ──
 
     [Test]
     public async Task CreatingAnAccountWithAChosenPasswordHandsItToTheNotifierAndNeverSignsIn()
@@ -30,8 +24,7 @@ public class AdminAccountTests
     }
 
     /// <summary>A user name shaped like an address holds that address in the one column proving the
-    /// mailbox cannot release, whoever chose it. Invitation completion is the other place a name is
-    /// chosen, and the invitee is the least likely to know better.</summary>
+    /// mailbox cannot release.</summary>
     [Test]
     public async Task AUserNameShapedLikeAnAddressIsRefusedWhereverOneIsChosen()
     {
@@ -47,8 +40,7 @@ public class AdminAccountTests
         await Assert.That(harness.Passwords.Credentials).IsEmpty();
     }
 
-    /// <summary>A display name in front of the address rode into the To header and the mail body,
-    /// so it is refused wherever an address comes in, not only where a stranger can type one.</summary>
+    /// <summary>A display name in front of the address rides into the To header and the mail body.</summary>
     [Test]
     public async Task AnAddressWithADisplayNameIsRefusedForANewAccount()
     {
@@ -121,8 +113,6 @@ public class AdminAccountTests
             .Throws<InvalidOperationException>();
     }
 
-    // ── Overwriting a password ──
-
     [Test]
     public async Task SettingAPasswordForSomeoneElseNeedsNoCurrentPassword()
     {
@@ -192,9 +182,7 @@ public class AdminAccountTests
         await Assert.That(harness.AdminPasswordNotifier.Issued).IsEmpty();
     }
 
-    // The revocation is what an admin reset is for, and it may not be conditional on an SMTP relay
-    // being up. Before this, a notifier that threw skipped the stamp bump, the sessions, the
-    // devices and the tokens, and answered 500 - the account kept whoever was in it.
+    // The revocation is what an admin reset is for, so it may not depend on an SMTP relay being up.
     [Test]
     public async Task ANotifierFailureStillEndsEverySession()
     {
@@ -239,8 +227,6 @@ public class AdminAccountTests
         await Assert.That(async () => await harness.Accounts.AdminSetPasswordAsync(user.Id, Password))
             .Throws<InvalidOperationException>();
     }
-
-    // ── The invariant: a self-chosen password never reaches the admin notifier ──
 
     [Test]
     public async Task RegisteringNeverCallsTheAdminNotifier()

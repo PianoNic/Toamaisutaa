@@ -4,14 +4,10 @@ using Toamaisutaa.Abstractions;
 
 namespace Toamaisutaa.AspNetCore.Tests;
 
-/// <summary>
-/// An administrator-set password goes out in the clear. Where it goes has to be an address the
-/// account has, and one that somebody proved when the deployment asks for that.
-/// </summary>
 public class AdminPasswordAddressHttpTests
 {
-    /// <summary>The profile field is what an identity provider's sync writes; the credential's
-    /// address is the one the account signs in with.</summary>
+    /// <summary>The profile field is what an identity provider's sync writes, so it is not trusted
+    /// with a password in the clear.</summary>
     [Test]
     public async Task An_admin_password_goes_to_the_credential_address_not_the_profile_email()
     {
@@ -32,10 +28,6 @@ public class AdminPasswordAddressHttpTests
         await Assert.That(sentTo).IsEquivalentTo(new[] { target.Email });
     }
 
-    /// <summary>
-    /// With the option on, a self-service reset will not mail an unproven address. A password in the
-    /// clear is a better prize than a reset link, and it went there anyway.
-    /// </summary>
     [Test]
     public async Task With_verification_required_an_unverified_address_is_not_mailed_a_password()
     {
@@ -54,15 +46,9 @@ public class AdminPasswordAddressHttpTests
         await Assert.That(response.StatusCode).IsEqualTo(HttpStatusCode.BadRequest);
         await Assert.That(sentTo).IsEmpty();
 
-        // Refused before anything moved: the owner's own password still works.
         await Assert.That((await target.LoginAsync()).StatusCode).IsEqualTo(HttpStatusCode.OK);
     }
 
-    /// <summary>
-    /// With no address on a credential, the profile field was used instead - for an account an
-    /// identity provider owns, or one whose unproven address was released to whoever proved it. The
-    /// password went in the clear to whoever controlled that field.
-    /// </summary>
     [Test]
     [Arguments(false)]
     [Arguments(true)]
@@ -105,8 +91,8 @@ public class AdminPasswordAddressHttpTests
         await Assert.That(sentTo).IsEquivalentTo(new[] { "(no address)" });
     }
 
-    /// <summary>The verified-address rule protects an address from being mailed a password. With no
-    /// address, nothing is mailed, and refusing only took the one recovery path left.</summary>
+    /// <summary>With no address nothing is mailed, so refusing would only take away the one recovery
+    /// path left.</summary>
     [Test]
     public async Task With_verification_required_an_account_with_no_address_can_still_be_given_a_password()
     {

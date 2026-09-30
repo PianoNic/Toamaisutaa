@@ -4,10 +4,6 @@ using Toamaisutaa.Abstractions;
 
 namespace Toamaisutaa.AspNetCore.Tests;
 
-/// <summary>
-/// The per-address cooldown in front of the anonymous mail endpoints, which remembers what it was
-/// asked about in the process's own memory.
-/// </summary>
 public class MailRequestCooldownHttpTests
 {
     private static Task<TestApp> StartAsync(Action<IServiceCollection>? configureServices = null) =>
@@ -16,9 +12,7 @@ public class MailRequestCooldownHttpTests
             configureServices: configureServices);
 
     /// <summary>
-    /// The body has no length limit short of Kestrel's 30 MB, and whatever arrived was kept as the
-    /// key for a minute or, below the sweep threshold, for good. Ten of those a minute from one
-    /// address ran the process out of memory.
+    /// The body is bounded only by Kestrel's 30 MB, so an oversized key kept in memory is a memory exhaustion vector.
     /// </summary>
     [Test]
     [Arguments("/auth/password/forgot")]
@@ -34,8 +28,6 @@ public class MailRequestCooldownHttpTests
         await Assert.That(cooldown.Count).IsEqualTo(0);
     }
 
-    /// <summary>Expired entries were only swept once ten thousand had built up, so anything
-    /// below that was never let go at all.</summary>
     [Test]
     public async Task Expired_addresses_are_let_go_without_waiting_for_a_crowd()
     {
@@ -51,10 +43,6 @@ public class MailRequestCooldownHttpTests
         await Assert.That(cooldown.Count).IsEqualTo(1);
     }
 
-    /// <summary>
-    /// The cooldown was handed back only for a request that failed politely. One whose mail server
-    /// timed out answered 500, sent nothing, and the retry was told a link went out a moment ago.
-    /// </summary>
     [Test]
     public async Task An_email_change_that_throws_leaves_the_retry_free()
     {
@@ -80,7 +68,6 @@ public class MailRequestCooldownHttpTests
         await Assert.That(retry.StatusCode).IsEqualTo(HttpStatusCode.NoContent);
     }
 
-    /// <summary>"Wait a minute" was written into the answer, whatever the cooldown was set to.</summary>
     [Test]
     public async Task The_email_change_cooldown_answer_names_the_configured_wait()
     {

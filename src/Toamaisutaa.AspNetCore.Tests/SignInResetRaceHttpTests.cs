@@ -4,14 +4,6 @@ using Toamaisutaa.Abstractions;
 
 namespace Toamaisutaa.AspNetCore.Tests;
 
-/// <summary>
-/// A reset that commits while a sign-in with the old password is still hashing it. The owner reset
-/// to shut somebody out; whatever that sign-in wins must not outlive the reset.
-/// </summary>
-/// <remarks>
-/// The stamp used to be read after the hash, so it was the reset's own fresh one, and the session or
-/// challenge carried it as though it had been issued afterwards.
-/// </remarks>
 public class SignInResetRaceHttpTests
 {
     [Test]
@@ -62,9 +54,8 @@ public class SignInResetRaceHttpTests
     }
 
     /// <summary>
-    /// The same race against a user store that reads the row afresh every time, as any store without
-    /// EF's identity map does. Under EF the challenge happened to reuse the user read before the
-    /// hash, so the stamp it carried was right by accident rather than because it was passed along.
+    /// EF's identity map makes the challenge reuse the pre-hash user read, so only a store that reads
+    /// afresh proves the stamp is passed along rather than right by accident.
     /// </summary>
     [Test]
     public async Task A_challenge_carries_the_stamp_read_before_the_hash_whatever_the_store_caches()
@@ -111,8 +102,6 @@ public class SignInResetRaceHttpTests
         return (app, hasher, resets);
     }
 
-    /// <summary>Every lookup by id in a scope of its own, so nothing read earlier in the request is
-    /// handed back.</summary>
     private sealed class FreshReads(IUserStore inner, IServiceScopeFactory scopes, Func<IServiceProvider, object> real) : IUserStore
     {
         public async Task<ToamaisutaaUser?> FindByIdAsync(Guid id, CancellationToken cancellationToken = default)

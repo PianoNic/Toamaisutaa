@@ -3,23 +3,16 @@ using Toamaisutaa.Abstractions;
 namespace Toamaisutaa.Core.Tests;
 
 /// <summary>
-/// That every path which chooses a password consults <c>IPasswordValidator.ValidateAsync</c>.
+/// A call site left on the synchronous <c>Validate</c> silently skips a validator that does I/O, so
+/// every path that chooses a password is asserted to consult <c>ValidateAsync</c>.
 /// </summary>
-/// <remarks>
-/// A validator that has to do I/O - a breach-list lookup is the case this exists for - can only
-/// answer from the async method. A call site left on the synchronous one skips it silently: the
-/// length rules still apply, every existing test still passes, and the breach check is simply never
-/// asked. So this asserts one path per method rather than trusting six call sites were all changed
-/// together.
-/// </remarks>
 public class AsyncPasswordValidatorTests
 {
     private const string Refused = "This password is not allowed here.";
 
     /// <summary>
-    /// Answers from the async method only, and only once armed - so the setup a test needs (a
-    /// registration, a reset token, an invitation) goes through, and the call under test does not.
-    /// A caller still on the synchronous method gets no errors at all.
+    /// Answers from the async method only, and only once armed, so a test's setup goes through and
+    /// the call under test does not.
     /// </summary>
     private sealed class AsyncOnlyValidator : IPasswordValidator
     {

@@ -5,15 +5,6 @@ using Toamaisutaa.Abstractions;
 
 namespace Toamaisutaa.AspNetCore.Tests;
 
-/// <summary>
-/// The two WebAuthn ceremonies over the real pipeline, driven by a software authenticator that
-/// builds its own attestation and signs its own assertions.
-/// </summary>
-/// <remarks>
-/// Every assertion here reads raw JSON rather than deserialising through the package's own records,
-/// for the reason the rest of this suite does: a test that takes its expectation from the type under
-/// test agrees with it even when a field has gone missing on the wire.
-/// </remarks>
 public class PasskeyHttpTests
 {
     [Test]
@@ -27,8 +18,7 @@ public class PasskeyHttpTests
 
         await Assert.That(registered.StatusCode).IsEqualTo(HttpStatusCode.Created);
 
-        // No Location. The one this used to send was relative, began with the user id and resolved
-        // to a path nothing maps, so a client following it as RFC 9110 allows got a 404.
+        // No Location, because there is no per-passkey GET route for a client to follow.
         await Assert.That(registered.Headers.Contains("Location")).IsFalse();
 
         var created = await registered.Json();
@@ -43,15 +33,9 @@ public class PasskeyHttpTests
         await Assert.That(entries).HasCount().EqualTo(1);
         await Assert.That(entries[0].String("id")).IsEqualTo(created.String("id"));
 
-        // Never signed anything yet, and a list is read to decide what to delete.
         await Assert.That(entries[0].Has("lastUsedAt")).IsFalse();
     }
 
-    /// <summary>
-    /// A passkey signs in on its own, so registering one adds a way into the account. A bearer token
-    /// is not proof of anything but a bearer token: the one lifted from a log line or a compromised
-    /// browser is exactly what the account holder is about to revoke every session over.
-    /// </summary>
     [Test]
     public async Task Registering_a_passkey_takes_more_than_a_bearer_token()
     {
@@ -65,8 +49,7 @@ public class PasskeyHttpTests
         var wrong = await Passkeys.BeginRegistrationAsync(app, account.AccessToken, "not the password");
         await Assert.That(wrong.StatusCode).IsEqualTo(HttpStatusCode.BadRequest);
 
-        // A body-less POST is the same refusal rather than a 415 or a 500: the proof is missing
-        // either way, and an endpoint that fell over on it would be a new hole in place of the old.
+        // A body-less POST must be the same 400, not a 415 or 500.
         var empty = await app.Client.PostEmpty("/auth/passkeys/register/begin", account.AccessToken);
         await Assert.That(empty.StatusCode).IsEqualTo(HttpStatusCode.BadRequest);
 
@@ -74,10 +57,6 @@ public class PasskeyHttpTests
         await Assert.That(listed.EnumerateArray().ToList()).HasCount().EqualTo(0);
     }
 
-    /// <summary>
-    /// The password asked for here is guessable by whoever holds the token, so a wrong one counts
-    /// against the account like a wrong password at sign-in.
-    /// </summary>
     [Test]
     public async Task Wrong_passwords_at_registration_lock_the_account()
     {
@@ -93,11 +72,6 @@ public class PasskeyHttpTests
         await Assert.That((await account.LoginAsync()).StatusCode).IsEqualTo(HttpStatusCode.Unauthorized);
     }
 
-    /// <summary>
-    /// The other proof, and the one an account with no password has: a second factor presented
-    /// within <c>Passkeys:RegistrationProofWindow</c>. It is the <c>toa_2fa_at</c> claim
-    /// <c>RequireFreshSecondFactor</c> reads, so a step-up satisfies this too.
-    /// </summary>
     [Test]
     public async Task A_fresh_second_factor_registers_a_passkey_without_a_password()
     {
@@ -112,12 +86,6 @@ public class PasskeyHttpTests
         await Assert.That(registered.StatusCode).IsEqualTo(HttpStatusCode.Created);
     }
 
-    /// <summary>
-    /// A reset is what somebody does when they think another person has been in their account, and
-    /// it ends every session, every reset link and every trusted device. A passkey registered before
-    /// it is a credential that signs in with no password at all, so leaving one standing would mean
-    /// the one remediation the package offers remediated nothing.
-    /// </summary>
     [Test]
     public async Task A_passkey_registered_before_a_password_reset_cannot_sign_in_after_it()
     {
@@ -161,8 +129,6 @@ public class PasskeyHttpTests
 
         var body = await signedIn.Json();
 
-        // The same field names /auth/login returns. A passkey sign-in that answered a different
-        // shape would make a client carry two parsers for one concept.
         await Assert.That(body.String("access_token")).IsNotNull();
         await Assert.That(body.String("refresh_token")).IsNotNull();
         await Assert.That(body.String("token_type")).IsEqualTo("Bearer");
@@ -185,11 +151,6 @@ public class PasskeyHttpTests
         await Assert.That(claims.Has("toa_2fa_at")).IsTrue();
     }
 
-    /// <summary>
-    /// The rule this repository has been bitten by three times: a claim is not done until the
-    /// refresh path answers for it. A passkey session that refreshed into a password-only one would
-    /// fail its policy exactly one access-token lifetime after a perfectly good sign-in.
-    /// </summary>
     [Test]
     public async Task Refreshing_a_passkey_session_keeps_the_methods_and_the_source()
     {
@@ -211,11 +172,6 @@ public class PasskeyHttpTests
         await Assert.That(claims.Has("toa_2fa_at")).IsTrue();
     }
 
-    /// <summary>
-    /// The whole point of the feature under <c>RequiredForAll</c>: one prompt proved possession and
-    /// verified the person, so nothing should be telling them to go and enrol a TOTP authenticator
-    /// as well.
-    /// </summary>
     [Test]
     public async Task A_passkey_satisfies_RequiredForAll_without_a_totp_enrolment()
     {
@@ -225,8 +181,7 @@ public class PasskeyHttpTests
         var account = await Account.RegisterAsync(app);
         using var authenticator = new SoftwareAuthenticator();
 
-        // The password sign-in this account came from is told to enrol, which is what makes the
-        // passkey token below a difference rather than a default.
+        // Proves the flag is set without the passkey, so its absence below is a difference, not a default.
         await Assert.That(account.Claims().String("toa_2fa_required")).IsEqualTo("true");
 
         await Passkeys.RegisterAsync(app, account.AccessToken, authenticator);
@@ -238,10 +193,6 @@ public class PasskeyHttpTests
         await Assert.That(claims.Strings("amr")).Contains("mfa");
     }
 
-    /// <summary>
-    /// A passkey the authenticator did not verify the user for is one factor, not two - so it signs
-    /// in, and it does not claim the second factor it did not perform.
-    /// </summary>
     [Test]
     public async Task A_passkey_without_user_verification_claims_no_second_factor()
     {
@@ -261,10 +212,7 @@ public class PasskeyHttpTests
     }
 
     /// <summary>
-    /// Enrolment alone decides a challenge - <c>TwoFactorGate</c> says so in its own summary, and
-    /// the password and magic-link paths both honour it. An assertion the authenticator did not
-    /// verify the user for proved possession and nothing else, so a borrowed security key must not
-    /// beat the second factor its owner turned on.
+    /// An unverified assertion proves possession only, so a borrowed security key must not bypass the owner's second factor.
     /// </summary>
     [Test]
     public async Task An_unverified_passkey_challenges_an_enrolled_user_instead_of_signing_them_in()
@@ -281,7 +229,6 @@ public class PasskeyHttpTests
         var challenged = await Passkeys.SignInAsync(app, authenticator, userVerified: false);
         await Assert.That(challenged.StatusCode).IsEqualTo(HttpStatusCode.OK);
 
-        // The same second shape /auth/login answers with, so a client has one branch rather than two.
         var body = await challenged.Json();
         await Assert.That(body.Bool("two_factor_required")).IsTrue();
         await Assert.That(body.Has("access_token")).IsFalse();
@@ -295,18 +242,12 @@ public class PasskeyHttpTests
 
         await Assert.That(verified.StatusCode).IsEqualTo(HttpStatusCode.OK);
 
-        // What the passkey proved, replayed off the challenge, plus what the code proved.
         var claims = Account.DecodeClaims((await verified.Json()).String("access_token")!);
 
         await Assert.That(claims.Strings("amr")).IsEquivalentTo(new[] { "hwk", "user", "otp", "mfa" });
         await Assert.That(claims.String("toa_2fa_source")).IsEqualTo("otp");
     }
 
-    /// <summary>
-    /// Authenticator data that is valid base64url and nonsense inside has to be a 401 like every
-    /// other refusal here. The flags byte below sets the extension-data bit with no CBOR after it,
-    /// which is the shape that escaped as an unhandled exception from an anonymous endpoint.
-    /// </summary>
     [Test]
     public async Task Malformed_authenticator_data_is_refused_rather_than_escaping()
     {
@@ -319,8 +260,7 @@ public class PasskeyHttpTests
         var begin = await (await app.Client.PostJson("/auth/passkeys/assertion/begin", new { })).Json();
         var assertion = Passkeys.Fields(authenticator.Get(begin, TestApp.Origin));
 
-        // 32 bytes of relying-party hash, then UP|UV|ED, then a counter, and nothing where the
-        // extension map has to be.
+        // 32 bytes of RP id hash, flags UP|UV|ED, a counter, and no CBOR where the extension map must be.
         var malformed = new byte[37];
         malformed[32] = 0x85;
         assertion["authenticatorData"] = SoftwareAuthenticator.Encode(malformed);
@@ -331,10 +271,6 @@ public class PasskeyHttpTests
         await Assert.That((await response.Json()).String("error")).IsEqualTo("invalid_grant");
     }
 
-    /// <summary>
-    /// With user verification required, an authenticator that only checked for a touch has to be
-    /// refused. Configuration says two factors and the ceremony delivered one.
-    /// </summary>
     [Test]
     public async Task An_unverified_assertion_is_refused_when_user_verification_is_required()
     {
@@ -362,8 +298,6 @@ public class PasskeyHttpTests
         var begin = await (await app.Client.PostJson("/auth/passkeys/assertion/begin", new { })).Json();
         var assertion = Passkeys.Fields(authenticator.Get(begin, TestApp.Origin));
 
-        // A different key's signature over the same data. Everything else about the assertion is
-        // exactly what a real authenticator would have produced.
         using var impostor = new SoftwareAuthenticator();
         assertion["signature"] = Passkeys.Fields(impostor.Get(begin, TestApp.Origin))["signature"];
 
@@ -372,10 +306,6 @@ public class PasskeyHttpTests
         await Assert.That(response.StatusCode).IsEqualTo(HttpStatusCode.Unauthorized);
     }
 
-    /// <summary>
-    /// The counter is the only thing that catches a cloned authenticator, and it only catches one if
-    /// a value that fails to advance is refused.
-    /// </summary>
     [Test]
     public async Task A_sign_count_that_does_not_advance_is_refused()
     {
@@ -386,22 +316,15 @@ public class PasskeyHttpTests
         await Passkeys.RegisterAsync(app, account.AccessToken, authenticator);
         await Assert.That((await Passkeys.SignInAsync(app, authenticator)).StatusCode).IsEqualTo(HttpStatusCode.OK);
 
-        // Back to what it was before that sign-in, which is what a copy of the credential would
-        // report: the copy has no idea how often the original has been used.
+        // What a cloned credential reports, unaware of the original's use.
         authenticator.SignCount = 0;
 
         await Assert.That((await Passkeys.SignInAsync(app, authenticator)).StatusCode).IsEqualTo(HttpStatusCode.Unauthorized);
     }
 
     /// <summary>
-    /// Two assertions over one challenge, the second with a higher counter and a valid signature -
-    /// so nothing but the challenge having been spent can refuse it.
+    /// Two separate assertions with advancing counters, not a byte replay, so clone detection cannot be what refuses the second.
     /// </summary>
-    /// <remarks>
-    /// Replaying the identical bytes would not test this. The counter has moved on by then, so that
-    /// version passed with the consumed check deleted: the clone detection was refusing it and the
-    /// test was named after something it did not touch.
-    /// </remarks>
     [Test]
     public async Task A_challenge_cannot_be_spent_twice()
     {
@@ -422,10 +345,6 @@ public class PasskeyHttpTests
             .IsEqualTo(HttpStatusCode.Unauthorized);
     }
 
-    /// <summary>
-    /// The same, raced. The challenge was checked unspent and then marked spent in a second step,
-    /// so every assertion that landed between the two got a session.
-    /// </summary>
     [Test]
     public async Task A_challenge_raced_by_several_assertions_signs_in_at_most_once()
     {
@@ -444,11 +363,6 @@ public class PasskeyHttpTests
         await Assert.That(responses.Count(response => response.StatusCode == HttpStatusCode.OK)).IsEqualTo(1);
     }
 
-    /// <summary>
-    /// The relying party id is what stops a phishing site using a credential, and the origin is what
-    /// the server checks it against. A ceremony claiming to have happened somewhere else is the
-    /// exact shape of that attack.
-    /// </summary>
     [Test]
     public async Task An_assertion_from_another_origin_is_refused()
     {
@@ -465,11 +379,6 @@ public class PasskeyHttpTests
             .IsEqualTo(HttpStatusCode.Unauthorized);
     }
 
-    /// <summary>
-    /// Sign-in begins with no identifier, so the user handle the authenticator returns is the only
-    /// thing that says which account is arriving. One that names a different account than the
-    /// credential belongs to has to be refused, or the handle is decoration.
-    /// </summary>
     [Test]
     public async Task An_assertion_naming_the_wrong_account_is_refused()
     {
@@ -483,7 +392,6 @@ public class PasskeyHttpTests
         var begin = await (await app.Client.PostJson("/auth/passkeys/assertion/begin", new { })).Json();
         var assertion = Passkeys.Fields(authenticator.Get(begin, TestApp.Origin));
 
-        // Ada's credential, ada's signature, and grace's user handle bolted on.
         var grace = await (await app.Client.Get("/test/me", other.AccessToken)).Json();
         assertion["userHandle"] = SoftwareAuthenticator.Encode(Guid.Parse(grace.String("id")!).ToByteArray());
 
@@ -499,16 +407,12 @@ public class PasskeyHttpTests
 
         var begin = await (await app.Client.PostJson("/auth/passkeys/assertion/begin", new { })).Json();
 
-        // Never registered anywhere. It signs correctly and belongs to no account, which has to be
-        // the same answer as a wrong signature.
         var response = await app.Client.PostJson("/auth/passkeys/assertion/complete", stranger.Get(begin, TestApp.Origin));
 
         await Assert.That(response.StatusCode).IsEqualTo(HttpStatusCode.Unauthorized);
         await Assert.That((await response.Json()).String("error")).IsEqualTo("invalid_grant");
     }
 
-    /// <summary>Removal borrowed registration's proof, wording and all, so a person removing a key
-    /// was told that registering one needs proof.</summary>
     [Test]
     public async Task Deleting_a_passkey_without_proof_is_refused_as_a_removal()
     {
@@ -539,7 +443,7 @@ public class PasskeyHttpTests
         await Assert.That((await app.Client.Delete($"/auth/passkeys/{id}", new { currentPassword = account.Password }, account.AccessToken)).StatusCode)
             .IsEqualTo(HttpStatusCode.NoContent);
 
-        // Deleting ended every session, the one that did it included, so the list is read from a new one.
+        // Deleting ends every session including this one, so the list is read from a new one.
         var signedIn = await (await account.LoginAsync()).Json();
         var listed = await (await app.Client.Get("/auth/passkeys", signedIn.String("access_token"))).Json();
         await Assert.That(listed.EnumerateArray().ToList()).HasCount().EqualTo(0);
@@ -548,10 +452,6 @@ public class PasskeyHttpTests
             .IsEqualTo(HttpStatusCode.Unauthorized);
     }
 
-    /// <summary>
-    /// A bearer token alone used to be enough to delete a passkey - every passkey, on an account that
-    /// has no password, which is the owner locked out by whoever lifted the token.
-    /// </summary>
     [Test]
     public async Task Deleting_a_passkey_takes_more_than_a_bearer_token()
     {
@@ -572,8 +472,7 @@ public class PasskeyHttpTests
     }
 
     /// <summary>
-    /// A key is removed when somebody suspects it is not only in their hands. Nothing records which
-    /// session it opened, so every session ends - or the one it opened outlives it.
+    /// Nothing records which session a passkey opened, so every session must end or that one outlives the key.
     /// </summary>
     [Test]
     public async Task Deleting_a_passkey_ends_the_sessions_on_the_account()
@@ -590,20 +489,14 @@ public class PasskeyHttpTests
         var refreshed = await app.Client.PostJson("/auth/refresh", new { refreshToken = opened.String("refresh_token") });
         await Assert.That(refreshed.StatusCode).IsEqualTo(HttpStatusCode.Unauthorized);
 
-        // Access tokens already out there stop working too, not only their refresh.
         await Assert.That((await app.Client.Get("/auth/passkeys", opened.String("access_token"))).StatusCode)
             .IsEqualTo(HttpStatusCode.Unauthorized);
 
-        // Ended, not merely unrefreshable: a fresh sign-in sees itself and nothing from before.
         var fresh = await (await account.LoginAsync()).Json();
         var sessions = await (await app.Client.Get("/auth/sessions", fresh.String("access_token"))).Json();
         await Assert.That(sessions.EnumerateArray().ToList()).HasCount().EqualTo(1);
     }
 
-    /// <summary>
-    /// 404 covers a passkey that does not exist and one belonging to somebody else alike, or the
-    /// endpoint becomes a way to find out which credential ids are real.
-    /// </summary>
     [Test]
     public async Task Deleting_someone_elses_passkey_answers_404()
     {
@@ -617,7 +510,6 @@ public class PasskeyHttpTests
         var response = await app.Client.Delete($"/auth/passkeys/{created.String("id")}", new { currentPassword = other.Password }, other.AccessToken);
         await Assert.That(response.StatusCode).IsEqualTo(HttpStatusCode.NotFound);
 
-        // And it is still there for the person who owns it.
         var listed = await (await app.Client.Get("/auth/passkeys", owner.AccessToken)).Json();
         await Assert.That(listed.EnumerateArray().ToList()).HasCount().EqualTo(1);
     }
@@ -634,11 +526,6 @@ public class PasskeyHttpTests
             .IsEqualTo(HttpStatusCode.Unauthorized);
     }
 
-    /// <summary>
-    /// Sign-in begins with no identifier and no account picker of ours, so the begin endpoint has to
-    /// answer identically whether or not anybody is registered. Anything else is an enumeration
-    /// oracle on an anonymous endpoint.
-    /// </summary>
     [Test]
     public async Task Beginning_an_assertion_says_nothing_about_who_is_registered()
     {
@@ -655,17 +542,11 @@ public class PasskeyHttpTests
         await Assert.That(options.String("rpId")).IsEqualTo("localhost");
         await Assert.That(options.String("userVerification")).IsEqualTo("required");
 
-        // No credential list, so the response is byte-for-byte the same shape whether or not the
-        // account somebody guessed at exists.
         var allowed = options.TryGetProperty("allowCredentials", out var list) ? list.GetArrayLength() : 0;
         await Assert.That(allowed).IsEqualTo(0);
     }
 
-    /// <summary>
-    /// A stale token has to be refused rather than escaping as a 500, the same as everywhere else
-    /// that resolves the caller. Confirming a two-factor enrolment moves the stamp, which is the
-    /// ordinary way to be holding one.
-    /// </summary>
+    /// <summary>Confirming a two-factor enrolment moves the security stamp, which makes the earlier token stale.</summary>
     [Test]
     public async Task A_token_from_before_a_credential_change_cannot_list_passkeys()
     {
@@ -701,10 +582,6 @@ public class PasskeyHttpTests
 /// <summary>Drives the passkey endpoints the way a client does. Everything goes over HTTP.</summary>
 internal static class Passkeys
 {
-    /// <summary>
-    /// Starts a registration. <paramref name="currentPassword"/> is the proof the endpoint asks for,
-    /// and null is a caller presenting nothing but their bearer token.
-    /// </summary>
     public static Task<HttpResponseMessage> BeginRegistrationAsync(
         TestApp app,
         string accessToken,
@@ -747,10 +624,6 @@ internal static class Passkeys
             authenticator.Get(await begin.Json(), TestApp.Origin, userVerified));
     }
 
-    /// <summary>
-    /// The authenticator's output as a mutable bag, so a test can substitute one field and leave the
-    /// rest exactly as a real authenticator produced it.
-    /// </summary>
     public static Dictionary<string, object?> Fields(object response) =>
         JsonSerializer.Deserialize<Dictionary<string, object?>>(JsonSerializer.Serialize(response))!;
 }

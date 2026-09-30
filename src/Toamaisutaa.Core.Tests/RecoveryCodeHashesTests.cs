@@ -7,10 +7,6 @@ public class RecoveryCodeHashesTests
 {
     private static string NewKey() => Convert.ToBase64String(RandomNumberGenerator.GetBytes(32));
 
-    /// <summary>
-    /// A rotation moves the active key, and a code printed under the old one is still somebody's
-    /// only way back in. It has to be found under the retired key, or the rotation locks them out.
-    /// </summary>
     [Test]
     public async Task A_code_hashed_under_a_key_that_has_since_retired_is_still_found()
     {
@@ -28,7 +24,6 @@ public class RecoveryCodeHashesTests
         await Assert.That(RecoveryCodeHashes.Candidates(after, "ABCDEFGHJK").Select(candidate => candidate.Hash)).Contains(stored);
     }
 
-    /// <summary>The whole point of keying it: without the key, the stored value says nothing.</summary>
     [Test]
     public async Task The_stored_value_depends_on_the_key()
     {

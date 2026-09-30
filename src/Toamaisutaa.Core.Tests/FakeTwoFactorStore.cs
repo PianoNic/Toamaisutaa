@@ -2,8 +2,6 @@ using Toamaisutaa.Abstractions;
 
 namespace Toamaisutaa.Core.Tests;
 
-/// <summary>Enrolments, recovery codes and challenges in memory, matching the shape of the Entity
-/// Framework store closely enough that a flow exercised here is the flow that runs.</summary>
 internal sealed class FakeTwoFactorStore : ITwoFactorStore, IRecoveryCodeStore, ITwoFactorChallengeStore
 {
     internal List<ToamaisutaaUserTwoFactor> Enrolments { get; } = [];
@@ -11,8 +9,6 @@ internal sealed class FakeTwoFactorStore : ITwoFactorStore, IRecoveryCodeStore, 
     internal List<ToamaisutaaRecoveryCode> Codes { get; } = [];
 
     internal List<ToamaisutaaTwoFactorChallenge> Challenges { get; } = [];
-
-    // ── Enrolments ──
 
     public Task<ToamaisutaaUserTwoFactor?> FindAsync(Guid userId, CancellationToken cancellationToken = default) =>
         Task.FromResult(Enrolments.FirstOrDefault(enrolment => enrolment.UserId == userId));
@@ -30,8 +26,6 @@ internal sealed class FakeTwoFactorStore : ITwoFactorStore, IRecoveryCodeStore, 
         return Task.CompletedTask;
     }
 
-    /// <summary>Set to make the next recorded step lose, as if another request had used the same code
-    /// a moment earlier.</summary>
     internal bool LoseNextStep { get; set; }
 
     public Task<bool> RecordUsedStepAsync(Guid userId, long step, CancellationToken cancellationToken = default)
@@ -77,8 +71,6 @@ internal sealed class FakeTwoFactorStore : ITwoFactorStore, IRecoveryCodeStore, 
         return Task.FromResult(true);
     }
 
-    // ── Recovery codes ──
-
     public Task ReplaceAllAsync(Guid userId, IReadOnlyList<ToamaisutaaRecoveryCode> codes, CancellationToken cancellationToken = default)
     {
         Codes.RemoveAll(code => code.UserId == userId);
@@ -101,8 +93,6 @@ internal sealed class FakeTwoFactorStore : ITwoFactorStore, IRecoveryCodeStore, 
     public Task<int> CountUnusedAsync(Guid userId, CancellationToken cancellationToken = default) =>
         Task.FromResult(Codes.Count(code => code.UserId == userId && code.ConsumedAt is null));
 
-    // ── Challenges ──
-
     public Task CreateAsync(ToamaisutaaTwoFactorChallenge challenge, CancellationToken cancellationToken = default)
     {
         Challenges.Add(challenge);
@@ -124,11 +114,6 @@ internal sealed class FakeTwoFactorStore : ITwoFactorStore, IRecoveryCodeStore, 
         Task.FromResult(Challenges.RemoveAll(challenge => challenge.ExpiresAt <= expiredBefore));
 }
 
-/// <summary>
-/// The two-factor services are resolved through a provider rather than a constructor, so that
-/// password login works with none of them registered. This is the smallest thing that satisfies
-/// that lookup without dragging a container into the tests.
-/// </summary>
 internal sealed class FakeServiceProvider : IServiceProvider
 {
     private readonly Dictionary<Type, object> _services = [];

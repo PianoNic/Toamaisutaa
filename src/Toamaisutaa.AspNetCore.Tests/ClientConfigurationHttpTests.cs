@@ -8,20 +8,13 @@ using Microsoft.Extensions.Logging;
 
 namespace Toamaisutaa.AspNetCore.Tests;
 
-/// <summary>
-/// The anonymous endpoint an SPA reads its OIDC settings from, and the Host header it falls back on.
-/// </summary>
 public class ClientConfigurationHttpTests
 {
-    // Written out: it is the route a consumer's SPA fetches, and a test that read it from the
-    // package would agree with a rename.
+    // Written out, because a test that read the route from the package would agree with a rename.
     private const string Path = "/api/app";
 
-    /// <summary>
-    /// With no public URL configured the redirect URI comes from the request's Host header. Cached
-    /// by something shared that ignores Host, one forged header would send every SPA loading it to
-    /// the attacker's address to sign in.
-    /// </summary>
+    /// <summary>The redirect URI can come from the Host header, so a shared cache ignoring Host
+    /// would let one forged header redirect every SPA's sign-in.</summary>
     [Test]
     public async Task The_configuration_is_never_stored_by_a_cache()
     {
@@ -33,9 +26,6 @@ public class ClientConfigurationHttpTests
         await Assert.That(response.Headers.CacheControl?.NoStore).IsTrue();
     }
 
-    /// <summary>The endpoint getting-started tells consumers to write, copied as it is there. The
-    /// header used to live on the mapped route alone, so this one carried a Host-derived redirect
-    /// URI that any shared cache was free to keep.</summary>
     [Test]
     public async Task An_endpoint_of_your_own_built_on_the_provider_is_never_stored_by_a_cache_either()
     {

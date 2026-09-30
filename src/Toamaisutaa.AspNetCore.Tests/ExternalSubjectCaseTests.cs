@@ -7,16 +7,8 @@ using Toamaisutaa.EntityFrameworkCore;
 
 namespace Toamaisutaa.AspNetCore.Tests;
 
-/// <summary>
-/// An OpenID Connect subject is case-sensitive. The default collations on SQL Server and MySQL are
-/// not, and MySQL's ignores accents as well, so the database alone would hand <c>Alice</c> the row
-/// that belongs to <c>alice</c>.
-/// </summary>
-/// <remarks>
-/// SQLite compares exactly by default, which is why the suite never saw this. The context here gives
-/// the subject column SQLite's own case-insensitive collation, so the real store runs against a real
-/// database that compares the way those two do.
-/// </remarks>
+/// <summary>SQLite compares exactly by default, so the context here uses NOCASE to compare the way the
+/// SQL Server and MySQL default collations do.</summary>
 public class ExternalSubjectCaseTests
 {
     [Test]
@@ -44,12 +36,6 @@ public class ExternalSubjectCaseTests
         await Assert.That(await logins.FindAsync(ToamaisutaaDefaults.ProviderKey, "ALICE")).IsNull();
     }
 
-    /// <summary>
-    /// The lookup above is right, which sends <c>ALICE</c> down the create path - into a unique index
-    /// that says <c>alice</c> is the same subject. The retry met the same index, and the conflict
-    /// escaped as a 500 naming nothing. Refused with the reason instead, because only a collation
-    /// change fixes it.
-    /// </summary>
     [Test]
     public async Task Provisioning_a_subject_the_database_folds_into_another_says_why()
     {
@@ -85,12 +71,6 @@ public class ExternalSubjectCaseTests
         await Assert.That(refused!.Message).Contains("collation");
     }
 
-    /// <summary>
-    /// The model each provider gets, built without connecting to anything. The collation is what
-    /// lets a second subject that differs only in case exist at all under their default collations;
-    /// applying it to a real server is verified separately, because MySQL's provider generated a
-    /// migration that silently dropped it.
-    /// </summary>
     [Test]
     [Arguments("sqlserver", "Latin1_General_100_BIN2")]
     [Arguments("mysql", "utf8mb4_bin")]

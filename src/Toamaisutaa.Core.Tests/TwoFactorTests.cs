@@ -9,12 +9,6 @@ public class TwoFactorTests
     private static PasswordHarness Harness(Action<ToamaisutaaTwoFactorOptions>? configure = null) =>
         PasswordHarness.Create(configureTwoFactor: configure, withTwoFactor: true);
 
-    // ── Enrolment ──
-
-    /// <summary>
-    /// The whole reason enrolment is two steps. If generating a secret switched the second factor
-    /// on, anyone who opened the settings page and closed it would be locked out of their account.
-    /// </summary>
     [Test]
     public async Task Beginning_an_enrolment_changes_nothing_about_signing_in()
     {
@@ -62,11 +56,6 @@ public class TwoFactorTests
         await Assert.That((await harness.TwoFactor.GetStatusAsync(user.Id)).Enabled).IsFalse();
     }
 
-    /// <summary>
-    /// A second call replaces the secret, which is right, and leaves anyone who scanned the first QR
-    /// code holding a dead one. We cannot prove that is what happened - the old secret is gone - but
-    /// the row having been rewritten is enough to say so.
-    /// </summary>
     [Test]
     public async Task A_second_enrolment_supersedes_the_first_and_says_so_when_confirmation_fails()
     {
@@ -99,8 +88,6 @@ public class TwoFactorTests
         await Assert.That(async () => await harness.TwoFactor.BeginEnrolmentAsync(user.Id, harness.FreshSignIn))
             .Throws<TwoFactorEnrolmentException>();
     }
-
-    // ── Sign-in ──
 
     [Test]
     public async Task An_enrolled_user_gets_a_challenge_instead_of_tokens()
@@ -171,11 +158,6 @@ public class TwoFactorTests
         await Assert.That(result.Outcome).IsEqualTo(SignInOutcome.ChallengeExpired);
     }
 
-    /// <summary>
-    /// Disabling needs proof, so nobody can do this to somebody else - but the account holder can do
-    /// it from a second device while a challenge sits unspent on the first. Checking that the
-    /// challenge is unconsumed is not enough; the thing it was challenging has to still exist.
-    /// </summary>
     [Test]
     public async Task A_challenge_does_not_outlive_the_enrolment_it_was_issued_against()
     {
@@ -207,8 +189,6 @@ public class TwoFactorTests
         await Assert.That(result.Outcome).IsEqualTo(SignInOutcome.InvalidChallenge);
     }
 
-    // ── Recovery codes ──
-
     [Test]
     public async Task A_recovery_code_completes_a_sign_in_once_and_never_again()
     {
@@ -221,8 +201,7 @@ public class TwoFactorTests
 
         await Assert.That(finished.Succeeded).IsTrue();
 
-        // A recovery code says the person proved a second factor, but not that an authenticator
-        // was involved - so no otp.
+        // A recovery code proves a second factor but not an authenticator, so no otp.
         await Assert.That(harness.Issuer.Issued[^1].AuthenticationMethods).IsEquivalentTo(new[] { "pwd", "mfa" });
 
         var second = await harness.SignInAsync("pianonic", "correct horse battery");
@@ -283,8 +262,6 @@ public class TwoFactorTests
         await Assert.That(result.Outcome).IsEqualTo(SignInOutcome.InvalidTwoFactorCode);
     }
 
-    // ── Disabling ──
-
     [Test]
     public async Task Disabling_needs_proof()
     {
@@ -313,8 +290,6 @@ public class TwoFactorTests
         var result = await harness.SignInAsync("pianonic", "correct horse battery");
         await Assert.That(result.Outcome).IsEqualTo(SignInOutcome.Succeeded);
     }
-
-    // ── The security stamp ──
 
     [Test]
     [Arguments("enable")]
@@ -351,11 +326,9 @@ public class TwoFactorTests
         var signedIn = await harness.SignInAsync("pianonic", "correct horse battery");
         var refreshToken = signedIn.Tokens!.RefreshToken;
 
-        // Enrolling is one of the six operations that ends outstanding sessions.
         await harness.EnrolAsync(user.Id);
 
-        // Put this one token back: enrolment revoked the family, and the stamp check is what this
-        // test is about rather than the revocation that happens to also cover it.
+        // Enrolment revoked the family too; un-revoke it so only the stamp check can refuse it.
         var stored = harness.Passwords.RefreshTokens.Single(token => token.TokenHash == SecureTokens.HashToken(refreshToken));
         stored.RevokedAt = null;
         stored.RevokedReason = null;
@@ -383,8 +356,6 @@ public class TwoFactorTests
         await Assert.That(refreshed.Succeeded).IsTrue();
         await Assert.That(harness.Issuer.Issued[^1].AuthenticationMethods).IsEquivalentTo(new[] { "pwd", "otp", "mfa" });
     }
-
-    // ── Encryption at rest ──
 
     [Test]
     public async Task The_secret_is_not_stored_in_the_clear()
@@ -426,10 +397,6 @@ public class TwoFactorTests
         await Assert.That(after.NeedsRewrap("2")).IsFalse();
     }
 
-    /// <summary>
-    /// The pepper had this bug: a retired entry keyed to the active version shadowed the active key
-    /// and every stored value stopped verifying. Same shape, so the same test.
-    /// </summary>
     [Test]
     public async Task A_missing_key_fails_closed_rather_than_guessing()
     {
@@ -444,8 +411,6 @@ public class TwoFactorTests
 
         await Assert.That(() => without.Unprotect(wrapped)).Throws<InvalidOperationException>();
     }
-
-    // ── Not registered at all ──
 
     [Test]
     public async Task Password_login_with_no_second_factor_registered_is_untouched()

@@ -5,22 +5,11 @@ using Toamaisutaa.PasswordValidation.Hibp;
 
 namespace Toamaisutaa.AspNetCore.Tests;
 
-/// <summary>
-/// <c>Toamaisutaa.PasswordValidation.Hibp</c> behind the real pipeline, with a stub in place of the
-/// range API.
-/// </summary>
-/// <remarks>
-/// The unit tests say the validator decides correctly. These say the decision reaches the wire: a
-/// breached password comes back 400 with the message in <c>errors</c>, and the range API being
-/// unreachable comes back 201 rather than 500. The second is the one worth having - failing open is
-/// a claim about behaviour under a failure nobody will reproduce by hand.
-/// </remarks>
 public class HibpPasswordValidationHttpTests
 {
     private const string Breached = "correct horse battery staple";
 
-    // SHA-1 of the password above, computed outside this solution:
-    // ABF7AAD6438836DBE526AA231ABDE2D0EEF74D42. The stub answers as the range API would.
+    // SHA-1 of the password above, computed outside this solution: ABF7AAD6438836DBE526AA231ABDE2D0EEF74D42.
     private const string BreachedSuffix = "AD6438836DBE526AA231ABDE2D0EEF74D42";
 
     private static Task<TestApp> StartAsync(Func<HttpRequestMessage, Task<HttpResponseMessage>> range) =>
@@ -80,7 +69,6 @@ public class HibpPasswordValidationHttpTests
         await Assert.That((await response.Json()).String("access_token")).IsNotNull();
     }
 
-    // The claim the package makes about a down third party, asserted at the only place it matters.
     [Test]
     public async Task Registering_still_works_when_the_range_api_is_unreachable()
     {
@@ -94,8 +82,6 @@ public class HibpPasswordValidationHttpTests
         await Assert.That((await response.Json()).String("access_token")).IsNotNull();
     }
 
-    // Composed, not substituted. If the breach check had replaced the length rules this would come
-    // back 201.
     [Test]
     public async Task The_length_rule_still_answers_with_the_breach_check_installed()
     {
@@ -117,8 +103,7 @@ public class HibpPasswordValidationHttpTests
     {
         await using var app = await StartAsync(Breach);
 
-        // Registration would be refused for the same reason, so the account starts on a password the
-        // stub does not report, and only the change is asked about.
+        // Registration would be refused for the same reason, so it uses a password the stub does not report.
         var register = await app.Client.PostJson(
             "/auth/register",
             new { userName = "ada", email = "ada@example.com", password = "a password the stub is silent on" });
@@ -134,7 +119,6 @@ public class HibpPasswordValidationHttpTests
         await Assert.That(Errors(await response.Json())[0]).Contains("data breach");
     }
 
-    /// <summary>The range API, replaced. Nothing in this suite reaches the network.</summary>
     private sealed class StubRangeApi(Func<HttpRequestMessage, Task<HttpResponseMessage>> respond) : HttpMessageHandler
     {
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken) =>

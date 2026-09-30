@@ -47,7 +47,6 @@ public class PasswordAccountServiceTests
         await Assert.That(result.Conflict).IsTrue();
     }
 
-    // A collision must not leave an account behind that nobody can sign in to.
     [Test]
     public async Task ARejectedRegistrationLeavesNoUserRow()
     {
@@ -71,8 +70,6 @@ public class PasswordAccountServiceTests
         await Assert.That(harness.Passwords.Credentials).IsEmpty();
     }
 
-    // ── Setting a password on an account that came from an identity provider ──
-
     [Test]
     public async Task AnExternalAccountCanBeGivenAPasswordAndThenUsesIt()
     {
@@ -88,8 +85,8 @@ public class PasswordAccountServiceTests
     }
 
     /// <summary>
-    /// No current password exists to ask for, so a recent sign-in is the proof. Without one, a bearer
-    /// token lifted from anywhere buys a permanent password on the account.
+    /// No current password exists to ask for, so without a recent sign-in a lifted bearer token buys
+    /// a permanent password on the account.
     /// </summary>
     [Test]
     public async Task AFirstPasswordNeedsARecentSignIn()
@@ -108,9 +105,8 @@ public class PasswordAccountServiceTests
     }
 
     /// <summary>
-    /// The provider's address is only what the provider asserted. Copied onto the credential, it was
-    /// a reset address for a mailbox nobody had proven this account owns - so the mailbox's real
-    /// owner could reset and adopt an account whose provider login belongs to someone else.
+    /// The provider's address was never proven to belong to this account, so as a reset address it
+    /// would let the mailbox's owner adopt an account whose provider login is someone else's.
     /// </summary>
     [Test]
     public async Task AFirstPasswordDoesNotMakeTheProvidersAddressAResetAddress()
@@ -169,8 +165,6 @@ public class PasswordAccountServiceTests
         await Assert.That(newPassword.Outcome).IsEqualTo(SignInOutcome.Succeeded);
     }
 
-    // ── Reset ──
-
     [Test]
     public async Task RequestingAResetHandsATokenToTheNotifier()
     {
@@ -182,12 +176,9 @@ public class PasswordAccountServiceTests
         await Assert.That(outcome).IsEqualTo(PasswordResetRequestOutcome.Sent);
         await Assert.That(harness.Notifier.Sent.Count).IsEqualTo(1);
 
-        // Stored hashed, exactly like a refresh token.
         await Assert.That(harness.Passwords.ResetTokens.Single().TokenHash).IsNotEqualTo(harness.Notifier.Sent[0].Token);
     }
 
-    // A real notifier can fail for reasons that have nothing to do with the account, and none of
-    // that may reach the caller as anything but 204 - see docs/password-login.md.
     [Test]
     public async Task ANotifierFailureDoesNotThrowAndStillIssuedAToken()
     {
@@ -202,9 +193,8 @@ public class PasswordAccountServiceTests
         await Assert.That(harness.Passwords.ResetTokens.Count).IsEqualTo(1);
     }
 
-    // A mail API that stops answering surfaces as TaskCanceledException from HttpClient's own
-    // timeout, with nobody having cancelled anything. Reading that as "the caller went away" is how
-    // the 500-for-a-real-address oracle comes back.
+    // HttpClient's own timeout surfaces as TaskCanceledException with nobody having cancelled
+    // anything, and raising it would give back the 500-for-a-real-address oracle.
     [Test]
     public async Task ANotifierThatTimesOutIsReportedRatherThanRaised()
     {
@@ -230,8 +220,6 @@ public class PasswordAccountServiceTests
         await Assert.That(harness.Notifier.Sent).IsEmpty();
     }
 
-    // The confusing case: a real person, no password here, and no email will ever arrive. The
-    // outcome is the only way anyone diagnoses it.
     [Test]
     public async Task AnAccountOwnedByAnIdentityProviderIsSilentButDistinctInTheLog()
     {
@@ -320,8 +308,6 @@ public class PasswordAccountServiceTests
         await Assert.That(refreshed.Outcome).IsEqualTo(SignInOutcome.RefreshTokenRevoked);
     }
 
-    // A reset is about the local credential and nothing else. The identity provider's side of the
-    // account is not ours to touch.
     [Test]
     public async Task AResetLeavesTheExternalSideAlone()
     {
@@ -370,11 +356,6 @@ public class PasswordAccountServiceTests
         await Assert.That(result.Outcome).IsEqualTo(SignInOutcome.Succeeded);
     }
 
-    /// <summary>
-    /// A passkey signs in with no password and no code, so a new password that left one standing
-    /// would leave the way in that the person setting it is most likely reacting to. Every path that
-    /// revokes the trusted devices takes the credentials too.
-    /// </summary>
     [Test]
     public async Task SettingAPasswordAnyWayDeletesThePasskeys()
     {
@@ -396,8 +377,7 @@ public class PasswordAccountServiceTests
     }
 
     /// <summary>
-    /// The passkey package is optional, and Core resolves its store through the provider rather than
-    /// the constructor. With nothing registered a reset has to be a reset, not a crash.
+    /// Core resolves the optional passkey store through the provider rather than the constructor.
     /// </summary>
     [Test]
     public async Task AResetWorksWithNoPasskeyStoreRegistered()

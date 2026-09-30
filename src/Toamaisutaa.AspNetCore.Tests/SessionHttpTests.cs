@@ -5,18 +5,11 @@ using System.Text.Json;
 namespace Toamaisutaa.AspNetCore.Tests;
 
 /// <summary>
-/// The session endpoints over the wire: what the list says, and what a revoke actually ends.
+/// Asserts a session is over through <c>/auth/refresh</c>, not the list, because a revoke that only
+/// removed a row would pass a list-only test while leaving the session alive.
 /// </summary>
-/// <remarks>
-/// Every assertion about a session being over goes through <c>/auth/refresh</c> rather than through
-/// the list. A revoke that removed a row from a list and left the refresh token working would pass
-/// a list-only test while leaving the session alive, which is the one thing this feature exists to
-/// prevent.
-/// </remarks>
 public class SessionHttpTests
 {
-    /// <summary>Signs in again and hands back that session's tokens. Registration already
-    /// established one, so the account starts with a session of its own.</summary>
     private static async Task<JsonElement> SignInAgainAsync(TestApp app, Account account, string? userAgent = null)
     {
         var request = new HttpRequestMessage(HttpMethod.Post, "/auth/login")
@@ -33,8 +26,6 @@ public class SessionHttpTests
     private static Task<HttpResponseMessage> RefreshAsync(TestApp app, JsonElement tokens) =>
         app.Client.PostJson("/auth/refresh", new { refreshToken = tokens.String("refresh_token") });
 
-    /// <summary>The listed entry for the session a sign-in response belongs to, found by the
-    /// <c>toa_sid</c> on its access token.</summary>
     private static JsonElement Entry(JsonElement listed, JsonElement tokens)
     {
         var sid = Account.DecodeClaims(tokens.String("access_token")!).String("toa_sid");
@@ -87,11 +78,6 @@ public class SessionHttpTests
         await Assert.That(Entry(listed, second).String("userAgent")).IsEqualTo("Toamaisutaa-Test/1.0");
     }
 
-    /// <summary>
-    /// The rule this package has broken three times: a value the token carries has to survive a
-    /// rotation. Here it is the session's own description rather than a claim, and the failure is
-    /// quieter - the list would simply forget where every session came from after one refresh.
-    /// </summary>
     [Test]
     public async Task A_refresh_keeps_the_session_and_what_it_says_about_itself()
     {
@@ -104,14 +90,9 @@ public class SessionHttpTests
 
         var listed = await (await app.Client.Get("/auth/sessions", account.AccessToken)).Json();
 
-        // Same session id after the rotation, still describing where it came from.
         await Assert.That(Entry(listed, second).String("userAgent")).IsEqualTo("Toamaisutaa-Test/1.0");
     }
 
-    /// <summary>
-    /// The whole path for <c>LocalLogin:IpAddressStorage</c>: the endpoint reads the connection, the
-    /// service truncates it, and the list hands back a network rather than an address.
-    /// </summary>
     [Test]
     public async Task The_stored_address_is_truncated_to_the_network()
     {
@@ -158,8 +139,7 @@ public class SessionHttpTests
         await Assert.That(listed.GetArrayLength()).IsEqualTo(1);
     }
 
-    /// <summary>404 for someone else's session and for one that never existed alike, or this
-    /// endpoint becomes a way to discover another account's session ids.</summary>
+    /// <summary>Must match the never-existed 404, or this endpoint discovers other accounts' session ids.</summary>
     [Test]
     public async Task Revoking_a_session_that_is_not_the_caller_s_answers_404()
     {
@@ -173,7 +153,6 @@ public class SessionHttpTests
 
         await Assert.That(response.StatusCode).IsEqualTo(HttpStatusCode.NotFound);
 
-        // And hers is untouched.
         var listed = await (await app.Client.Get("/auth/sessions", grace.AccessToken)).Json();
         await Assert.That(listed.GetArrayLength()).IsEqualTo(1);
     }
@@ -195,7 +174,6 @@ public class SessionHttpTests
         await using var app = await TestApp.StartAsync();
         var account = await Account.RegisterAsync(app);
 
-        // The session registration established is the one the caller is on; these two are elsewhere.
         var second = await SignInAgainAsync(app, account);
         var third = await SignInAgainAsync(app, account);
 
@@ -205,7 +183,6 @@ public class SessionHttpTests
         await Assert.That((await RefreshAsync(app, second)).StatusCode).IsEqualTo(HttpStatusCode.Unauthorized);
         await Assert.That((await RefreshAsync(app, third)).StatusCode).IsEqualTo(HttpStatusCode.Unauthorized);
 
-        // The caller is still signed in, which is the whole point of not calling it "sign out".
         var listed = await (await app.Client.Get("/auth/sessions", account.AccessToken)).Json();
 
         await Assert.That(listed.GetArrayLength()).IsEqualTo(1);
@@ -223,20 +200,10 @@ public class SessionHttpTests
 
         await app.Client.Delete("/auth/sessions", ada.AccessToken);
 
-        // Her refresh token, not a count: a list that had stopped scoping to the caller would still
-        // return two rows here, and the count alone would agree with the bug.
+        // Her refresh token, not a count: a list that stopped scoping to the caller would still count two.
         await Assert.That((await RefreshAsync(app, hers)).StatusCode).IsEqualTo(HttpStatusCode.OK);
     }
 
-    /// <summary>
-    /// A token an identity provider issued carries no <c>toa_sid</c>, so there is no session of the
-    /// caller's to mark or to spare. Listing still works - a user signed in through a provider may
-    /// well have local sessions to end - and the list marks none of them current.
-    /// </summary>
-    /// <remarks>
-    /// Minted rather than doctored, for the reason <c>StepUpHttpTests</c> mints one: editing a real
-    /// token breaks its signature and the request never reaches the endpoint under test.
-    /// </remarks>
     [Test]
     public async Task A_token_with_no_session_claim_lists_sessions_and_marks_none_of_them_current()
     {
@@ -262,10 +229,6 @@ public class SessionHttpTests
         await Assert.That(revoke.StatusCode).IsEqualTo(HttpStatusCode.Unauthorized);
     }
 
-    /// <summary>
-    /// The filter every endpoint in this group carries. A password change moves the security stamp,
-    /// which is exactly the moment somebody is looking at their session list.
-    /// </summary>
     [Test]
     public async Task A_token_whose_stamp_has_moved_answers_401_rather_than_500()
     {

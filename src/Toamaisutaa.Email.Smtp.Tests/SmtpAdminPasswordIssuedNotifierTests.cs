@@ -54,8 +54,6 @@ public class SmtpAdminPasswordIssuedNotifierTests
         await Assert.That(logger.Entries.Any(entry => entry.Level == LogLevel.Warning)).IsTrue();
     }
 
-    // The password is a credential the moment it exists in the clear - see the enrolment response
-    // rule this package follows everywhere else. Nothing here may log it.
     [Test]
     public async Task NeverLogsTheIssuedPassword()
     {

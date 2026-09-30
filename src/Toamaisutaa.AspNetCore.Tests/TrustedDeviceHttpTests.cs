@@ -4,16 +4,6 @@ using Toamaisutaa.Abstractions;
 
 namespace Toamaisutaa.AspNetCore.Tests;
 
-/// <summary>
-/// The device token across two sign-ins.
-/// </summary>
-/// <remarks>
-/// This is the bug that started the suite. The service layer was correct throughout - the gate
-/// rotated the token, the store recorded it, <c>SignInResult.TrustedDevice</c> was populated - and
-/// the endpoint returned only the token pair. The caller kept holding a spent token, presented it
-/// on the next sign-in, and that is the theft signal, so the device silently stopped working after
-/// exactly one use. Nothing below the wire could see it.
-/// </remarks>
 public class TrustedDeviceHttpTests
 {
     [Test]
@@ -40,20 +30,14 @@ public class TrustedDeviceHttpTests
 
         var second = await (await account.LoginAsync(deviceToken: issued)).Json();
 
-        // No challenge: the cached second factor stood in for the live one.
         await Assert.That(second.Has("two_factor_required")).IsFalse();
         await Assert.That(second.String("access_token")).IsNotNull();
 
-        // The rotation, which the endpoint used to drop.
         var rotated = second.String("device_token");
         await Assert.That(rotated).IsNotNull();
         await Assert.That(rotated).IsNotEqualTo(issued);
     }
 
-    /// <summary>
-    /// The exact sequence the dropped-token bug produced: hold the old token because the response
-    /// never carried the new one, present it again, lose the device.
-    /// </summary>
     [Test]
     public async Task Replaying_a_rotated_device_token_revokes_the_family()
     {
@@ -72,11 +56,6 @@ public class TrustedDeviceHttpTests
         await Assert.That(devices.GetArrayLength()).IsEqualTo(0);
     }
 
-    /// <summary>
-    /// Rotation marked the row spent whatever it held, so every request presenting one copied token
-    /// at once passed the checks, got a session that skipped the second factor, and minted a live
-    /// successor of its own - and none of it looked like reuse.
-    /// </summary>
     [Test]
     public async Task A_device_token_presented_in_parallel_skips_the_second_factor_at_most_once()
     {
@@ -88,7 +67,7 @@ public class TrustedDeviceHttpTests
 
         var issued = (await account.SignInWithSecondFactorAsync(rememberDevice: true)).String("device_token")!;
 
-        // Both past every check and waiting at the write, which is where a real race puts them.
+        // Both held at the write, past every check, which is where a real race puts them.
         store.Hold = true;
         var attempts = await Task.WhenAll(account.LoginAsync(deviceToken: issued), account.LoginAsync(deviceToken: issued));
         var bodies = await Task.WhenAll(attempts.Select(response => response.Json()));
@@ -96,7 +75,6 @@ public class TrustedDeviceHttpTests
         await Assert.That(bodies.Count(body => body.Has("access_token"))).IsEqualTo(1);
     }
 
-    /// <summary>The real store, except that the first two rotations wait for each other.</summary>
     private sealed class MeetBeforeRotating
     {
         private readonly CountdownEvent _arrived = new(2);
@@ -158,8 +136,7 @@ public class TrustedDeviceHttpTests
 
         var second = await (await account.LoginAsync(deviceToken: issued)).Json();
 
-        // Rotation must not restart the thirty days, or a device signed in from monthly would never
-        // expire and "absolute lifetime" would mean nothing.
+        // Rotation must not restart the lifetime, or a device signed in from monthly would never expire.
         await Assert.That(second.GetProperty("device_expires_in").GetInt32()).IsLessThan(originalExpiry);
     }
 
@@ -185,8 +162,6 @@ public class TrustedDeviceHttpTests
         await Assert.That(withHeader[0].String("label")).IsEqualTo("Ada's laptop");
     }
 
-    /// <summary>A recovery code means the authenticator is gone, so it revokes trust rather than
-    /// establishing it - however loudly the caller asked to be remembered.</summary>
     [Test]
     public async Task A_recovery_code_never_produces_a_device_token()
     {
@@ -206,12 +181,6 @@ public class TrustedDeviceHttpTests
         await Assert.That((await verify.Json()).Has("device_token")).IsFalse();
     }
 
-    /// <summary>
-    /// A password stored under older parameters is rehashed on sign-in, and the rehash was set on the
-    /// tracked credential and left there. The trusted-device insert saved it, unguarded, against a
-    /// row a wrong password had moved in the meantime: a 500, after the old device row was already
-    /// spent, so the device lost its trust as well.
-    /// </summary>
     [Test]
     public async Task A_rehash_on_a_device_trusted_sign_in_survives_a_wrong_password_landing_meanwhile()
     {
@@ -223,7 +192,7 @@ public class TrustedDeviceHttpTests
         var deviceToken = (await account.SignInWithSecondFactorAsync(rememberDevice: true)).String("device_token")!;
         var userId = Guid.Parse(account.Claims().String("sub")!);
 
-        // Stored under fewer iterations than the app now asks for, which is what asks for a rehash.
+        // Fewer iterations than the app now asks for, so sign-in rehashes.
         await using (var scope = app.Services.CreateAsyncScope())
         {
             var configured = scope.ServiceProvider.GetRequiredService<Microsoft.Extensions.Options.IOptions<ToamaisutaaLocalLoginOptions>>().Value;

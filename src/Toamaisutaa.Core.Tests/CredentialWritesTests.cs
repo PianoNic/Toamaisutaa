@@ -2,16 +2,11 @@ using Toamaisutaa.Abstractions;
 
 namespace Toamaisutaa.Core.Tests;
 
-/// <summary>
-/// How many times a credential write is retried before the request gives up.
-/// </summary>
 public class CredentialWritesTests
 {
     /// <summary>
-    /// Every attempt is now counted before it is checked and given back or cleared after, so a burst
-    /// of parallel requests on one account is about two writes each to one row. Twenty second
-    /// factors at once made a request lose more than ten writes in a row and answer 500 - reproduced
-    /// against the real store, where the limit of ten failed and fifty did not.
+    /// Every attempt costs about two writes to one row, so twenty parallel second factors make a
+    /// request lose more than ten writes in a row; against the real store a limit of ten failed.
     /// </summary>
     [Test]
     public async Task A_write_that_loses_to_a_burst_of_parallel_attempts_still_lands()
@@ -28,8 +23,6 @@ public class CredentialWritesTests
         await Assert.That(written.FailedAttemptCount).IsGreaterThan(0);
     }
 
-    /// <summary>The other side of the limit: a write that never lands still stops, rather than
-    /// looping for as long as something keeps winning.</summary>
     [Test]
     public async Task A_write_that_never_lands_gives_up()
     {
@@ -43,7 +36,6 @@ public class CredentialWritesTests
             .Throws<CredentialConcurrencyException>();
     }
 
-    /// <summary>A store whose first writes all find the row already changed.</summary>
     private sealed class LosesFirst(FakePasswordStore inner, int times) : IPasswordCredentialStore
     {
         private int _lost;

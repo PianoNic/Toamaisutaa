@@ -9,33 +9,18 @@ using Microsoft.Extensions.Diagnostics.HealthChecks;
 
 namespace Toamaisutaa.AspNetCore.Tests;
 
-/// <summary>
-/// What a readiness probe reads when the issuer is fine, when it is gone, and when it went away
-/// after having been fine once.
-/// </summary>
-/// <remarks>
-/// Over HTTP rather than against the check object, because the thing being promised is a status
-/// code an orchestrator acts on: 200 keeps a pod in the load balancer and 503 takes it out. A test
-/// that only read <c>HealthCheckResult.Status</c> would agree with the check while the endpoint in
-/// front of it answered something else.
-/// </remarks>
+/// <summary>Over HTTP rather than against the check object, because the promise is the status code an
+/// orchestrator acts on, which a test reading <c>HealthCheckResult.Status</c> would not see.</summary>
 public class DiscoveryHealthCheckHttpTests
 {
     private const string Issuer = "https://id.example.test";
 
-    // Written out rather than read from ToamaisutaaDefaults: all three are names a consumer
-    // configures against - one selects the entry in a health report, one is where a handler is
-    // attached to the probe, one is what a readiness endpoint filters on - and an assertion that
-    // reads them from the package agrees with a rename.
+    // Written out rather than read from ToamaisutaaDefaults: consumers configure against these names,
+    // and an assertion that reads them from the package agrees with a rename.
     private const string CheckName = "toamaisutaa-oidc-discovery";
     private const string HttpClientName = "toamaisutaa-discovery";
     private const string ReadyTag = "ready";
 
-    /// <summary>
-    /// Stands in for the issuer. A stub handler rather than a second host: the failures worth
-    /// testing here are a refused connection and a 200 that is not a discovery document, and both
-    /// are easier to produce than to arrange.
-    /// </summary>
     private sealed class FakeIssuer : HttpMessageHandler
     {
         private int _requests;
@@ -46,8 +31,7 @@ public class DiscoveryHealthCheckHttpTests
 
         public Func<HttpResponseMessage> Respond { get; set; } = () => Document(Issuer);
 
-        /// <summary>How long the issuer takes to answer, yielding meanwhile - so requests that
-        /// arrive together really are in flight together.</summary>
+        /// <summary>Yields while waiting, so requests that arrive together really are in flight together.</summary>
         public TimeSpan Latency { get; set; }
 
         protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
@@ -98,10 +82,6 @@ public class DiscoveryHealthCheckHttpTests
             });
     }
 
-    /// <summary>
-    /// The detail a status code cannot carry, keyed by the name each check is registered under.
-    /// Stands in for whatever an application writes when it wants more than Healthy or Unhealthy.
-    /// </summary>
     private static Task WriteEntries(HttpContext context, HealthReport report)
     {
         context.Response.ContentType = "application/json";
@@ -142,7 +122,6 @@ public class DiscoveryHealthCheckHttpTests
         await Assert.That(entry.String("description")).Contains($"{Issuer}/.well-known/openid-configuration");
     }
 
-    /// <summary>Discovery moves to the internal address; the issuer in the tokens does not.</summary>
     [Test]
     public async Task An_internal_authority_is_what_gets_probed()
     {
@@ -169,10 +148,6 @@ public class DiscoveryHealthCheckHttpTests
         await Assert.That(await response.Content.ReadAsStringAsync()).IsEqualTo("Unhealthy");
     }
 
-    /// <summary>
-    /// A reverse proxy that has lost its route answers 200 with a sign-in page. The handler needs
-    /// the keys, so a 200 that carries none is a failure however healthy it looks.
-    /// </summary>
     [Test]
     public async Task A_200_that_is_not_a_discovery_document_answers_503_and_Unhealthy()
     {
@@ -201,10 +176,6 @@ public class DiscoveryHealthCheckHttpTests
         await Assert.That(issuer.Requests).IsEqualTo(1);
     }
 
-    /// <summary>
-    /// A failure is remembered as long as a success is. The endpoint is anonymous, and every probe
-    /// while the issuer was down used to go out to it again - the moment it could least take it.
-    /// </summary>
     [Test]
     public async Task A_failing_issuer_is_asked_once_per_refresh_interval_not_once_per_probe()
     {
@@ -222,7 +193,6 @@ public class DiscoveryHealthCheckHttpTests
         await Assert.That(issuer.Requests).IsEqualTo(2);
     }
 
-    /// <summary>Probes that arrive together share one request instead of each sending their own.</summary>
     [Test]
     public async Task Probes_arriving_together_send_one_request()
     {
@@ -235,10 +205,8 @@ public class DiscoveryHealthCheckHttpTests
         await Assert.That(issuer.Requests).IsEqualTo(1);
     }
 
-    /// <summary>
-    /// A kubelet that gives up after a second, against a five-second timeout, took the probe down
-    /// with it: nothing was cached, and every probe after it asked the issuer again.
-    /// </summary>
+    /// <summary>The caller cancels before the issuer answers, and the fetch must still complete and be
+    /// cached rather than die with the probe that started it.</summary>
     [Test]
     public async Task A_probe_its_caller_gave_up_on_still_answers_the_next_one()
     {
@@ -260,10 +228,8 @@ public class DiscoveryHealthCheckHttpTests
         await Assert.That(issuer.Requests).IsEqualTo(1);
     }
 
-    /// <summary>
-    /// Degraded rather than unhealthy: the handler is still validating tokens against the document
-    /// it holds, and taking the pod out of rotation for that would be the wrong call.
-    /// </summary>
+    /// <summary>Degraded rather than unhealthy, because the handler still validates tokens against the
+    /// document it holds.</summary>
     [Test]
     public async Task A_cached_document_served_past_its_refresh_interval_answers_200_and_Degraded()
     {
@@ -281,11 +247,8 @@ public class DiscoveryHealthCheckHttpTests
         await Assert.That(issuer.Requests).IsEqualTo(2);
     }
 
-    /// <summary>
-    /// The other end of the same distinction. Degraded is a 200 and a 200 keeps the instance in the
-    /// load balancer, so a fetch that succeeded once must not keep it there for the life of the
-    /// process while every request carrying a token 401s.
-    /// </summary>
+    /// <summary>Degraded is a 200 that keeps the instance in the load balancer, so one old success must
+    /// not keep it there forever.</summary>
     [Test]
     public async Task A_cached_document_older_than_the_degraded_window_answers_503_and_Unhealthy()
     {
@@ -304,8 +267,6 @@ public class DiscoveryHealthCheckHttpTests
         await Assert.That(await response.Content.ReadAsStringAsync()).IsEqualTo("Unhealthy");
     }
 
-    /// <summary>The knob is named in the message, because it is the one thing an operator reading
-    /// this can act on without going and finding the source.</summary>
     [Test]
     public async Task Dropping_out_of_the_degraded_window_names_the_setting_that_decided_it()
     {
@@ -324,12 +285,8 @@ public class DiscoveryHealthCheckHttpTests
         await Assert.That(entry.String("description")).Contains("Oidc:HealthCheck:DegradedFor");
     }
 
-    /// <summary>
-    /// The readiness endpoint the docs hand out, and the reason it is worth a test of its own: an
-    /// empty selection aggregates to Healthy and answers 200, so a renamed or dropped tag produces a
-    /// probe that is green because it is checking nothing. Against an unreachable issuer a 200 can
-    /// only mean the predicate matched no registration.
-    /// </summary>
+    /// <summary>An empty selection answers 200, so against an unreachable issuer a 200 can only mean the
+    /// tag matched no registration.</summary>
     [Test]
     public async Task A_readiness_endpoint_selecting_the_ready_tag_answers_503_and_Unhealthy()
     {

@@ -12,15 +12,6 @@ using Toamaisutaa.Abstractions;
 
 namespace Toamaisutaa.AspNetCore.Tests;
 
-/// <summary>
-/// The security half of the generated document, read as the JSON an API explorer reads.
-/// </summary>
-/// <remarks>
-/// These used to be thirty-five lines pasted into every application, and a pasted transformer
-/// drifts - one deployment hardcoded Keycloak's authorization URL while running Pocket ID. Now that
-/// the package owns them, the document is a response shape like any other: asserted off raw JSON,
-/// never through the types that produced it.
-/// </remarks>
 public class OpenApiDocumentHttpTests
 {
     private const string Authority = "http://localhost/issuer";
@@ -31,11 +22,7 @@ public class OpenApiDocumentHttpTests
 
     private const string InternalAuthority = "http://localhost/internal";
 
-    /// <summary>
-    /// The issuer, served by the application under test. Its endpoints are deliberately on another
-    /// host, the way a real discovery document's are, so an assertion on them cannot pass by
-    /// accidentally matching this host.
-    /// </summary>
+    /// <summary>Endpoints are on another host so an assertion on them cannot pass by accidentally matching this one.</summary>
     private static void MapIssuerMetadata(IEndpointRouteBuilder endpoints) =>
         endpoints.MapGet(DiscoveryPath, () => Results.Json(new Dictionary<string, string>
         {
@@ -52,11 +39,6 @@ public class OpenApiDocumentHttpTests
         settings["Oidc:Scope"] = "openid profile roles";
     }
 
-    /// <summary>
-    /// The same issuer at two addresses: a public one the browser has and an internal one only this
-    /// process can reach. The docker-compose shape, and the only one where what the fetch returns
-    /// and what the document may carry can differ.
-    /// </summary>
     private static Action<Dictionary<string, string?>> ThroughAnInternalAuthority(string internalAuthority) =>
         settings =>
         {
@@ -111,13 +93,9 @@ public class OpenApiDocumentHttpTests
         await Assert.That(bearer.String("bearerFormat")).IsEqualTo("JWT");
         await Assert.That(RequiredSchemes(document)).IsEquivalentTo(new[] { "Bearer" });
 
-        // No Oidc:Authority here, which is a deployment that only issues its own tokens. There is no
-        // authorization server to describe, and nothing invents one.
         await Assert.That(Schemes(document).Names()).IsEquivalentTo(new[] { "Bearer" });
     }
 
-    /// <summary>A generated client knows only the statuses and bodies declared here, so one the
-    /// endpoint gives and the document leaves out arrives as an error nobody wrote code for.</summary>
     [Test]
     public async Task The_document_declares_the_statuses_and_bodies_these_endpoints_give()
     {
@@ -139,13 +117,11 @@ public class OpenApiDocumentHttpTests
 
         var paths = (await Document(app)).GetProperty("paths");
 
-        // Empty, not absent: an absent list inherits the document's requirement, which would put a
-        // padlock on the endpoint you call because you have no token yet.
+        // Empty, not absent, because an absent list inherits the document's requirement.
         var login = paths.GetProperty("/auth/login").GetProperty("post");
         await Assert.That(login.TryGetProperty("security", out var security)).IsTrue();
         await Assert.That(security.GetArrayLength()).IsEqualTo(0);
 
-        // Absent, so the document's requirement stands.
         var me = paths.GetProperty("/test/me").GetProperty("get");
         await Assert.That(me.TryGetProperty("security", out _)).IsFalse();
     }
@@ -162,8 +138,7 @@ public class OpenApiDocumentHttpTests
         await Assert.That(flow.String("tokenUrl")).IsEqualTo("https://id.example.test/token");
         await Assert.That(flow.GetProperty("scopes").Names()).IsEquivalentTo(new[] { "openid", "profile", "roles" });
 
-        // Two requirements rather than one holding both schemes: either token opens the padlock, and
-        // one object would mean a caller has to present both.
+        // Two requirements, because one object holding both schemes would demand both tokens.
         await Assert.That(document.GetProperty("security").GetArrayLength()).IsEqualTo(2);
         await Assert.That(RequiredSchemes(document)).IsEquivalentTo(new[] { "Bearer", "OAuth2" });
     }
@@ -171,8 +146,6 @@ public class OpenApiDocumentHttpTests
     [Test]
     public async Task An_issuer_that_does_not_answer_leaves_the_rest_of_the_document_alone()
     {
-        // Configured, and nothing serving it - the shape of an identity provider that is down while
-        // somebody is reading the API documentation.
         await using var app = await TestApp.StartAsync(configure: WithIssuer, includeOpenApi: true);
 
         var document = await Document(app);
@@ -184,10 +157,7 @@ public class OpenApiDocumentHttpTests
     [Test]
     public async Task Issuer_metadata_over_plaintext_is_refused_unless_the_deployment_says_otherwise()
     {
-        // A host with no bearer registration at all, which is both a supported way to use this
-        // package and the only way to reach this branch: with the bearer handler present, a
-        // plaintext authority and Oidc:RequireHttpsMetadata on throws on the first request, so no
-        // document could be fetched to assert against.
+        // No bearer registration, because with it a plaintext authority throws on the first request and no document could be fetched.
         var builder = WebApplication.CreateSlimBuilder();
         builder.WebHost.UseTestServer();
         builder.Logging.SetMinimumLevel(LogLevel.Critical);
@@ -208,8 +178,7 @@ public class OpenApiDocumentHttpTests
 
         await app.StartAsync();
 
-        // The metadata route answers, and Oidc:RequireHttpsMetadata defaults to on, so the fetch
-        // never happens - the same rule the bearer handler applies to its own discovery.
+        // The metadata route answers, so only the RequireHttpsMetadata default stops the fetch.
         var document = await (await app.GetTestClient().Get("/openapi/v1.json")).Json();
 
         await Assert.That(Schemes(document).Names()).IsEquivalentTo(new[] { "Bearer" });
@@ -220,9 +189,7 @@ public class OpenApiDocumentHttpTests
     [Test]
     public async Task An_endpoint_answered_at_the_internal_address_is_moved_onto_the_public_authority()
     {
-        // What Keycloak with no KC_HOSTNAME answers the internal hop with: its own endpoint URLs
-        // built from the Host header the container was reached at. Written into the document
-        // unchanged, they are an Authorize button pointing at a host no browser can resolve.
+        // Keycloak without KC_HOSTNAME builds endpoint URLs from the Host header of the internal hop.
         await using var app = await TestApp.StartAsync(
             MapInternalIssuerMetadata(
                 InternalAuthority,
@@ -240,11 +207,7 @@ public class OpenApiDocumentHttpTests
     }
 
     /// <summary>
-    /// Two ways an endpoint can fail to be the internal authority's, one per guard: another host,
-    /// and the same host outside the path the internal authority names. Both are addresses the
-    /// browser can already reach, and an issuer whose authorization endpoint lives on a login domain
-    /// of its own is ordinary - rewriting either onto <c>Oidc:Authority</c> would break a deployment
-    /// that works today.
+    /// One case per guard: another host, and the same host outside the internal authority's path.
     /// </summary>
     [Test]
     [Arguments("http://localhost", "https://login.example.test/authorize", "https://login.example.test/token")]
@@ -286,16 +249,12 @@ public class OpenApiDocumentHttpTests
             WithIssuer,
             includeOpenApi: true);
 
-        // The document endpoint is anonymous wherever it is mapped, so without a cache whoever is
-        // calling it decides how hard this process leans on the identity provider.
         await Document(app);
         await Document(app);
         await Document(app);
 
         await Assert.That(fetches).IsEqualTo(1);
 
-        // Held for five minutes, not forever: a redeployed issuer is picked up without restarting
-        // the application.
         app.Time.Advance(TimeSpan.FromMinutes(6));
 
         var flow = AuthorizationCodeFlow(await Document(app));

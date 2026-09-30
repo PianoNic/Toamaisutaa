@@ -6,15 +6,8 @@ using Toamaisutaa.EntityFrameworkCore;
 
 namespace Toamaisutaa.AspNetCore.Tests;
 
-/// <summary>
-/// The Argon2 package behind the real pipeline. Everything it does is invisible from a response
-/// body - the endpoints answer identically either way - so the only place the wiring can be
-/// checked is the row the login left behind.
-/// </summary>
-/// <remarks>
-/// Registered the way a consumer registers it, after <c>AddToamaisutaaPasswordLogin</c>, which is
-/// the order that would silently lose if the package used TryAdd.
-/// </remarks>
+/// <summary>Registered after <c>AddToamaisutaaPasswordLogin</c>, as a consumer does, which is the
+/// order that would silently lose if the package used TryAdd.</summary>
 public class Argon2HashingHttpTests
 {
     private static Task<TestApp> StartAsync() =>
@@ -29,11 +22,6 @@ public class Argon2HashingHttpTests
         await Assert.That(await StoredHashAsync(app)).StartsWith("$argon2id$v=19$");
     }
 
-    /// <summary>
-    /// The migration, end to end: a row from before the package was installed verifies through the
-    /// PBKDF2 hasher, the sign-in succeeds, and the row is rewritten as Argon2id in the same
-    /// transaction. No flag day, and nobody is locked out.
-    /// </summary>
     [Test]
     public async Task Login_rewrites_a_pbkdf2_row_as_argon2id()
     {
@@ -49,8 +37,6 @@ public class Argon2HashingHttpTests
         await Assert.That(await StoredHashAsync(app)).StartsWith("$argon2id$v=19$");
     }
 
-    /// <summary>The other half of the same claim: the PBKDF2 row is verified rather than waved
-    /// through, so a wrong password against one is still a 401.</summary>
     [Test]
     public async Task A_wrong_password_against_a_pbkdf2_row_is_still_refused()
     {
@@ -74,7 +60,6 @@ public class Argon2HashingHttpTests
         return await db.PasswordCredentials.AsNoTracking().Select(credential => credential.PasswordHash).SingleAsync();
     }
 
-    /// <summary>Puts the account back the way it looked before this package was installed.</summary>
     private static async Task StoreAsync(TestApp app, string hash)
     {
         await using var scope = app.Services.CreateAsyncScope();

@@ -6,14 +6,10 @@ using Microsoft.Extensions.Logging;
 
 namespace Toamaisutaa.AspNetCore.Tests;
 
-/// <summary>
-/// Who counts as one caller for the rate limiter. Everything the limiter protects rests on that.
-/// </summary>
 public class RateLimitPartitionHttpTests
 {
     /// <summary>
-    /// An IPv6 customer is handed a /64. Keyed on the full address, each of those 2^64 addresses
-    /// was a budget of its own, so the limiter stopped nobody who had one.
+    /// An IPv6 customer is handed a whole /64, so keying on the full address gives them 2^64 budgets.
     /// </summary>
     [Test]
     public async Task Addresses_in_one_ipv6_64_share_a_budget()
@@ -41,8 +37,7 @@ public class RateLimitPartitionHttpTests
     }
 
     /// <summary>
-    /// A NAT64 gateway puts every IPv4 client it translates in one /64, so one of them sending ten
-    /// wrong passwords a minute gave every IPv4 user behind it 429. The address inside is the caller.
+    /// A NAT64 gateway puts every IPv4 client it translates in one /64, so the embedded IPv4 address is the caller.
     /// </summary>
     [Test]
     [Arguments("64:ff9b::cb00:7101", "64:ff9b::cb00:7102")]
@@ -58,14 +53,11 @@ public class RateLimitPartitionHttpTests
         await Assert.That(one.StatusCode).IsNotEqualTo(HttpStatusCode.TooManyRequests);
         await Assert.That(other.StatusCode).IsNotEqualTo(HttpStatusCode.TooManyRequests);
 
-        // Still one budget per IPv4 client, not none.
         await Assert.That(again.StatusCode).IsEqualTo(HttpStatusCode.TooManyRequests);
     }
 
     /// <summary>
-    /// A gateway on a prefix of the network's own, which only configuration can name. The /40 puts
-    /// the address across the reserved octet, which is skipped, so this is the embedding worked out
-    /// rather than a fixed offset.
+    /// The /40 case puts the IPv4 address across the reserved octet (RFC 6052), so it checks the embedding rather than a fixed offset.
     /// </summary>
     [Test]
     [Arguments("2001:db8:64::/96", "2001:db8:64::cb00:7101", "2001:db8:64::cb00:7102")]
@@ -85,8 +77,6 @@ public class RateLimitPartitionHttpTests
         await Assert.That(again.StatusCode).IsEqualTo(HttpStatusCode.TooManyRequests);
     }
 
-    /// <summary>A prefix that cannot be read would be skipped, and its clients would share one
-    /// budget with nothing saying why. Refused at startup instead.</summary>
     [Test]
     [Arguments("2001:db8:64::/72")]
     [Arguments("192.0.2.0/24")]
@@ -102,11 +92,6 @@ public class RateLimitPartitionHttpTests
         await Assert.That(refused!.Message).Contains("Nat64Prefixes");
     }
 
-    /// <summary>
-    /// Behind a proxy with forwarded headers left unconfigured, every caller is the proxy and shares
-    /// one limit - ten junk logins a minute and the whole site answers 429. Nothing at startup can
-    /// see that, so the first request that shows it says so.
-    /// </summary>
     [Test]
     public async Task An_unprocessed_forwarded_header_from_a_private_address_is_warned_about_once()
     {

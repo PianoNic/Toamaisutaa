@@ -2,10 +2,6 @@ using System.Net;
 
 namespace Toamaisutaa.AspNetCore.Tests;
 
-/// <summary>
-/// <c>/auth/email</c> mails whatever address the caller names. Without a limit per account, one
-/// signed-in account was a relay from this domain to any inbox.
-/// </summary>
 public class EmailChangeCooldownHttpTests
 {
     [Test]
@@ -40,7 +36,6 @@ public class EmailChangeCooldownHttpTests
         await Assert.That(later.StatusCode).IsEqualTo(HttpStatusCode.NoContent);
     }
 
-    /// <summary>The cooldown is for mail that went out, not for a typo.</summary>
     [Test]
     public async Task A_refused_email_change_does_not_start_the_cooldown()
     {

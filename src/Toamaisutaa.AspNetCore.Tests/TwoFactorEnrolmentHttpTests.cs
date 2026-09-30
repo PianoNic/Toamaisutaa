@@ -2,17 +2,8 @@ using System.Net;
 
 namespace Toamaisutaa.AspNetCore.Tests;
 
-/// <summary>
-/// Whoever enrols the second factor is the only one who can answer it afterwards, so enrolling has
-/// to take more than whatever token the caller is holding.
-/// </summary>
 public class TwoFactorEnrolmentHttpTests
 {
-    /// <summary>
-    /// A thief with a lifted token used to enrol their own authenticator and confirm it with a code
-    /// computed from the secret the response handed them - and the owner's next sign-in stopped at a
-    /// challenge only the thief could answer.
-    /// </summary>
     [Test]
     public async Task Enrolling_takes_more_than_a_bearer_token()
     {
@@ -29,11 +20,6 @@ public class TwoFactorEnrolmentHttpTests
         await Assert.That(status.Bool("enrolmentPending")).IsFalse();
     }
 
-    /// <summary>
-    /// A page reload, or a first attempt that failed, begins again over an enrolment nobody
-    /// confirmed. That answered 500 - a second tracked instance of the same row - and went on doing
-    /// so until the row was deleted by hand, so the account could never turn two-factor on.
-    /// </summary>
     [Test]
     public async Task Beginning_again_before_confirming_starts_over_with_a_new_secret()
     {
@@ -50,17 +36,12 @@ public class TwoFactorEnrolmentHttpTests
         var secret = (await again.Json()).String("secret")!;
         await Assert.That(secret).IsNotEqualTo(firstSecret);
 
-        // The new secret is the one on file, and it confirms.
         app.Time.AdvanceToNextTotpStep();
         var confirm = await app.Client.PostJson("/auth/2fa/confirm", new { code = Totp.Code(secret, app.Time.Now) }, account.AccessToken);
 
         await Assert.That(confirm.StatusCode).IsEqualTo(HttpStatusCode.OK);
     }
 
-    /// <summary>
-    /// The secret went out in the clear when the enrolment began. One abandoned for good stayed
-    /// confirmable for ever, by anybody who kept the QR code and a token.
-    /// </summary>
     [Test]
     public async Task An_enrolment_left_unconfirmed_past_its_lifetime_has_to_begin_again()
     {

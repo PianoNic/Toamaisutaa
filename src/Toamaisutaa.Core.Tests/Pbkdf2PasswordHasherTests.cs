@@ -7,8 +7,7 @@ namespace Toamaisutaa.Core.Tests;
 
 public class Pbkdf2PasswordHasherTests
 {
-    // Well below the configured floor, because these tests run hundreds of derivations and the
-    // floor is enforced at startup rather than in the hasher.
+    // Below the configured floor, which is enforced at startup rather than in the hasher.
     private const int TestIterations = 1_000;
 
     private const string Password = "correct horse battery staple";
@@ -49,8 +48,8 @@ public class Pbkdf2PasswordHasherTests
     }
 
     /// <summary>
-    /// Built from the BCL primitive directly rather than from <c>Hash</c>, so this checks the format
-    /// and the derivation wiring against something outside the class instead of against itself.
+    /// Built from the BCL primitive rather than from <c>Hash</c>, so the class is checked against
+    /// something outside itself.
     /// </summary>
     [Test]
     public async Task VerifiesAHashItDidNotProduce()
@@ -76,8 +75,6 @@ public class Pbkdf2PasswordHasherTests
         await Assert.That(Hasher().Verify(Password, stored)).IsEqualTo(PasswordVerificationResult.Failed);
     }
 
-    // A row an Argon2 hasher wrote is not ours to check. Accepting whatever we can parse would be
-    // the dangerous alternative.
     [Test]
     public async Task RefusesAnAlgorithmItDoesNotImplement()
     {
@@ -112,8 +109,6 @@ public class Pbkdf2PasswordHasherTests
         await Assert.That(weaker.Verify(Password, stored)).IsEqualTo(PasswordVerificationResult.Succeeded);
     }
 
-    // ── Pepper ──
-
     [Test]
     public async Task PepperedHashesNameTheirVersion()
     {
@@ -130,7 +125,6 @@ public class Pbkdf2PasswordHasherTests
         await Assert.That(hasher.Verify(Password, hasher.Hash(Password))).IsEqualTo(PasswordVerificationResult.Succeeded);
     }
 
-    // The whole point of a pepper: the stored row plus the password is not enough without the key.
     [Test]
     public async Task ADifferentPepperDoesNotVerify()
     {
@@ -162,7 +156,7 @@ public class Pbkdf2PasswordHasherTests
     {
         var stored = Hasher(options => options.Pepper = PepperA).Hash(Password);
 
-        // The retired key is still held, so the row verifies - and is rewritten without one.
+        // The retired key is still held, so the row verifies and is rewritten without one.
         var plain = Hasher(options => options.RetiredPeppers["1"] = PepperA);
 
         await Assert.That(plain.Verify(Password, stored)).IsEqualTo(PasswordVerificationResult.SucceededRehashNeeded);

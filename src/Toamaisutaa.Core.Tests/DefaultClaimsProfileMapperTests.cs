@@ -52,8 +52,8 @@ public class DefaultClaimsProfileMapperTests
         await Assert.That(profile.DisplayName).IsNull();
     }
 
-    // The display name is shown to people, so the human's name beats the handle. ICurrentUser.Name
-    // deliberately orders these the other way round, because an audit line wants the handle.
+    // ICurrentUser.Name deliberately prefers the handle, because an audit line wants it; a display
+    // name is shown to people.
     [Test]
     public async Task DisplayNamePrefersTheHumanName()
     {

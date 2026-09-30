@@ -8,13 +8,12 @@ namespace Toamaisutaa.PasswordHashing.Argon2.Tests;
 
 public class Argon2idPasswordHasherTests
 {
-    // Far below anything a deployment should run. The OWASP floor is a startup check rather than a
-    // rule inside the hasher, and these tests run hundreds of derivations.
+    // Far below production strength: the OWASP floor is a startup check, not a hasher rule, and
+    // these tests run hundreds of derivations.
     private const int TestMemoryKib = 1024;
     private const int TestIterations = 1;
     private const int TestParallelism = 1;
 
-    // Same reasoning for the hasher these rows migrate from.
     private const int TestPbkdf2Iterations = 1_000;
 
     private const string Password = "correct horse battery staple";
@@ -73,8 +72,6 @@ public class Argon2idPasswordHasherTests
         await Assert.That(hasher.Hash(Password)).IsNotEqualTo(hasher.Hash(Password));
     }
 
-    /// <summary>The canonical Argon2 encoding, version in its own field, so any other Argon2
-    /// implementation reads the row.</summary>
     [Test]
     public async Task WritesTheStandardArgon2idString()
     {
@@ -84,10 +81,8 @@ public class Argon2idPasswordHasherTests
         await Assert.That(stored.Split('$').Length).IsEqualTo(6);
     }
 
-    /// <summary>
-    /// Derived from Konscious directly rather than from <c>Hash</c>, so this checks the format and
-    /// the derivation wiring against something outside the class instead of against itself.
-    /// </summary>
+    /// <summary>Derived from Konscious directly rather than from <c>Hash</c>, so the class is not
+    /// checked against itself.</summary>
     [Test]
     public async Task VerifiesAHashItDidNotProduce()
     {
@@ -99,8 +94,6 @@ public class Argon2idPasswordHasherTests
         await Assert.That(Hasher().Verify(Password, stored)).IsEqualTo(PasswordVerificationResult.Succeeded);
     }
 
-    /// <summary>The other direction of the same idea: what this writes is what an independent
-    /// Argon2id computes, not merely something it can read back.</summary>
     [Test]
     public async Task WhatItWritesIsWhatAnIndependentArgon2idComputes()
     {
@@ -126,8 +119,6 @@ public class Argon2idPasswordHasherTests
         await Assert.That(Hasher().Verify(Password, stored)).IsEqualTo(PasswordVerificationResult.Failed);
     }
 
-    /// <summary>A 1.0 row, or a row from something that guessed. Neither is what this computes, and
-    /// a mismatch it cannot see would read as a wrong password forever.</summary>
     [Test]
     public async Task RefusesAnArgon2VersionItDoesNotImplement()
     {
@@ -136,11 +127,6 @@ public class Argon2idPasswordHasherTests
         await Assert.That(Hasher().Verify(Password, stored)).IsEqualTo(PasswordVerificationResult.Failed);
     }
 
-    /// <summary>
-    /// A row whose salt is shorter than RFC 9106 allows, and whose hash is nevertheless the right
-    /// answer for it. Konscious computes it happily, so nothing but the floor refuses it - which is
-    /// the point: a row no compliant implementation would write is not a row to verify against.
-    /// </summary>
     [Test]
     public async Task RefusesASaltShorterThanRfc9106Allows()
     {
@@ -187,8 +173,6 @@ public class Argon2idPasswordHasherTests
         await Assert.That(weaker.Verify(Password, stored)).IsEqualTo(PasswordVerificationResult.Succeeded);
     }
 
-    // ── Migrating a deployment that already has PBKDF2 rows ──
-
     [Test]
     public async Task VerifiesAPbkdf2RowAndAsksForARehash()
     {
@@ -205,8 +189,6 @@ public class Argon2idPasswordHasherTests
         await Assert.That(Hasher().Verify("not it", stored)).IsEqualTo(PasswordVerificationResult.Failed);
     }
 
-    /// <summary>The whole migration, walked: one login per user, and the row it leaves behind is
-    /// Argon2id and settled.</summary>
     [Test]
     public async Task APbkdf2RowRehashesToASettledArgon2idRow()
     {
@@ -221,8 +203,6 @@ public class Argon2idPasswordHasherTests
         await Assert.That(rewritten).StartsWith("$argon2id$");
         await Assert.That(hasher.Verify(Password, rewritten)).IsEqualTo(PasswordVerificationResult.Succeeded);
     }
-
-    // ── And the way back off the package ──
 
     [Test]
     public async Task VerifyOnlyWritesPbkdf2()
@@ -241,8 +221,7 @@ public class Argon2idPasswordHasherTests
         await Assert.That(draining.Verify(Password, stored)).IsEqualTo(PasswordVerificationResult.SucceededRehashNeeded);
     }
 
-    /// <summary>Once a row has drained there is nothing left to rewrite, so the rehash has to stop
-    /// asking - otherwise every login rewrites the row forever.</summary>
+    /// <summary>A drained row must stop asking for a rehash, or every login rewrites it forever.</summary>
     [Test]
     public async Task VerifyOnlyLeavesAPbkdf2RowAlone()
     {
@@ -250,8 +229,6 @@ public class Argon2idPasswordHasherTests
 
         await Assert.That(draining.Verify(Password, Pbkdf2().Hash(Password))).IsEqualTo(PasswordVerificationResult.Succeeded);
     }
-
-    // ── Pepper ──
 
     [Test]
     public async Task PepperedHashesNameTheirVersion()
@@ -269,7 +246,6 @@ public class Argon2idPasswordHasherTests
         await Assert.That(hasher.Verify(Password, hasher.Hash(Password))).IsEqualTo(PasswordVerificationResult.Succeeded);
     }
 
-    // The whole point of a pepper: the stored row plus the password is not enough without the key.
     [Test]
     public async Task ADifferentPepperDoesNotVerify()
     {

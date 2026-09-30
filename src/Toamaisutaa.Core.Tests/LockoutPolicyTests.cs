@@ -59,8 +59,6 @@ public class LockoutPolicyTests
         await Assert.That(LockoutPolicy.IsLockedOut(credential, Now + options.LockoutDuration)).IsFalse();
     }
 
-    // Someone who mistypes once a month is not an attack, and their failures should not accumulate
-    // across the years into a lockout.
     [Test]
     public async Task FailuresOutsideTheWindowStartCountingAgain()
     {
@@ -104,7 +102,6 @@ public class LockoutPolicyTests
         await Assert.That(credential.LockedOutUntil).IsNull();
     }
 
-    // A single failure after the lock lifts must not immediately re-lock the account.
     [Test]
     public async Task TheCounterRestartsAfterALock()
     {

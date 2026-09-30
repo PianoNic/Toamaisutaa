@@ -21,8 +21,7 @@ public class ClaimsJsonFlattenerTests
         await Assert.That(claims).Contains(("locked", "False"));
     }
 
-    // The reason this method exists: a role check matches a single claim value, so a groups array
-    // has to arrive as one claim per group or membership can never be satisfied.
+    // A role check matches a single claim value, so a groups array has to arrive as one claim per group.
     [Test]
     public async Task ArraysBecomeOneClaimPerEntry()
     {
@@ -44,8 +43,7 @@ public class ClaimsJsonFlattenerTests
         await Assert.That(claims).Contains(("levels", "three"));
     }
 
-    // A claim value is a string. Inventing a serialisation for an object would be a format nobody
-    // else agrees on, so these are dropped rather than guessed at.
+    // Serialising an object into a claim value would invent a format nobody else agrees on.
     [Test]
     public async Task NestedObjectsAreSkipped()
     {

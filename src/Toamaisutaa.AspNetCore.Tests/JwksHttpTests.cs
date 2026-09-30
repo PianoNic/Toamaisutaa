@@ -9,24 +9,13 @@ using Microsoft.IdentityModel.Tokens;
 
 namespace Toamaisutaa.AspNetCore.Tests;
 
-/// <summary>
-/// Asymmetric signing on the wire: what the JWKS document says, and which tokens the bearer
-/// pipeline accepts once the keys are no longer a shared secret.
-/// </summary>
-/// <remarks>
-/// The keys are generated per test rather than checked in. Every configuration here drops
-/// <c>LocalLogin:SigningKey</c> entirely, which is the state a deployment that has finished
-/// migrating is in - and the state in which anything still reading only that option stops
-/// recognising this package's own tokens.
-/// </remarks>
 public class JwksHttpTests
 {
     private const string Jwks = "/auth/.well-known/jwks.json";
 
     private static ECDsa NewKey() => ECDsa.Create(ECCurve.NamedCurves.nistP256);
 
-    /// <summary>Asymmetric only: the symmetric key comes out, so nothing can pass by falling back
-    /// to it.</summary>
+    /// <summary>Removes the symmetric key, so nothing can pass by falling back to it.</summary>
     private static Action<Dictionary<string, string?>> SignedBy(params (string Kid, ECDsa Key)[] keys) => settings =>
     {
         settings.Remove("LocalLogin:SigningKey");
@@ -38,11 +27,7 @@ public class JwksHttpTests
         }
     };
 
-    /// <summary>
-    /// A token for this host signed by a key of the test's choosing. Minted rather than doctored,
-    /// for the reason <c>TestApp.MintTokenWithoutSession</c> gives: editing a real token breaks its
-    /// signature, so the request never reaches the code under test.
-    /// </summary>
+    /// <summary>Minted rather than doctored, because editing a real token breaks its signature before the code under test runs.</summary>
     private static string Mint(TestApp app, ECDsa key, string kid, string subject) =>
         new JsonWebTokenHandler().CreateToken(new SecurityTokenDescriptor
         {
@@ -57,7 +42,6 @@ public class JwksHttpTests
                 SecurityAlgorithms.EcdsaSha256),
         });
 
-    /// <summary>The JOSE header of a token, read the way anything downstream reads it.</summary>
     private static JsonElement Header(string token) =>
         JsonDocument.Parse(Encoding.UTF8.GetString(Base64Url.DecodeFromChars(token.Split('.')[0]))).RootElement.Clone();
 
@@ -80,31 +64,23 @@ public class JwksHttpTests
         await Assert.That(published[0].String("alg")).IsEqualTo("ES256");
         await Assert.That(published[0].String("use")).IsEqualTo("sig");
 
-        // Served anonymously to anything that asks, so this is the assertion that matters most.
+        // Served anonymously, so the private component must never appear.
         await Assert.That(await response.Content.ReadAsStringAsync()).DoesNotContain("\"d\"");
     }
 
-    /// <summary>
-    /// A gateway that fetches a JWKS gets a 200 and then refuses every token it sees. Answering an
-    /// empty set to an HS256 deployment would make that look like the issuer's fault.
-    /// </summary>
+    /// <summary>An empty set served to a gateway would make it refuse every HS256 token with no hint why.</summary>
     [Test]
     public async Task Is_not_mapped_at_all_when_signing_is_symmetric()
     {
         await using var app = await TestApp.StartAsync();
         var account = await Account.RegisterAsync(app);
 
-        // Signed in, because the fallback policy answers an unmatched route 401 rather than 404 and
-        // that would pass whether the route existed or not.
+        // Signed in, because the fallback policy answers an unmatched route 401 rather than 404.
         var response = await app.Client.Get(Jwks, account.AccessToken);
 
         await Assert.That(response.StatusCode).IsEqualTo(HttpStatusCode.NotFound);
     }
 
-    /// <summary>
-    /// The signing half. The <c>kid</c> is what a gateway looks up in the document above, so a
-    /// token that does not name one is unvalidatable however correct the key is.
-    /// </summary>
     [Test]
     public async Task Signs_with_the_first_key_and_names_it_in_the_header()
     {
@@ -121,10 +97,7 @@ public class JwksHttpTests
     }
 
     /// <summary>
-    /// Provisioning recognises its own tokens by the issuer, and used to reach for
-    /// <c>LocalLogin:SigningKey</c> to decide whether local login was configured at all. With only
-    /// asymmetric keys set that read is empty, and every request would have been provisioned as a
-    /// stranger - a new user row per call, on the happy path.
+    /// With only asymmetric keys, anything that checks <c>LocalLogin:SigningKey</c> to detect local login would provision a new user per request.
     /// </summary>
     [Test]
     public async Task An_asymmetrically_signed_token_resolves_to_the_user_it_names()
@@ -143,8 +116,6 @@ public class JwksHttpTests
         await Assert.That(first.String("userName")).IsEqualTo("ada");
     }
 
-    /// <summary>Rotation only works if this holds: a key that is no longer first still validates
-    /// what it signed, or every session ends the moment a key moves.</summary>
     [Test]
     public async Task Accepts_a_token_signed_by_a_key_that_is_no_longer_first()
     {
@@ -163,10 +134,7 @@ public class JwksHttpTests
     }
 
     /// <summary>
-    /// Validation goes by <c>kid</c>, and this is the assertion that says so rather than describing
-    /// it. The token is signed by the one configured key, so the only thing standing between it and
-    /// a 200 is the key id naming nothing - a resolver that handed back the whole set would try
-    /// that key anyway and let it through.
+    /// Signed by the one configured key, so only the unknown key id stands between it and a 200 from a resolver that returns the whole set.
     /// </summary>
     [Test]
     public async Task Refuses_a_token_whose_key_id_names_no_configured_key()
@@ -182,11 +150,6 @@ public class JwksHttpTests
         await Assert.That(response.StatusCode).IsEqualTo(HttpStatusCode.Unauthorized);
     }
 
-    /// <summary>
-    /// The migration, which is the reason both shapes are read at once. Adding SigningKeys to a
-    /// deployment that has been signing HS256 has to leave the tokens already in flight alone -
-    /// otherwise switching signs everybody out, and nothing about that failure says why.
-    /// </summary>
     [Test]
     public async Task Keeps_validating_HS256_tokens_while_the_symmetric_key_is_still_configured()
     {
@@ -194,7 +157,7 @@ public class JwksHttpTests
 
         await using var app = await TestApp.StartAsync(configure: settings =>
         {
-            // LocalLogin:SigningKey is left exactly as the harness sets it.
+            // Not SignedBy, which would remove the symmetric key this test needs kept.
             settings["LocalLogin:SigningKeys:0:Kid"] = "2026-09";
             settings["LocalLogin:SigningKeys:0:Pem"] = key.ExportPkcs8PrivateKeyPem();
         });
@@ -202,7 +165,6 @@ public class JwksHttpTests
         var account = await Account.RegisterAsync(app);
         var subject = account.Claims().String("sub")!;
 
-        // New tokens are asymmetric from the first sign-in after the switch.
         await Assert.That(Header(account.AccessToken).String("alg")).IsEqualTo("ES256");
 
         var symmetric = new JsonWebTokenHandler().CreateToken(new SecurityTokenDescriptor

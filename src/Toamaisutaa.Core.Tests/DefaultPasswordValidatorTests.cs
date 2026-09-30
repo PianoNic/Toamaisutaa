@@ -32,7 +32,7 @@ public class DefaultPasswordValidatorTests
         await Assert.That(Validator().Validate(new string('a', 128))).IsEmpty();
     }
 
-    // Not a strength rule: HMAC folds anything past its block size to a fixed width, so the extra
+    // Not a strength rule: HMAC folds anything past its block size to a fixed width, so extra
     // characters buy nothing while an unbounded field on an anonymous endpoint costs real work.
     [Test]
     public async Task RejectsOneCharacterOverTheMaximum()

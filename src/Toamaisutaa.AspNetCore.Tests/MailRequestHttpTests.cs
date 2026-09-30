@@ -5,15 +5,10 @@ using Toamaisutaa.Abstractions;
 
 namespace Toamaisutaa.AspNetCore.Tests;
 
-/// <summary>
-/// The two anonymous endpoints that may send mail, and what the clock and a flood say about them.
-/// </summary>
 public class MailRequestHttpTests
 {
     /// <summary>
-    /// The body was always the same 204. The time was not: an unknown address answered after one
-    /// lookup and a real one after the mail server did, so timing a list of addresses enumerated
-    /// the accounts. A mail server that never answers makes the difference unmissable.
+    /// Waiting on the mail server only for real accounts would let response timing enumerate them.
     /// </summary>
     [Test]
     public async Task A_reset_request_answers_without_waiting_for_the_mail_server()
@@ -43,9 +38,7 @@ public class MailRequestHttpTests
     }
 
     /// <summary>
-    /// Raced rather than cancelled: the in-process server does not abandon a handler when the
-    /// client gives up, so a request that waits on the mail server would otherwise hang the run
-    /// instead of failing it. The mail server is released either way.
+    /// Raced rather than cancelled, because the in-process server does not abandon a handler when the client gives up and the run would hang.
     /// </summary>
     private static async Task AssertAnswersBeforeTheMailServerAsync(TestApp app, string path, string email, TaskCompletionSource mailServer)
     {
@@ -63,10 +56,6 @@ public class MailRequestHttpTests
         }
     }
 
-    /// <summary>
-    /// Each request mailed another link and retired the one before it, so asking over and over from
-    /// as many addresses as the limiter allows filled the inbox and left the owner nothing usable.
-    /// </summary>
     [Test]
     public async Task A_second_reset_request_for_one_address_inside_the_cooldown_sends_nothing()
     {

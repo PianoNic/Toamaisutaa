@@ -48,8 +48,6 @@ public class HibpPasswordValidatorTests
         await Assert.That(errors).IsEquivalentTo(new[] { "Pick another one." });
     }
 
-    // The threshold is a count of appearances, so it is the boundary that matters: at it, refused;
-    // one below, allowed.
     [Test]
     public async Task RefusesAtTheThreshold()
     {
@@ -82,8 +80,6 @@ public class HibpPasswordValidatorTests
         await Assert.That(errors).IsEquivalentTo(new[] { "Use at least 8 characters." });
     }
 
-    // Nothing is learned by asking about a password that is already refused, and asking would spend
-    // a request on every short password typed into an anonymous endpoint.
     [Test]
     public async Task DoesNotAskAboutAPasswordTheWrappedValidatorAlreadyRefused()
     {
@@ -114,9 +110,6 @@ public class HibpPasswordValidatorTests
         await Assert.That(logger.Entries[0].Message).Contains("api.pwnedpasswords.com");
     }
 
-    // The password is the one thing that must never reach a log. A warning about a lookup that
-    // failed is written while something has gone wrong, which is exactly when somebody is tempted
-    // to put the input in it.
     [Test]
     public async Task NeverPutsThePasswordInTheWarning()
     {
@@ -127,9 +120,6 @@ public class HibpPasswordValidatorTests
         await Assert.That(logger.Entries.Any(entry => entry.Message.Contains(Breached, StringComparison.OrdinalIgnoreCase))).IsFalse();
     }
 
-    // A corpus answering something unexpected is the same situation as one not answering: the
-    // password already passed the length rules, and nobody should be locked out of a password
-    // change by it.
     [Test]
     public async Task AcceptsThePasswordWhenTheServiceAnswersSomethingUnexpected()
     {
@@ -138,8 +128,6 @@ public class HibpPasswordValidatorTests
         await Assert.That(await Validator(index, out _).ValidateAsync(Breached)).IsEmpty();
     }
 
-    // Failing open covers the service, not the caller. A cancelled request is the caller giving up,
-    // and swallowing it would report a decision nobody waited for.
     [Test]
     public async Task LetsTheCallersCancellationThrough()
     {
@@ -152,8 +140,6 @@ public class HibpPasswordValidatorTests
             .Throws<OperationCanceledException>();
     }
 
-    // Nothing in the package calls it, but the interface still carries it, so it has to agree with
-    // the async answer rather than quietly skipping the check.
     [Test]
     public async Task TheSynchronousPathReachesTheSameAnswer()
     {

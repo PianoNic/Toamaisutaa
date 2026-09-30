@@ -42,10 +42,8 @@ public class DefaultPasswordResetEmailTemplateTests
         await Assert.That(() => Template(null).Build(User(), "raw-token-123")).Throws<InvalidOperationException>();
     }
 
-    /// <summary>
-    /// Anyone could register with a sentence and a URL for a name and somebody else's address, then
-    /// ask for a reset: the mail greeted the stranger's inbox with those words, from this domain.
-    /// </summary>
+    /// <summary>Greeting by the registered name would let anyone mail their own words from this domain
+    /// to any inbox.</summary>
     [Test]
     public async Task CarriesNothingTheUserChose()
     {

@@ -42,8 +42,6 @@ public class DefaultInvitationEmailTemplateTests
         await Assert.That(() => Template(null).Build(User(), "raw-token-123")).Throws<InvalidOperationException>();
     }
 
-    // A reserved row has neither name until the invitation is completed, which is the ordinary case
-    // here rather than an edge one.
     [Test]
     public async Task GreetsAnUnnamedReservedAccountWithoutAName()
     {

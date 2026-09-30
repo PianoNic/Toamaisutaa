@@ -9,27 +9,17 @@ using Toamaisutaa.Abstractions;
 
 namespace Toamaisutaa.AspNetCore.Tests;
 
-/// <summary>
-/// What <c>ICurrentUser</c> reports about the caller, over a real request carrying a real token.
-/// </summary>
-/// <remarks>
-/// The claims only exist once a token has been minted, validated and turned into a principal, and
-/// which claim type the roles land under is decided in three places - the issuer, the bearer
-/// handler and here. A test that built the principal by hand would agree with itself, so these
-/// sign in first. The exceptions are the reads of an identity's own role claim type, which by
-/// definition want a principal that came from somewhere other than this pipeline.
-/// </remarks>
+/// <summary>These sign in rather than build the principal by hand, because the role claim type is
+/// decided by the issuer and the bearer handler and a hand-built principal would agree with itself.</summary>
 public class CurrentUserHttpTests
 {
-    /// <summary>Stands in for an application's own roles table, which this package does not ship.</summary>
     private sealed class FixedRoleProvider(params string[] roles) : IUserRoleProvider
     {
         public Task<IReadOnlyList<string>> GetRolesAsync(ToamaisutaaUser user, CancellationToken cancellationToken = default) =>
             Task.FromResult<IReadOnlyList<string>>(roles);
     }
 
-    /// <summary>The default <c>ToamaisutaaAuthorizationOptions.AdminPolicyName</c>, written out
-    /// rather than read off the options, so a rename has to be made here too.</summary>
+    /// <summary>Written out rather than read off the options, so a rename has to be made here too.</summary>
     private const string AdminPolicy = "Toamaisutaa.Admin";
 
     private static void MapCurrentUser(IEndpointRouteBuilder endpoints, bool mapAdmin)
@@ -44,9 +34,7 @@ public class CurrentUserHttpTests
             absent = currentUser.FindClaim("tenant_id"),
         }));
 
-        // A principal this package's bearer pipeline did not build: an application authenticating
-        // with cookies, or filling the identity from a table of its own. Roles land under the .NET
-        // claim type there, which is the fallback under test.
+        // Built by hand because the fallback under test is for principals this package's pipeline did not build.
         endpoints.MapGet("/test/current-user/dotnet-roles", (HttpContext context) =>
         {
             context.User = new ClaimsPrincipal(
@@ -58,9 +46,8 @@ public class CurrentUserHttpTests
         })
         .AllowAnonymous();
 
-        // A principal from an authentication registration of the application's own that named its
-        // own role claim type. AddToamaisutaaCurrentUser has to answer for this one without any
-        // configuration of ours being bound, because nothing here ever handed us IConfiguration.
+        // A foreign registration's own role claim type, which has to be honoured with none of our
+        // configuration bound.
         endpoints.MapGet("/test/current-user/named-role-type", (HttpContext context) =>
         {
             context.User = new ClaimsPrincipal(new ClaimsIdentity(
@@ -89,8 +76,7 @@ public class CurrentUserHttpTests
         }))
         .AllowAnonymous();
 
-        // The authorization layer's own answer for the same token, so a test can assert the two
-        // guards agree rather than assert either of them alone.
+        // Lets a test assert that the authorization layer and ICurrentUser agree on the same token.
         if (mapAdmin)
         {
             endpoints.MapGet("/test/current-user/admin", () => Results.Ok(new { admin = true }))
@@ -121,12 +107,8 @@ public class CurrentUserHttpTests
                     AddDotnetRoleClaim(services, dotnetRoleClaim);
             });
 
-    /// <summary>
-    /// Puts a WS-Federation-typed role claim on the principal this package's own bearer pipeline
-    /// builds, which is what a token from an ADFS-style issuer carries. Added as the token is
-    /// validated rather than minted into it, because the local issuer emits roles under the
-    /// configured claim and nowhere else, so no token this host can sign reaches the divergence.
-    /// </summary>
+    /// <summary>Added at validation rather than minted, because the local issuer only emits roles under
+    /// the configured claim, so no token this host signs can carry a WS-Federation-typed role.</summary>
     private static void AddDotnetRoleClaim(IServiceCollection services, string role) =>
         services.PostConfigure<JwtBearerOptions>(JwtBearerDefaults.AuthenticationScheme, options =>
         {
@@ -156,24 +138,17 @@ public class CurrentUserHttpTests
         await Assert.That(body.Bool("gatekeeper")).IsTrue();
         await Assert.That(body.Bool("stranger")).IsFalse();
 
-        // Ordinal, which is what RequireRole does. A role check that quietly ignored case would
-        // grant on a value the authorization layer refuses.
+        // Ordinal, as RequireRole is, or a role check would grant on a value authorization refuses.
         await Assert.That(body.Bool("cased")).IsFalse();
     }
 
-    /// <summary>
-    /// The claim that catches everybody. Keycloak publishes <c>roles</c>, Pocket ID and Entra
-    /// publish <c>groups</c>, and reading the hardcoded one leaves every caller role-less while
-    /// their token is perfectly valid.
-    /// </summary>
     [Test]
     public async Task Roles_are_read_from_the_configured_claim()
     {
         await using var app = await StartAsync(roleClaim: "groups", roles: ["gatekeeper"]);
         var account = await Account.RegisterAsync(app);
 
-        // The token carries it under groups and nowhere else, so anything reading a different claim
-        // type reads nothing at all rather than reading it late.
+        // Under groups and nowhere else, so reading any other claim type finds nothing.
         await Assert.That(account.Claims().String("groups")).IsEqualTo("gatekeeper");
         await Assert.That(account.Claims().Has("roles")).IsFalse();
 
@@ -194,11 +169,8 @@ public class CurrentUserHttpTests
         await Assert.That(body.Bool("gatekeeper")).IsTrue();
     }
 
-    /// <summary>
-    /// Nothing bound <c>Oidc:RoleClaim</c> in this host, and the principal came from a registration
-    /// of the application's own that named <c>groups</c> as its role claim type. Reading the option
-    /// alone reports nothing at all for a caller <c>RequireRole</c> lets straight through.
-    /// </summary>
+    /// <summary>Reading <c>Oidc:RoleClaim</c> alone would report nothing for a caller <c>RequireRole</c>
+    /// lets straight through.</summary>
     [Test]
     public async Task Roles_read_the_role_claim_type_a_foreign_registration_named()
     {
@@ -211,13 +183,8 @@ public class CurrentUserHttpTests
         await Assert.That(body.Bool("policy")).IsTrue();
     }
 
-    /// <summary>
-    /// The divergence that grants. <c>RequireRole</c> resolves through the identity's own role claim
-    /// type, which this package's bearer pipeline sets to <c>Oidc:RoleClaim</c>, so a
-    /// WS-Federation-typed role claim from the issuer is not a role on this request. Reading that
-    /// type unconditionally reported it anyway, and a service guard let through a caller the admin
-    /// route answers 403 for. What is under test is the two answering alike.
-    /// </summary>
+    /// <summary><c>RequireRole</c> resolves through the identity's role claim type, set to
+    /// <c>Oidc:RoleClaim</c>, so a WS-Federation-typed role must not count in <c>IsInRole</c> either.</summary>
     [Test]
     public async Task A_dotnet_typed_role_claim_is_refused_by_the_admin_policy_and_by_IsInRole_alike()
     {
@@ -232,11 +199,8 @@ public class CurrentUserHttpTests
         await Assert.That(body.Bool("gatekeeper")).IsFalse();
     }
 
-    /// <summary>
-    /// The other half of the pair above: with the role under the configured claim both guards let
-    /// the caller in, so the 403 there is about which claim type carried it rather than about a
-    /// policy nothing can satisfy.
-    /// </summary>
+    /// <summary>The control for the test above, so its 403 is about the claim type rather than a policy
+    /// nothing can satisfy.</summary>
     [Test]
     public async Task The_configured_role_claim_satisfies_the_admin_policy_and_IsInRole_alike()
     {

@@ -3,15 +3,9 @@ using Toamaisutaa.Abstractions;
 namespace Toamaisutaa.Core.Tests;
 
 /// <summary>
-/// A sign-in challenge for an account with no password credential - the one a passkey assertion
-/// without user verification leaves. Its wrong-code count lives on the enrolment, because there is no
-/// credential to keep it on.
+/// Here rather than over HTTP because the endpoints offer no way to build a passkey-only account;
+/// the gate issues the challenge exactly as the passkey service does.
 /// </summary>
-/// <remarks>
-/// Here rather than over HTTP: the endpoints offer no way to build a passkey-only account, since
-/// registering a passkey takes a password or a local second factor. The gate issues the challenge
-/// exactly as the passkey service does.
-/// </remarks>
 public class PasswordlessTwoFactorLockoutTests
 {
     [Test]
@@ -61,15 +55,6 @@ public class PasswordlessTwoFactorLockoutTests
         }
     }
 
-    /// <summary>
-    /// A lock on the enrolment was set and said nothing: no <c>AccountLockedOut</c> for an audit sink,
-    /// and the lockout counter stood still, so a passkey-only account being guessed at was invisible.
-    /// </summary>
-    /// <summary>
-    /// A right code that another request used first is a race lost, not a wrong code. On a
-    /// credential its reservation is given back; on an enrolment it stayed counted, so a
-    /// double-click left a passkey-only account one failure closer to a lockout.
-    /// </summary>
     [Test]
     public async Task A_right_code_that_loses_a_race_leaves_no_failure_on_an_account_with_no_password()
     {
@@ -88,8 +73,6 @@ public class PasswordlessTwoFactorLockoutTests
         await Assert.That((await harness.TwoFactorStore.FindAsync(user.Id))!.FailedAttemptCount).IsEqualTo(0);
     }
 
-    /// <summary>The attempt that loses can be the one whose reservation locked the enrolment. Given
-    /// back, that lock goes with it - it was set by a right code, not a guess.</summary>
     [Test]
     public async Task A_right_code_that_loses_a_race_undoes_the_lock_it_set()
     {
@@ -173,9 +156,8 @@ public class PasswordlessTwoFactorLockoutTests
     }
 
     /// <summary>
-    /// The clear was one conditional write, and a wrong code that landed between its read and its
-    /// write made it match nothing: the person was signed in with the count still standing, one
-    /// typo from a lockout.
+    /// A wrong code landing between the clear's read and its conditional write must not leave the
+    /// count standing.
     /// </summary>
     [Test]
     public async Task A_right_code_clears_a_count_that_moved_while_it_was_being_cleared()
@@ -189,7 +171,6 @@ public class PasswordlessTwoFactorLockoutTests
         await Assert.That((await inner.FindAsync(userId))!.FailedAttemptCount).IsEqualTo(0);
     }
 
-    /// <summary>A wrong code from another request, landing just before this one's first write.</summary>
     private sealed class CountsOneMoreFirst(FakeTwoFactorStore inner) : ITwoFactorStore
     {
         private bool _interfered;

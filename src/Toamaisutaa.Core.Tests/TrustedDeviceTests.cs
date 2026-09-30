@@ -15,8 +15,6 @@ public class TrustedDeviceTests
             withTwoFactor: true,
             withTrustedDevices: true);
 
-    /// <summary>Enrols, signs in, completes a live challenge asking to be remembered, and returns
-    /// the device token.</summary>
     private static async Task<(ToamaisutaaUser User, byte[] Secret, string DeviceToken)> TrustedAsync(PasswordHarness harness)
     {
         var user = await harness.RegisterAsync();
@@ -32,8 +30,6 @@ public class TrustedDeviceTests
 
         return (user, secret, finished.TrustedDevice.Token);
     }
-
-    // ── The happy path ──
 
     [Test]
     public async Task A_trusted_device_skips_the_challenge()
@@ -59,9 +55,6 @@ public class TrustedDeviceTests
         await Assert.That(result.Outcome).IsEqualTo(SignInOutcome.TwoFactorRequired);
     }
 
-    /// <summary>
-    /// D5. A cached factor is not a one-time password, and a consumer's policy will act on the claim.
-    /// </summary>
     [Test]
     public async Task A_device_trusted_sign_in_claims_mfa_but_never_otp()
     {
@@ -79,7 +72,7 @@ public class TrustedDeviceTests
         await Assert.That(issued.AuthenticationMethods).DoesNotContain("otp");
         await Assert.That(issued.TwoFactorSource).IsEqualTo(TwoFactorSource.Device);
 
-        // The original live challenge, not now - which is what makes step-up expressible.
+        // The original live challenge rather than now, which is what makes step-up expressible.
         await Assert.That(issued.SecondFactorAt).IsEqualTo(liveAt);
     }
 
@@ -96,12 +89,6 @@ public class TrustedDeviceTests
         await Assert.That(secret.Length).IsGreaterThan(0);
     }
 
-    // ── The loop that would defeat the absolute lifetime ──
-
-    /// <summary>
-    /// Present token, skip challenge, receive a fresh token. If that restarted the family, thirty
-    /// days would mean "forever, as long as you sign in monthly".
-    /// </summary>
     [Test]
     public async Task Using_a_trusted_device_does_not_extend_its_absolute_lifetime()
     {
@@ -151,8 +138,6 @@ public class TrustedDeviceTests
         await Assert.That(result.Outcome).IsEqualTo(SignInOutcome.TwoFactorRequired);
     }
 
-    // ── Rotation and reuse ──
-
     [Test]
     public async Task A_rotated_device_token_presented_again_revokes_the_whole_family()
     {
@@ -163,21 +148,17 @@ public class TrustedDeviceTests
         var first = await harness.SignInAsync("pianonic", Password, deviceToken);
         await Assert.That(first.Succeeded).IsTrue();
 
-        // The old one, again.
         harness.Clock.Now = harness.Clock.Now.AddHours(1);
         var reused = await harness.SignInAsync("pianonic", Password, deviceToken);
 
         await Assert.That(reused.Outcome).IsEqualTo(SignInOutcome.TwoFactorRequired);
 
-        // And the token handed out by the successful rotation is dead too.
         harness.Clock.Now = harness.Clock.Now.AddHours(1);
         var sibling = await harness.SignInAsync("pianonic", Password, first.TrustedDevice!.Token);
 
         await Assert.That(sibling.Outcome).IsEqualTo(SignInOutcome.TwoFactorRequired);
         await Assert.That(harness.Devices.Devices.Where(d => d.UserId == user.Id).All(d => d.RevokedAt is not null)).IsTrue();
     }
-
-    // ── D4: the eight revocations, one test each ──
 
     [Test]
     public async Task Revoked_by_a_password_change()
@@ -239,8 +220,8 @@ public class TrustedDeviceTests
     }
 
     /// <summary>
-    /// The one the security stamp cannot carry: bumping it here would revoke the refresh family of
-    /// the session being established, so redeeming a recovery code would sign the user out.
+    /// Bumping the security stamp here would revoke the refresh family of the session being
+    /// established, so redeeming a recovery code would sign the user out.
     /// </summary>
     [Test]
     public async Task Revoked_when_a_recovery_code_is_redeemed()
@@ -255,11 +236,9 @@ public class TrustedDeviceTests
 
         var deviceToken = trusted.TrustedDevice!.Token;
 
-        // Now lose the device and use a recovery code.
         var second = await harness.SignInAsync("pianonic", Password);
         var recovered = await harness.VerifyAsync(second.Challenge!.Token, codes[0]);
 
-        // The sign-in itself must succeed - this is the check that would fail if we bumped the stamp.
         await Assert.That(recovered.Succeeded).IsTrue();
         await Assert.That(recovered.Tokens).IsNotNull();
 
@@ -323,12 +302,6 @@ public class TrustedDeviceTests
         await Assert.That(await harness.TrustedDevices.RevokeAsync(user.Id, Guid.NewGuid())).IsFalse();
     }
 
-    // ── The revocation that must NOT happen ──
-
-    /// <summary>
-    /// Signing out is not a security event, and a device surviving it is the entire feature. This is
-    /// the one place where "revoke everything" reads correct and is wrong.
-    /// </summary>
     [Test]
     public async Task Signing_out_leaves_the_trusted_device_alone()
     {
@@ -343,8 +316,6 @@ public class TrustedDeviceTests
 
         await Assert.That(again.Outcome).IsEqualTo(SignInOutcome.Succeeded);
     }
-
-    // ── Lockout and enforcement ──
 
     [Test]
     public async Task A_locked_account_is_refused_despite_a_valid_device_token()
@@ -366,7 +337,6 @@ public class TrustedDeviceTests
         var harness = Harness(configureTwoFactor: options => options.Enforcement = TwoFactorEnforcement.RequiredForAll);
         var (_, _, deviceToken) = await TrustedAsync(harness);
 
-        // A second account that never enrolled, presenting the first one's token.
         await harness.Accounts.RegisterAsync(new RegisterRequest("stranger", "stranger@example.com", Password));
 
         var result = await harness.SignInAsync("stranger", Password, deviceToken);
@@ -375,8 +345,6 @@ public class TrustedDeviceTests
         await Assert.That(harness.Issuer.Issued[^1].TwoFactorEnrolmentRequired).IsTrue();
         await Assert.That(harness.Issuer.Issued[^1].AuthenticationMethods).DoesNotContain("mfa");
     }
-
-    // ── The cap ──
 
     [Test]
     public async Task The_oldest_family_is_revoked_when_the_limit_is_reached()
@@ -398,13 +366,10 @@ public class TrustedDeviceTests
         var live = await harness.TrustedDevices.ListAsync(user.Id);
         await Assert.That(live.Count).IsEqualTo(2);
 
-        // The first one out, the newest two kept.
         harness.Clock.Now = harness.Clock.Now.AddSeconds(30);
         var oldest = await harness.SignInAsync("pianonic", Password, tokens[0]);
         await Assert.That(oldest.Outcome).IsEqualTo(SignInOutcome.TwoFactorRequired);
     }
-
-    // ── Refresh carries the source ──
 
     [Test]
     public async Task A_refresh_keeps_the_source_and_the_original_second_factor_time()
@@ -425,8 +390,6 @@ public class TrustedDeviceTests
         await Assert.That(issued.SecondFactorAt).IsEqualTo(liveAt);
         await Assert.That(issued.AuthenticationMethods).DoesNotContain("otp");
     }
-
-    // ── Not registered ──
 
     [Test]
     public async Task With_no_device_store_registered_a_device_token_is_simply_ignored()

@@ -5,15 +5,8 @@ using System.Text.Json;
 
 namespace Toamaisutaa.AspNetCore.Tests;
 
-/// <summary>
-/// Reads responses as raw JSON rather than deserialising into the package's own records.
-/// </summary>
-/// <remarks>
-/// Deliberate: deserialising through <c>TokenResponse</c> would make every assertion here agree
-/// with whatever that type currently says, which is the mistake that let a field go missing on the
-/// wire while the types either side of it were correct. These tests read the field names a client
-/// reads.
-/// </remarks>
+/// <summary>Raw JSON rather than the package's own records, because deserialising through
+/// <c>TokenResponse</c> would make every assertion agree with whatever that type currently says.</summary>
 internal static class Http
 {
     public static async Task<JsonElement> Json(this HttpResponseMessage response)
@@ -32,21 +25,15 @@ internal static class Http
             ? value.GetBoolean()
             : null;
 
-    /// <summary>The strings in an array property. Empty when the property is missing, so a test
-    /// asserting emptiness checks the name is there as well.</summary>
+    /// <summary>Empty when the property is missing, so a test asserting emptiness checks the name is
+    /// there as well.</summary>
     public static IReadOnlyList<string> Strings(this JsonElement element, string name) =>
         element.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.Array
             ? [.. value.EnumerateArray().Select(item => item.GetString()!)]
             : [];
 
-    /// <summary>
-    /// The <c>amr</c> values on a decoded token.
-    /// </summary>
-    /// <remarks>
-    /// Not <see cref="Strings"/>, which insists on an array: a token carrying one method serialises
-    /// it as a bare string, so a magic-link sign-in - the one shape whose <c>amr</c> is a single
-    /// value - would read as no methods at all.
-    /// </remarks>
+    /// <summary>Not <see cref="Strings"/>, because a token carrying one method serialises <c>amr</c> as
+    /// a bare string.</summary>
     public static IReadOnlyList<string> Amr(this JsonElement claims)
     {
         if (!claims.TryGetProperty("amr", out var amr))
@@ -108,14 +95,8 @@ internal static class Http
     }
 }
 
-/// <summary>
-/// RFC 6238, written out here rather than taken from the package.
-/// </summary>
-/// <remarks>
-/// An independent implementation, for the same reason <c>TotpProviderTests</c> asserts the
-/// published vectors: a generator borrowed from the code under test agrees with it even when both
-/// are wrong.
-/// </remarks>
+/// <summary>RFC 6238 written out independently, because a generator borrowed from the code under test
+/// agrees with it even when both are wrong.</summary>
 internal static class Totp
 {
     private const string Base32Alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";

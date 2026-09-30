@@ -11,24 +11,16 @@ using Toamaisutaa.Abstractions;
 namespace Toamaisutaa.AspNetCore.Tests;
 
 /// <summary>
-/// A key entry the ring could not read has to refuse the host, in a process that only validates
-/// tokens as much as in one that issues them.
+/// The ring collects a bad entry into <c>Problems</c> rather than throwing, so a bearer-only host
+/// without its own check starts clean and answers 401 to every token with nothing naming the key.
 /// </summary>
-/// <remarks>
-/// The ring never throws - it collects a bad entry into <c>Problems</c> - and the only reader of
-/// that list was the password-login startup check. A resource server validating the tokens another
-/// instance issued registers no password login, so a <c>Pem</c> that lost its line breaks in a
-/// values file dropped the entry, the host started clean, and every token it was configured to
-/// accept came back 401 with nothing anywhere naming the key. That is indistinguishable from an
-/// expired token.
-/// </remarks>
 public class SigningKeyStartupCheckTests
 {
     private const string Mangled = "-----BEGIN PRIVATE KEY----- not a key -----END PRIVATE KEY-----";
 
     /// <summary>
-    /// Bearer only, and <c>LocalLogin</c> bound by the application rather than by the package -
-    /// which is the only way a process that issues no token gets a key list at all.
+    /// Without password login, <c>LocalLogin</c> is bound by the application, which is the only way a
+    /// process that issues no token gets a key list at all.
     /// </summary>
     private static async Task<string?> StartAsync(string pem, bool withPasswordLogin)
     {
@@ -46,8 +38,8 @@ public class SigningKeyStartupCheckTests
 
         builder.Services.AddToamaisutaaBearer(builder.Configuration);
 
-        // The stores come with password login because the checks ahead of it in the queue insist on
-        // them, and a host that fell over on those would never reach the one under test.
+        // The stores come with password login because earlier startup checks insist on them and would
+        // otherwise fail before the one under test.
         await using var connection = new SqliteConnection("DataSource=:memory:");
 
         if (withPasswordLogin)
@@ -55,9 +47,7 @@ public class SigningKeyStartupCheckTests
             await connection.OpenAsync();
             builder.Services.AddToamaisutaaDbContext(db => db.UseSqlite(connection));
 
-            // Which binds LocalLogin itself. Binding it here as well would append the key list to
-            // itself and put every problem in the message twice for a reason that is not the one
-            // under test.
+            // This binds LocalLogin itself; binding it here too would duplicate the key list and every problem.
             builder.Services.AddToamaisutaaPasswordLogin(builder.Configuration);
         }
         else
@@ -91,8 +81,6 @@ public class SigningKeyStartupCheckTests
         await Assert.That(message!).Contains("LocalLogin:SigningKeys[0]:Pem is not a PEM-encoded RSA or EC key.");
     }
 
-    /// <summary>The other half of the assertion above: a check that fires on a good list would be a
-    /// package that cannot be started at all.</summary>
     [Test]
     public async Task Starts_a_token_validating_process_on_a_key_that_parsed()
     {
@@ -103,11 +91,6 @@ public class SigningKeyStartupCheckTests
         await Assert.That(message).IsNull();
     }
 
-    /// <summary>
-    /// Two checks reading one list would otherwise print the same line twice, and a startup message
-    /// that says everything twice is one nobody finishes reading. The password-login check keeps it,
-    /// because it reports the whole misconfiguration in a single message.
-    /// </summary>
     [Test]
     public async Task Reports_the_same_key_once_when_password_login_is_registered()
     {

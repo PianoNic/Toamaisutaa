@@ -2,16 +2,8 @@ using System.Net;
 
 namespace Toamaisutaa.AspNetCore.Tests;
 
-/// <summary>
-/// An address nobody has proven is not somebody's to keep. Registration takes whatever it is typed,
-/// and it used to reserve that address in the unique index for good.
-/// </summary>
 public class UnprovenAddressHttpTests
 {
-    /// <summary>
-    /// Somebody registers a new hire's address before the invitation lands. The invitee used to get
-    /// a 409 for every user name they tried, with nothing in band to put it right.
-    /// </summary>
     [Test]
     public async Task An_invitation_takes_its_address_back_from_an_unproven_registration()
     {
@@ -32,14 +24,12 @@ public class UnprovenAddressHttpTests
 
         await Assert.That(complete.StatusCode).IsEqualTo(HttpStatusCode.Created);
 
-        // And the address now signs in the person the invitation reached, not the one who typed it first.
         var signIn = await app.Client.PostJson("/auth/login", new { identifier = "newhire@example.com", password = Account.DefaultPassword });
         var claims = Account.DecodeClaims((await signIn.Json()).String("access_token")!);
 
         await Assert.That(claims.String("sub")).IsEqualTo(Account.DecodeClaims((await complete.Json()).String("access_token")!).String("sub"));
 
-        // The invitation reached this mailbox and came back, so the address counts as proven -
-        // which a magic link, sent only to a verified address, is the way to see from outside.
+        // A magic link is sent only to a verified address, so it shows from outside that the invitation proved it.
         await app.Client.PostJson("/auth/magic-link", new { email = "newhire@example.com" });
         await Assert.That(app.IssuedMagicLinks).HasCount().EqualTo(1);
     }

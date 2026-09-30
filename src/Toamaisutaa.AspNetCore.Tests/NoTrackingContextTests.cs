@@ -7,14 +7,8 @@ using Toamaisutaa.EntityFrameworkCore;
 namespace Toamaisutaa.AspNetCore.Tests;
 
 /// <summary>
-/// A context whose default is no tracking, which plenty of applications set globally for their own
-/// read-heavy queries. The credential store has to write through it all the same.
+/// Applications often set no-tracking globally, and the credential store must still persist writes under it.
 /// </summary>
-/// <remarks>
-/// Against real SQLite with the real stores. Under that default, a credential write went through
-/// the branch for a detached instance, set values on a copy that was itself untracked, and saved
-/// nothing - a password change or a lockout that returned success and never happened.
-/// </remarks>
 public class NoTrackingContextTests
 {
     [Test]
@@ -39,7 +33,6 @@ public class NoTrackingContextTests
         await Assert.That(stored.FailedAttemptCount).IsEqualTo(3);
     }
 
-    /// <summary>The concurrency check has to hold under the same default, not only the write.</summary>
     [Test]
     public async Task A_stale_credential_write_is_refused_under_a_no_tracking_default()
     {

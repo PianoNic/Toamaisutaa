@@ -3,13 +3,9 @@ using System.Net;
 namespace Toamaisutaa.AspNetCore.Tests;
 
 /// <summary>
-/// Wrong second factors count against the account, at sign-in as at step-up.
+/// The rate limiter is off in the test host on purpose: an attacker chooses how many addresses they
+/// have, so the account-wide count has to hold on its own.
 /// </summary>
-/// <remarks>
-/// The rate limiter is off in the test host, so nothing here is saved by the per-address limit.
-/// That is the point: it partitions on an address, and an attacker holding the password chooses
-/// how many addresses they have. The account-wide count is what has to hold on its own.
-/// </remarks>
 public class TwoFactorLockoutHttpTests
 {
     /// <summary>The default <c>MaxFailedAttempts</c>.</summary>
@@ -32,10 +28,6 @@ public class TwoFactorLockoutHttpTests
         await Assert.That(right.StatusCode).IsEqualTo(HttpStatusCode.Unauthorized);
     }
 
-    /// <summary>
-    /// A right password used to clear the count before any code was asked for, so signing in again
-    /// every few guesses bought an unlimited supply of them.
-    /// </summary>
     [Test]
     public async Task Signing_in_again_does_not_clear_the_wrong_codes()
     {
@@ -56,8 +48,6 @@ public class TwoFactorLockoutHttpTests
         await Assert.That(right.StatusCode).IsEqualTo(HttpStatusCode.Unauthorized);
     }
 
-    /// <summary>The other side of the count: a person who mistypes and then gets it right is not
-    /// carrying those mistakes into their next sign-in.</summary>
     [Test]
     public async Task A_completed_sign_in_clears_the_wrong_codes()
     {
@@ -96,9 +86,8 @@ public class TwoFactorLockoutHttpTests
     }
 
     /// <summary>
-    /// Both endpoints take a code as proof and pay out the second factor itself - ten fresh recovery
-    /// codes, or no second factor at all - so a stolen access token must not be able to guess there
-    /// either. A wrong proof does not move the security stamp, so the token survives every guess.
+    /// A wrong proof does not move the security stamp, so a stolen token survives every guess and
+    /// only the lockout stops it.
     /// </summary>
     [Test]
     [Arguments("/auth/2fa/recovery-codes")]
@@ -123,10 +112,6 @@ public class TwoFactorLockoutHttpTests
         await Assert.That((await app.Client.Get("/auth/2fa", account.AccessToken)).Json().Result.Bool("enabled")).IsTrue();
     }
 
-    /// <summary>
-    /// Confirming an enrolment checked its code against nothing: a stolen token that found an
-    /// enrolment the owner had abandoned could guess until two-factor switched on.
-    /// </summary>
     [Test]
     public async Task Wrong_codes_at_confirm_lock_the_account_so_the_right_code_is_refused()
     {
@@ -153,8 +138,8 @@ public class TwoFactorLockoutHttpTests
     }
 
     /// <summary>
-    /// The account-wide count cannot reach an account an identity provider owns, which has no
-    /// password to keep it on, so the per-address limit has to be on these routes too.
+    /// An account an identity provider owns has no password to keep the account-wide count on, so
+    /// the per-address limit has to be on these routes too.
     /// </summary>
     [Test]
     [Arguments("/auth/2fa/confirm")]
@@ -180,11 +165,6 @@ public class TwoFactorLockoutHttpTests
         await Assert.That(statuses).Contains(HttpStatusCode.TooManyRequests);
     }
 
-    /// <summary>
-    /// Somebody holding the password and a way to the codes starts a sign-in; the owner notices and
-    /// changes the password. The challenge that sign-in left open used to still finish afterwards,
-    /// handing a fresh session to the very person the change was meant to shut out.
-    /// </summary>
     [Test]
     public async Task A_challenge_issued_before_a_password_change_cannot_be_finished_after_it()
     {
@@ -204,11 +184,6 @@ public class TwoFactorLockoutHttpTests
         await Assert.That(finished.StatusCode).IsEqualTo(HttpStatusCode.Unauthorized);
     }
 
-    /// <summary>
-    /// The lock was read before each code was checked and counted after, so every guess already in
-    /// flight was checked against an account that had not locked yet. Counted by the package's own
-    /// verification metric: however many arrive together, no more than the limit are ever checked.
-    /// </summary>
     [Test]
     public async Task Parallel_codes_are_checked_no_more_often_than_the_lockout_allows()
     {

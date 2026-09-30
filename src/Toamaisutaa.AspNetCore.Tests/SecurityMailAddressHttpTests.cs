@@ -4,8 +4,7 @@ using Toamaisutaa.Abstractions;
 namespace Toamaisutaa.AspNetCore.Tests;
 
 /// <summary>
-/// Reset and magic links go to the address that was checked. The profile email is a different
-/// field, and an identity provider's sync writes it whenever the provider's copy changes.
+/// The profile email is written by identity provider sync, so security mail must not go there.
 /// </summary>
 public class SecurityMailAddressHttpTests
 {
@@ -42,8 +41,6 @@ public class SecurityMailAddressHttpTests
         await Assert.That(sentTo).IsEquivalentTo(new[] { account.Email });
     }
 
-    /// <summary>What a profile sync from the identity provider does to the user row, written the
-    /// same way: the profile email moves and the credential does not.</summary>
     private static async Task ProfileSyncWritesAsync(TestApp app, Account account, string email)
     {
         await using var scope = app.Services.CreateAsyncScope();

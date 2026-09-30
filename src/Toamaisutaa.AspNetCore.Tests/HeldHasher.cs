@@ -5,10 +5,7 @@ using Toamaisutaa.Core;
 
 namespace Toamaisutaa.AspNetCore.Tests;
 
-/// <summary>
-/// The real hasher, except that hashing or verifying <see cref="Hold"/> stops until the test lets
-/// it go. A key derivation is the window a real race has, and this pins another request inside it.
-/// </summary>
+/// <summary>A key derivation is the window a real race has, so holding it pins another request inside it.</summary>
 internal sealed class HeldHasher : IPasswordHasher
 {
     private readonly ManualResetEventSlim _release = new();
@@ -20,7 +17,6 @@ internal sealed class HeldHasher : IPasswordHasher
     /// verification through.</summary>
     internal volatile bool HashingOnly;
 
-    /// <summary>Completes once a request is being held.</summary>
     internal TaskCompletionSource Entered { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
     internal void Register(IServiceCollection services) =>
@@ -30,7 +26,6 @@ internal sealed class HeldHasher : IPasswordHasher
             return this;
         });
 
-    /// <summary>Stops holding and lets the held request go on.</summary>
     internal void Let()
     {
         Hold = null;

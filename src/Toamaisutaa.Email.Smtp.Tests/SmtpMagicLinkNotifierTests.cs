@@ -40,8 +40,6 @@ public class SmtpMagicLinkNotifierTests
         await Assert.That(message.To.Mailboxes.Single().Address).IsEqualTo("ada@example.com");
     }
 
-    // This token is a session rather than a step towards one, so the no-logging rule matters more
-    // here than anywhere else this package sends mail.
     [Test]
     public async Task NeverLogsTheMagicLinkToken()
     {

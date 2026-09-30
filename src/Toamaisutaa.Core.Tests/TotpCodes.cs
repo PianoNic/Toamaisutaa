@@ -5,15 +5,9 @@ using System.Security.Cryptography;
 namespace Toamaisutaa.Core.Tests;
 
 /// <summary>
-/// Generates the code an authenticator app would be showing, so the tests can drive a real
-/// enrolment instead of stubbing verification out.
+/// Written out again rather than calling the provider under test, so an implementation that is
+/// consistently wrong cannot look right.
 /// </summary>
-/// <remarks>
-/// Written out again rather than calling into the provider under test. It is only a few lines, and
-/// having the tests generate codes with the same method they are checking would make an
-/// implementation that is consistently wrong look right. The RFC 6238 vectors are what prove the
-/// provider correct; this only has to agree with them.
-/// </remarks>
 internal static class TotpCodes
 {
     internal static string Compute(byte[] secret, DateTimeOffset at, TimeSpan period, int digits)

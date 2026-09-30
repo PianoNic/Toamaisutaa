@@ -1,8 +1,7 @@
 namespace Toamaisutaa.Core.Tests;
 
 /// <summary>
-/// The version segment, which Argon2's canonical encoding puts between the algorithm and the
-/// parameters. Everything else about this format is covered through the hashers that write it.
+/// Argon2's canonical encoding puts a version segment between the algorithm and the parameters.
 /// </summary>
 public class PhcStringTests
 {
@@ -18,8 +17,6 @@ public class PhcStringTests
         await Assert.That(memory).IsEqualTo(19_456);
     }
 
-    /// <summary>A PBKDF2 row has four segments and always did. Reading the parameters out of the
-    /// wrong one would break every stored password in a deployment.</summary>
     [Test]
     public async Task StillReadsARowWithNoVersion()
     {

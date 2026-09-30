@@ -4,16 +4,6 @@ using Toamaisutaa.Abstractions;
 
 namespace Toamaisutaa.AspNetCore.Tests;
 
-/// <summary>
-/// <c>/auth/users</c> and <c>/auth/users/{userId}/password</c> - provisioning on someone else's
-/// behalf. The invariant that matters here: no response from either ever carries a password, typed
-/// or generated - it only ever reaches <c>IAdminPasswordIssuedNotifier</c>, in process.
-/// </summary>
-/// <remarks>
-/// The second invariant is who may call them. They take the account from the route, so an ordinary
-/// signed-in caller reaching them is a full takeover of any account, and for a while one could:
-/// they carried the default policy, which is nothing but "authenticated".
-/// </remarks>
 public class AdminAccountHttpTests
 {
     [Test]
@@ -84,8 +74,6 @@ public class AdminAccountHttpTests
         await Assert.That(response.StatusCode).IsEqualTo(HttpStatusCode.NoContent);
         await Assert.That(app.IssuedPasswords.Single().Password).IsEqualTo("brand new password");
 
-        // The refresh token target held before the overwrite is dead - the same check
-        // ChangingAPasswordEndsEveryOtherSession makes at the service layer, here over HTTP.
         var refreshed = await app.Client.PostJson("/auth/refresh", new { refreshToken = targetRefreshToken });
         await Assert.That(refreshed.StatusCode).IsEqualTo(HttpStatusCode.Unauthorized);
 
@@ -107,8 +95,6 @@ public class AdminAccountHttpTests
         await Assert.That(create.StatusCode).IsEqualTo(HttpStatusCode.NotFound);
     }
 
-    // ── Who may call them ──
-
     [Test]
     public async Task Creating_a_user_is_refused_for_a_caller_without_the_admin_role()
     {
@@ -124,8 +110,6 @@ public class AdminAccountHttpTests
         await Assert.That(app.IssuedPasswords).IsEmpty();
     }
 
-    // The takeover this endpoint used to allow, asserted as refused: an ordinary account posting a
-    // password of its own choosing at somebody else's user id.
     [Test]
     public async Task Overwriting_a_password_is_refused_for_a_caller_without_the_admin_role()
     {
@@ -148,8 +132,6 @@ public class AdminAccountHttpTests
         await Assert.That((await target.LoginAsync()).StatusCode).IsEqualTo(HttpStatusCode.OK);
     }
 
-    // No admin role configured means no policy to put on them, and they are refused the wire rather
-    // than mapped behind the default one - which is every account that ever registered.
     [Test]
     public async Task Admin_endpoints_are_not_mapped_without_an_admin_role_configured()
     {
@@ -171,10 +153,6 @@ public class AdminAccountHttpTests
         await Assert.That(set.StatusCode).IsEqualTo(HttpStatusCode.NotFound);
     }
 
-    // ── A notifier that fails ──
-
-    // 502 rather than 500, and the revocation happens either way. The SMTP notifier this package
-    // ships throws on any relay failure, and the session teardown used to sit behind it.
     [Test]
     public async Task Overwriting_a_password_reports_a_failed_delivery_and_still_ends_every_session()
     {

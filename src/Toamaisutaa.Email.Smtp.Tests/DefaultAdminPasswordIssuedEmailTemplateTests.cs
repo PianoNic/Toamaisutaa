@@ -28,8 +28,6 @@ public class DefaultAdminPasswordIssuedEmailTemplateTests
         await Assert.That(content.HtmlBody!).Contains("Password: issued-password-123");
     }
 
-    // A generated password is a random string, so an unencoded one can be swallowed by the email
-    // client as markup and shown as a password that was never issued.
     [Test]
     public async Task HtmlEncodesThePassword()
     {

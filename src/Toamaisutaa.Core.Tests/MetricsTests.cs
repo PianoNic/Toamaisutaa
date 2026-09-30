@@ -3,9 +3,8 @@ using Toamaisutaa.Abstractions;
 namespace Toamaisutaa.Core.Tests;
 
 /// <summary>
-/// What the instruments say, asserted from a listener rather than from the code that publishes
-/// them. Instrument names and tag values are the contract a dashboard is written against, so they
-/// are spelled out here as literals - a rename that a query would not survive has to break a test.
+/// Instrument names and tag values are spelled out as literals so that a rename a dashboard query
+/// would not survive breaks a test.
 /// </summary>
 public class MetricsTests
 {
@@ -49,8 +48,7 @@ public class MetricsTests
     }
 
     /// <summary>
-    /// The same value as a wrong password, because the caller is told the same thing. A result of its
-    /// own told whoever could read the series which guesses named real accounts.
+    /// A result of its own would tell whoever reads the series which guesses named real accounts.
     /// </summary>
     [Test]
     public async Task AnUnknownIdentifierIsCountedAsTheSameRefusalAsAWrongPassword()
@@ -63,11 +61,6 @@ public class MetricsTests
         await Assert.That(probe.For(SignIns).Single().Tag("result")).IsEqualTo("invalid_grant");
     }
 
-    /// <summary>
-    /// The counter is not a second failure counter: it fires on the attempt that crosses the
-    /// threshold and stays quiet while the lock holds, or a locked-out account would look like a
-    /// fresh incident on every retry.
-    /// </summary>
     [Test]
     public async Task CrossingTheLockoutThresholdIsCountedOnceAndNotAgainWhileLocked()
     {
@@ -82,8 +75,6 @@ public class MetricsTests
         await Assert.That(probe.For(Lockouts).Count).IsEqualTo(1);
     }
 
-    /// <summary>Step-up counts against the same lockout as a password does, so it has to reach the
-    /// same instrument - the account is equally locked either way.</summary>
     [Test]
     public async Task CrossingTheThresholdWithWrongStepUpCodesIsCountedToo()
     {
@@ -172,10 +163,6 @@ public class MetricsTests
         await Assert.That(measurement.Tag("result")).IsEqualTo("succeeded");
     }
 
-    /// <summary>
-    /// A cached factor is still a second factor being satisfied, and the series is the only place
-    /// the split between live and cached is visible.
-    /// </summary>
     [Test]
     public async Task ATrustedDeviceStandingInForTheSecondFactorIsCountedAsOne()
     {
@@ -198,8 +185,6 @@ public class MetricsTests
         await Assert.That(probe.For(SignIns).Single().Tag("amr")).IsEqualTo("pwd mfa");
     }
 
-    /// <summary>Nobody presented a device token, so nothing was verified. A counter that ticked
-    /// here would report a device failure for every ordinary sign-in.</summary>
     [Test]
     public async Task NoDeviceTokenIsNotAFailedDeviceVerification()
     {
@@ -229,8 +214,6 @@ public class MetricsTests
         await Assert.That(probe.For(ReuseDetections).Count).IsEqualTo(1);
     }
 
-    /// <summary>A refresh is not somebody trying to sign in. Counting one as the other would make
-    /// the attempt rate a function of session length.</summary>
     [Test]
     public async Task ARefreshIsNotCountedAsASignInAttempt()
     {
@@ -261,8 +244,8 @@ public class MetricsTests
     }
 
     /// <summary>
-    /// The equalising derivation is timed too. It exists to cost what a real one costs, and this
-    /// series is what would show it had stopped.
+    /// The equalising derivation exists to cost what a real one costs, and this series is what would
+    /// show it had stopped.
     /// </summary>
     [Test]
     public async Task TheDerivationForAnUnknownIdentifierIsTimedAsWell()
@@ -278,8 +261,6 @@ public class MetricsTests
         await Assert.That(measurement.Value).IsGreaterThan(0);
     }
 
-    /// <summary>The name a metrics pipeline subscribes to. Changing it silently empties every
-    /// dashboard pointed at this package.</summary>
     [Test]
     public async Task TheMeterIsNamedToamaisutaa()
     {

@@ -64,7 +64,6 @@ public class ExternalLoginProvisionerTests
         await Assert.That(store.Logins.Count).IsEqualTo(1);
     }
 
-    // The bug this design exists to fix: gaggaotaku wrote the user row on every single request.
     [Test]
     public async Task AnUnchangedProfileIsNotWrittenAgain()
     {
@@ -136,10 +135,7 @@ public class ExternalLoginProvisionerTests
         await Assert.That(store.Logins[0].LastSignInAt).IsEqualTo(Now.AddHours(2));
     }
 
-    // Two first requests for the same never-seen subject. The loser's link is rejected by the
-    // unique index; it re-reads and uses the row the winner created, rather than throwing at a user
-    // whose only mistake was opening two tabs. Cleaning up the loser's user row is the store's job,
-    // so this fake still holds it.
+    // Cleaning up the loser's user row is the store's job, so this fake still holds it.
     [Test]
     public async Task AConcurrentFirstSignInResolvesToTheWinnersUser()
     {
