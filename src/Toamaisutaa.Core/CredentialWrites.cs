@@ -115,6 +115,26 @@ internal static class CredentialWrites
             cancellationToken);
 
     /// <summary>
+    /// <see cref="RefundAsync"/> for an attempt that lost a race, where the refund is a courtesy. A
+    /// double-click leaves every losing request writing to one row at once, and a refund that cannot
+    /// land among them is one failure left counted - not a reason to answer 500.
+    /// </summary>
+    internal static async Task TryRefundAsync(
+        this IPasswordCredentialStore store,
+        AttemptReservation reservation,
+        DateTimeOffset now,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            await store.RefundAsync(reservation, now, cancellationToken);
+        }
+        catch (CredentialConcurrencyException)
+        {
+        }
+    }
+
+    /// <summary>
     /// The current password a signed-in caller answers, counted against the account exactly as a
     /// wrong password at sign-in is. A stolen access token reaches every place that asks for one, and
     /// without the count each of them is an unthrottled way to guess the one thing the token lacks.

@@ -288,6 +288,16 @@ internal sealed class TwoFactorService(
             return (verification, null);
         }
 
+        // Right, but another request spent it first. Given back rather than counted, for the reason
+        // the sign-in path gives.
+        if (verification.LostRace)
+        {
+            if (reservation is { } lost)
+                await passwords!.TryRefundAsync(lost, now, cancellationToken);
+
+            return (verification, "That code was just used by another request. Wait for the next one.");
+        }
+
         if (credential is null)
         {
             logger.LogWarning("Two-factor proof refused for user {UserId}: wrong code{Locked}.", userId, lockedByThisAttempt ? "; now locked out" : string.Empty);

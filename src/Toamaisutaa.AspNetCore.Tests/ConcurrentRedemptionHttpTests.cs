@@ -87,6 +87,192 @@ public class ConcurrentRedemptionHttpTests
         await Assert.That(attempts.Count(response => response.StatusCode == HttpStatusCode.OK)).IsLessThanOrEqualTo(1);
     }
 
+    /// <summary>
+    /// A recovery code in one tab and a TOTP code in another, on the same challenge. The recovery
+    /// code used to be spent before the challenge, so the tab that lost the challenge had burned a
+    /// code and got no session for it.
+    /// </summary>
+    [Test]
+    public async Task A_recovery_code_that_loses_its_challenge_is_not_spent()
+    {
+        var challenges = new HoldFirstConsume();
+        await using var app = await TestApp.StartAsync(configureServices: challenges.Register);
+
+        var account = await Account.RegisterAsync(app);
+        var begin = await app.Client.PostJson("/auth/2fa/begin", new { currentPassword = account.Password }, account.AccessToken);
+        var secret = (await begin.Json()).String("secret")!;
+
+        app.Time.AdvanceToNextTotpStep();
+        var confirm = await app.Client.PostJson("/auth/2fa/confirm", new { code = Totp.Code(secret, app.Time.Now) }, account.AccessToken);
+        var recoveryCode = (await confirm.Json()).GetProperty("recoveryCodes")[0].GetString()!;
+        var userId = Guid.Parse(account.Claims().String("sub")!);
+
+        var challenge = (await (await account.LoginAsync()).Json()).String("challenge");
+
+        // The recovery-code tab reaches the challenge first and is held there.
+        challenges.Hold = true;
+        var withRecovery = app.RawClient.PostJson("/auth/2fa/verify", new { challenge, code = recoveryCode });
+        await challenges.Entered.Task.WaitAsync(TimeSpan.FromSeconds(30));
+
+        // The other tab finishes in the meantime.
+        app.Time.AdvanceToNextTotpStep();
+        var withTotp = await app.Client.PostJson("/auth/2fa/verify", new { challenge, code = Totp.Code(secret, app.Time.Now) });
+        await Assert.That(withTotp.StatusCode).IsEqualTo(HttpStatusCode.OK);
+
+        challenges.Let();
+        await Assert.That((await withRecovery).StatusCode).IsNotEqualTo(HttpStatusCode.OK);
+
+        await using var scope = app.Services.CreateAsyncScope();
+        var unused = await scope.ServiceProvider.GetRequiredService<IRecoveryCodeStore>().CountUnusedAsync(userId);
+
+        await Assert.That(unused).IsEqualTo(10);
+    }
+
+    /// <summary>
+    /// A double-click: the losing request reserved its attempt after the winner had cleared the
+    /// count, lost the challenge, and was then counted as a wrong code - one stray failure left on
+    /// an account that had just signed in.
+    /// </summary>
+    [Test]
+    public async Task A_right_code_that_loses_its_challenge_leaves_no_failure_behind()
+    {
+        var credentials = new HoldFirstCredentialRead();
+        await using var app = await TestApp.StartAsync(configureServices: credentials.Register);
+
+        var account = await Account.RegisterAsync(app);
+        var begin = await app.Client.PostJson("/auth/2fa/begin", new { currentPassword = account.Password }, account.AccessToken);
+        var secret = (await begin.Json()).String("secret")!;
+
+        app.Time.AdvanceToNextTotpStep();
+        var confirm = await app.Client.PostJson("/auth/2fa/confirm", new { code = Totp.Code(secret, app.Time.Now) }, account.AccessToken);
+        var recoveryCode = (await confirm.Json()).GetProperty("recoveryCodes")[0].GetString()!;
+        var userId = Guid.Parse(account.Claims().String("sub")!);
+
+        var challenge = (await (await account.LoginAsync()).Json()).String("challenge");
+
+        // Past the challenge checks, not yet counted.
+        credentials.Hold = true;
+        var loser = app.RawClient.PostJson("/auth/2fa/verify", new { challenge, code = recoveryCode });
+        await credentials.Entered.Task.WaitAsync(TimeSpan.FromSeconds(30));
+
+        app.Time.AdvanceToNextTotpStep();
+        var winner = await app.Client.PostJson("/auth/2fa/verify", new { challenge, code = Totp.Code(secret, app.Time.Now) });
+        await Assert.That(winner.StatusCode).IsEqualTo(HttpStatusCode.OK);
+
+        credentials.Let();
+        await Assert.That((await loser).StatusCode).IsNotEqualTo(HttpStatusCode.OK);
+
+        await using var scope = app.Services.CreateAsyncScope();
+        var stored = await scope.ServiceProvider.GetRequiredService<IPasswordCredentialStore>().FindByUserIdAsync(userId);
+
+        await Assert.That(stored!.FailedAttemptCount).IsEqualTo(0);
+    }
+
+    /// <summary>The real credential store, except that the first read by user id after
+    /// <see cref="Hold"/> is set waits until the test lets it go.</summary>
+    private sealed class HoldFirstCredentialRead
+    {
+        private readonly ManualResetEventSlim _release = new();
+        private int _held;
+
+        internal volatile bool Hold;
+
+        internal TaskCompletionSource Entered { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        internal void Register(IServiceCollection services)
+        {
+            var real = services.Last(descriptor => descriptor.ServiceType == typeof(IPasswordCredentialStore)).ImplementationFactory!;
+            services.AddScoped<IPasswordCredentialStore>(provider => new Held(this, (IPasswordCredentialStore)real(provider)));
+        }
+
+        internal void Let()
+        {
+            Hold = false;
+            _release.Set();
+        }
+
+        private void Wait()
+        {
+            if (!Hold || Interlocked.Exchange(ref _held, 1) == 1)
+                return;
+
+            Entered.TrySetResult();
+            _release.Wait(TimeSpan.FromSeconds(30));
+        }
+
+        private sealed class Held(HoldFirstCredentialRead owner, IPasswordCredentialStore inner) : IPasswordCredentialStore
+        {
+            public Task<ToamaisutaaPasswordCredential?> FindByUserIdAsync(Guid userId, CancellationToken cancellationToken = default)
+            {
+                owner.Wait();
+                return inner.FindByUserIdAsync(userId, cancellationToken);
+            }
+
+            public Task<ToamaisutaaPasswordCredential?> FindByIdentifierAsync(string normalizedIdentifier, CancellationToken cancellationToken = default) =>
+                inner.FindByIdentifierAsync(normalizedIdentifier, cancellationToken);
+
+            public Task<ToamaisutaaPasswordCredential?> FindByNormalizedEmailAsync(string normalizedEmail, CancellationToken cancellationToken = default) =>
+                inner.FindByNormalizedEmailAsync(normalizedEmail, cancellationToken);
+
+            public Task CreateAsync(ToamaisutaaPasswordCredential credential, CancellationToken cancellationToken = default) =>
+                inner.CreateAsync(credential, cancellationToken);
+
+            public Task UpdateAsync(ToamaisutaaPasswordCredential credential, CancellationToken cancellationToken = default) =>
+                inner.UpdateAsync(credential, cancellationToken);
+        }
+    }
+
+    /// <summary>The real challenge store, except that the first spend after <see cref="Hold"/> is set
+    /// waits until the test lets it go.</summary>
+    private sealed class HoldFirstConsume
+    {
+        private readonly ManualResetEventSlim _release = new();
+        private int _held;
+
+        internal volatile bool Hold;
+
+        internal TaskCompletionSource Entered { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        internal void Register(IServiceCollection services)
+        {
+            var real = services.Last(descriptor => descriptor.ServiceType == typeof(ITwoFactorChallengeStore)).ImplementationFactory!;
+            services.AddScoped<ITwoFactorChallengeStore>(provider => new Held(this, (ITwoFactorChallengeStore)real(provider)));
+        }
+
+        internal void Let()
+        {
+            Hold = false;
+            _release.Set();
+        }
+
+        private void Wait()
+        {
+            if (!Hold || Interlocked.Exchange(ref _held, 1) == 1)
+                return;
+
+            Entered.TrySetResult();
+            _release.Wait(TimeSpan.FromSeconds(30));
+        }
+
+        private sealed class Held(HoldFirstConsume owner, ITwoFactorChallengeStore inner) : ITwoFactorChallengeStore
+        {
+            public Task CreateAsync(ToamaisutaaTwoFactorChallenge challenge, CancellationToken cancellationToken = default) =>
+                inner.CreateAsync(challenge, cancellationToken);
+
+            public Task<ToamaisutaaTwoFactorChallenge?> FindByHashAsync(string tokenHash, CancellationToken cancellationToken = default) =>
+                inner.FindByHashAsync(tokenHash, cancellationToken);
+
+            public Task<bool> MarkConsumedAsync(Guid challengeId, DateTimeOffset consumedAt, CancellationToken cancellationToken = default)
+            {
+                owner.Wait();
+                return inner.MarkConsumedAsync(challengeId, consumedAt, cancellationToken);
+            }
+
+            public Task<int> DeleteExpiredAsync(DateTimeOffset expiredBefore, CancellationToken cancellationToken = default) =>
+                inner.DeleteExpiredAsync(expiredBefore, cancellationToken);
+        }
+    }
+
     [Test]
     public async Task A_verification_link_redeemed_in_parallel_is_accepted_at_most_once()
     {

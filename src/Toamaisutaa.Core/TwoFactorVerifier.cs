@@ -20,11 +20,15 @@ internal sealed class TwoFactorVerifier(
     TimeProvider timeProvider,
     ILogger<TwoFactorVerifier> logger)
 {
+    // beforeSpending is called once the code has checked out and before it is spent, and nothing is
+    // spent when it answers false. The sign-in path spends its challenge there, so a request that
+    // loses the challenge to another one has not already burned a recovery code for nothing.
     internal async Task<TwoFactorVerification> VerifyAsync(
         Guid userId,
         string code,
         bool requireConfirmed,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        Func<Task<bool>>? beforeSpending = null)
     {
         if (string.IsNullOrWhiteSpace(code))
             return TwoFactorVerification.Failed;
@@ -40,7 +44,7 @@ internal sealed class TwoFactorVerifier(
         // Recovery codes only exist once the enrolment is confirmed, so an unconfirmed one has
         // nothing to fall back to and must be proved with the authenticator itself.
         if (enrolment.IsEnabled && recoveryCodeProvider.LooksLikeRecoveryCode(code))
-            return await RedeemRecoveryCodeAsync(userId, code, cancellationToken);
+            return await RedeemRecoveryCodeAsync(userId, code, beforeSpending, cancellationToken);
 
         var secret = protector.Unprotect(new ProtectedSecret(
             enrolment.SecretCiphertext,
@@ -59,13 +63,16 @@ internal sealed class TwoFactorVerifier(
                 return TwoFactorVerification.Failed;
             }
 
+            if (beforeSpending is not null && !await beforeSpending())
+                return TwoFactorVerification.Lost;
+
             // The step read above can be stale by now. Whoever records it first owns the code; for
-            // everyone else this is a replay, and refused the same way.
+            // everyone else it is refused - as a race lost, not a wrong code, since it was right.
             if (!await enrolments.RecordUsedStepAsync(userId, matchedStep, cancellationToken))
             {
                 logger.LogWarning("Second factor refused for user {UserId}: the code was used by another request first.", userId);
                 metrics.TwoFactorVerified(TwoFactorSource.Otp, succeeded: false);
-                return TwoFactorVerification.Failed;
+                return TwoFactorVerification.Lost;
             }
 
             metrics.TwoFactorVerified(TwoFactorSource.Otp, succeeded: true);
@@ -92,7 +99,11 @@ internal sealed class TwoFactorVerifier(
         }
     }
 
-    private async Task<TwoFactorVerification> RedeemRecoveryCodeAsync(Guid userId, string code, CancellationToken cancellationToken)
+    private async Task<TwoFactorVerification> RedeemRecoveryCodeAsync(
+        Guid userId,
+        string code,
+        Func<Task<bool>>? beforeSpending,
+        CancellationToken cancellationToken)
     {
         var normalized = RecoveryCodeProvider.Normalize(code);
         ToamaisutaaRecoveryCode? stored = null;
@@ -116,12 +127,15 @@ internal sealed class TwoFactorVerifier(
             return TwoFactorVerification.Failed;
         }
 
+        if (beforeSpending is not null && !await beforeSpending())
+            return TwoFactorVerification.Lost;
+
         // Single use means one request, not one per request that read it before either spent it.
         if (!await recoveryCodes.MarkConsumedAsync(stored.Id, timeProvider.GetUtcNow(), cancellationToken))
         {
             logger.LogWarning("Second factor refused for user {UserId}: that recovery code was spent by another request first.", userId);
             metrics.TwoFactorVerified(TwoFactorSource.Recovery, succeeded: false);
-            return TwoFactorVerification.Failed;
+            return TwoFactorVerification.Lost;
         }
 
         metrics.TwoFactorVerified(TwoFactorSource.Recovery, succeeded: true);
@@ -178,5 +192,11 @@ internal readonly record struct TwoFactorVerification
 
     internal bool RecoveryCodesRunningLow { get; init; }
 
+    /// <summary>The code was right, and another request spent it - or the challenge it came with -
+    /// first. Not a wrong code, and not counted as one.</summary>
+    internal bool LostRace { get; init; }
+
     internal static TwoFactorVerification Failed => new() { Succeeded = false };
+
+    internal static TwoFactorVerification Lost => new() { Succeeded = false, LostRace = true };
 }
