@@ -72,7 +72,12 @@ public class TrustedDeviceHttpTests
         var attempts = await Task.WhenAll(account.LoginAsync(deviceToken: issued), account.LoginAsync(deviceToken: issued));
         var bodies = await Task.WhenAll(attempts.Select(response => response.Json()));
 
-        await Assert.That(bodies.Count(body => body.Has("access_token"))).IsEqualTo(1);
+        // At most one: the loser's reuse revoke can also refuse the winner, which is the refresh
+        // path's rule too, so neither is a valid outcome.
+        await Assert.That(bodies.Count(body => body.Has("access_token"))).IsLessThanOrEqualTo(1);
+
+        // Both reached the gate and got an answer, rather than failing before it.
+        await Assert.That(bodies.All(body => body.Has("access_token") || body.Has("two_factor_required"))).IsTrue();
     }
 
     /// <summary>A revoke-all landing after the old row was rotated and before its successor was
