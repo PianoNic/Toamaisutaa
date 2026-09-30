@@ -64,12 +64,21 @@ internal sealed class MailRequestCooldown(IOptions<ToamaisutaaLocalLoginOptions>
         if (now.UtcTicks - last < cooldown.Ticks || Interlocked.CompareExchange(ref _lastSweepTicks, now.UtcTicks, last) != last)
             return;
 
-        foreach (var (key, at) in _lastRequested)
+        foreach (var entry in _lastRequested)
         {
-            if (now - at >= cooldown)
-                _lastRequested.TryRemove(key, out _);
+            if (now - entry.Value < cooldown)
+                continue;
+
+            BeforeSweepRemoves?.Invoke(entry.Key);
+
+            // Only the value seen: a request may have renewed the entry since, and removing that
+            // lets the next one straight through the cooldown.
+            _lastRequested.TryRemove(entry);
         }
     }
+
+    /// <summary>Lets a test renew an entry between the sweep reading it and removing it.</summary>
+    internal Action<string>? BeforeSweepRemoves { get; set; }
 
     // Hashed, so an entry costs the same whatever the caller sent.
     private static string Key(string purpose, string email) =>
