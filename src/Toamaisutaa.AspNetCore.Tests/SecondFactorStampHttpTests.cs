@@ -11,15 +11,20 @@ public class SecondFactorStampHttpTests
     /// <summary>
     /// The challenge's stamp was checked, then the user read again to mint with. Under a no-tracking
     /// context that read saw a reset landing in between, and the session carried the reset's stamp,
-    /// so it survived the reset meant to end it.
+    /// so it survived the reset meant to end it. Under the default tracking context the re-read was
+    /// the copy read before the reset, so the check comparing it never fired.
     /// </summary>
     [Test]
-    public async Task A_reset_while_the_code_is_checked_is_not_handed_to_the_session()
+    [Arguments(true)]
+    [Arguments(false)]
+    public async Task A_reset_while_the_code_is_checked_is_not_handed_to_the_session(bool noTracking)
     {
         var reset = new ResetWhileVerifying();
         await using var app = await TestApp.StartAsync(configureServices: services =>
         {
-            services.ConfigureDbContext<ToamaisutaaDbContext>(db => db.UseQueryTrackingBehavior(QueryTrackingBehavior.NoTracking));
+            if (noTracking)
+                services.ConfigureDbContext<ToamaisutaaDbContext>(db => db.UseQueryTrackingBehavior(QueryTrackingBehavior.NoTracking));
+
             reset.Register(services);
         });
 
