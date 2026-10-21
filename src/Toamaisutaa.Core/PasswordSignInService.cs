@@ -257,10 +257,10 @@ internal sealed class PasswordSignInService(
         var user = await users.FindByIdAsync(redemption.UserId!.Value, cancellationToken)
             ?? throw new InvalidOperationException($"Challenge points at user {redemption.UserId}, which does not exist.");
 
-        // Read again here, the stamp can be a reset's that landed after the challenge was checked, and
-        // minting with it would hand the session the owner just locked out a stamp that matches.
+        // A reset can land after the challenge was checked. Read fresh: the user above may be the copy
+        // this request read before the code was verified, which still carries the old stamp.
         if (redemption.SecurityStamp is not null
-            && !string.Equals(user.SecurityStamp, redemption.SecurityStamp, StringComparison.Ordinal))
+            && !string.Equals(await users.ReadSecurityStampAsync(user.Id, cancellationToken), redemption.SecurityStamp, StringComparison.Ordinal))
         {
             logger.LogWarning(
                 "Two-factor sign-in for user {UserId} refused: the account's credentials changed while it was being verified.",
