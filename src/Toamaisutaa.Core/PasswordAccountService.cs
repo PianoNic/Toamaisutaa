@@ -561,9 +561,16 @@ internal sealed class PasswordAccountService(
         {
             await invitationTokens.InvalidateAllForUserAsync(existing.Id, now, cancellationToken);
 
-            // With its own links retired, anything still found is a duplicate an earlier race made.
-            while (await FindReservationAsync(email, now, cancellationToken) is { } duplicate)
-                await RemoveReservationAsync(duplicate.Id, now, cancellationToken);
+            // With its own links retired, another reservation still found is a duplicate an earlier race
+            // made. This one found again was given a link by a concurrent re-invite: retired too, so the
+            // newest link is the only one, but never removed. Bounded, against an endless stream of them.
+            for (var pass = 0; pass < 10 && await FindReservationAsync(email, now, cancellationToken) is { } found; pass++)
+            {
+                if (found.Id == existing.Id)
+                    await invitationTokens.InvalidateAllForUserAsync(existing.Id, now, cancellationToken);
+                else
+                    await RemoveReservationAsync(found.Id, now, cancellationToken);
+            }
         }
 
         var raw = SecureTokens.Create();
