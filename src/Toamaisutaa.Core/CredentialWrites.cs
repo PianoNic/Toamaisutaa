@@ -332,7 +332,7 @@ internal static class CredentialWrites
 
                 // A lock this attempt's own reservation set is the ordinary last try and may sign in.
                 refused = LockoutPolicy.IsLockedOut(state, now)
-                    && !(reservation.LockedByThisAttempt && state == reservation.After);
+                    && !(reservation.LockedByThisAttempt && state.Matches(reservation.After));
 
                 if (refused)
                     return;

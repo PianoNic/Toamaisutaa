@@ -52,14 +52,14 @@ internal static class LockoutPolicy
         ToamaisutaaLocalLoginOptions options,
         DateTimeOffset now)
     {
-        if (lockedByThisAttempt && state == after)
+        if (lockedByThisAttempt && state.Matches(after))
             return before;
 
         // Only into the window this attempt was counted in. A later window never counted it, and the
         // caller's clock is the one it reserved with, so comparing against now proves nothing.
         if (!IsLockedOut(state, now))
         {
-            return state.FailedAttemptCount > 0 && state.FirstFailedAttemptAt == after.FirstFailedAttemptAt
+            return state.FailedAttemptCount > 0 && LockoutState.SameInstant(state.FirstFailedAttemptAt, after.FirstFailedAttemptAt)
                 ? state with { FailedAttemptCount = state.FailedAttemptCount - 1 }
                 : null;
         }
@@ -84,6 +84,18 @@ internal static class LockoutPolicy
 internal readonly record struct LockoutState(int FailedAttemptCount, DateTimeOffset? FirstFailedAttemptAt, DateTimeOffset? LockedOutUntil)
 {
     internal static LockoutState Clear => new(0, null, null);
+
+    /// <summary>
+    /// Equal to the millisecond, which is what the stores keep: a state read back after a write never
+    /// equals the one computed in memory at full precision.
+    /// </summary>
+    internal bool Matches(LockoutState other) =>
+        FailedAttemptCount == other.FailedAttemptCount
+        && SameInstant(FirstFailedAttemptAt, other.FirstFailedAttemptAt)
+        && SameInstant(LockedOutUntil, other.LockedOutUntil);
+
+    internal static bool SameInstant(DateTimeOffset? left, DateTimeOffset? right) =>
+        left?.ToUnixTimeMilliseconds() == right?.ToUnixTimeMilliseconds();
 
     internal static LockoutState Of(ToamaisutaaPasswordCredential credential) =>
         new(credential.FailedAttemptCount, credential.FirstFailedAttemptAt, credential.LockedOutUntil);
