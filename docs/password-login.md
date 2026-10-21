@@ -272,8 +272,9 @@ by middleware you have to remember to add.
 
 ### Behind a proxy, configure forwarded headers
 
-The limiter keys on the connection's address. An IPv6 caller counts as its /64, since that is what
-one customer is handed; an IPv4 caller counts as its address. Behind a reverse proxy the connection
+The limiter keys on the connection's address. An IPv4 caller counts as its address. An IPv6 caller
+counts as its /64, and all the /64s of one /48 also share `Ipv6SitePermitLimit` between them, since a
+/48 is free to get and would otherwise be 65,536 separate budgets. Behind a reverse proxy the connection
 comes from the proxy, so unless `UseForwardedHeaders()` rewrites it, every client shares one limit and
 ten junk logins a minute answer 429 for the whole site. When requests arrive from a private or
 loopback address with `X-Forwarded-For` still on them, the package logs a warning once saying so.
@@ -431,5 +432,6 @@ hands you - rather than expecting to construct one.
 | `LocalLogin:IpAddressStorage` | `None` | What a session row keeps of the caller's address |
 | `LocalLogin:RateLimit:Enabled` | `true` | Per caller address, fixed window. One budget across the anonymous endpoints and the signed-in ones that take a password or code as proof |
 | `LocalLogin:RateLimit:PermitLimit` / `Window` | `10` / `00:01:00` | |
+| `LocalLogin:RateLimit:Ipv6SitePermitLimit` | `100` | Shared by every /64 of one IPv6 /48 per window. Raise it if many unrelated users reach you from one carrier's /48 |
 | `LocalLogin:RateLimit:Nat64Prefixes:0` | | A network-specific NAT64 prefix in front of you, such as `2001:db8:64::/96`. Its IPv4 clients are keyed on their own address rather than all sharing the gateway's. `64:ff9b::/96` and `64:ff9b:1::/48` are handled without it |
 | `LocalLogin:TokenCleanupInterval` | `06:00:00` | Only used by `AddToamaisutaaTokenCleanup()` |
