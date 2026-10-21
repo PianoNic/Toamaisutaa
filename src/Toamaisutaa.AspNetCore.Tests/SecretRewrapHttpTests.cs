@@ -48,6 +48,48 @@ public class SecretRewrapHttpTests
         await Assert.That(stored.LastUsedStep).IsEqualTo(laterStep.Recorded);
     }
 
+    /// <summary>
+    /// The confirm keyed its write on the enrolment's UpdatedAt as read after the code was checked.
+    /// The rewrap reloaded the row first, so a begin landing in between handed the confirm the new
+    /// secret's UpdatedAt, and a secret the code was never checked against was switched on.
+    /// </summary>
+    [Test]
+    public async Task A_confirm_does_not_switch_on_a_secret_begun_while_its_code_was_checked()
+    {
+        var hook = new RecordsALaterStep();
+        await using var app = await TestApp.StartAsync(
+            configure: settings =>
+            {
+                settings["TwoFactor:EncryptionKey"] = CurrentKey;
+                settings["TwoFactor:EncryptionKeyVersion"] = "2";
+                settings["TwoFactor:RetiredEncryptionKeys:1"] = OldKey;
+            },
+            configureServices: hook.Register);
+
+        var account = await Account.RegisterAsync(app);
+        var begin = await app.Client.PostJson("/auth/2fa/begin", new { currentPassword = account.Password }, account.AccessToken);
+        var secret = (await begin.Json()).String("secret")!;
+
+        // Under a retired key, so the verifier rewraps and reloads the row before the confirm.
+        await WrapUnderTheOldKeyAsync(app);
+
+        var begunAgain = false;
+        hook.AfterRecording = async () => begunAgain = (await app.Client.PostJson(
+            "/auth/2fa/begin", new { currentPassword = account.Password }, account.AccessToken)).IsSuccessStatusCode;
+
+        app.Time.AdvanceToNextTotpStep();
+        var confirm = await app.Client.PostJson("/auth/2fa/confirm", new { code = Totp.Code(secret, app.Time.Now) }, account.AccessToken);
+
+        await Assert.That(begunAgain).IsTrue();
+        await Assert.That(confirm.StatusCode).IsNotEqualTo(HttpStatusCode.OK);
+
+        await using var scope = app.Services.CreateAsyncScope();
+        var stored = await scope.ServiceProvider.GetRequiredService<ToamaisutaaDbContext>()
+            .UserTwoFactors.AsNoTracking().SingleAsync();
+
+        await Assert.That(stored.ConfirmedAt.HasValue).IsFalse();
+    }
+
     private static async Task WrapUnderTheOldKeyAsync(TestApp app)
     {
         await using var scope = app.Services.CreateAsyncScope();
@@ -73,6 +115,8 @@ public class SecretRewrapHttpTests
         internal bool Armed { get; set; }
 
         internal long? Recorded { get; private set; }
+
+        internal Func<Task>? AfterRecording;
 
         internal void Register(IServiceCollection services) =>
             services.Decorate<ITwoFactorStore>(inner => new Store(this, inner));
@@ -104,6 +148,9 @@ public class SecretRewrapHttpTests
 
                 if (owner.Armed && await inner.RecordUsedStepAsync(userId, step + 1, cancellationToken))
                     owner.Recorded = step + 1;
+
+                if (Interlocked.Exchange(ref owner.AfterRecording, null) is { } then)
+                    await then();
 
                 return true;
             }
