@@ -194,6 +194,16 @@ public sealed class ToamaisutaaRateLimitOptions
     public TimeSpan Window { get; set; } = TimeSpan.FromMinutes(1);
 
     /// <summary>
+    /// What one IPv6 /48 may spend per <see cref="Window"/> across all of its /64s, on top of each /64's
+    /// own <see cref="PermitLimit"/>.
+    /// </summary>
+    /// <remarks>
+    /// A /48 is free from a tunnel broker and holds 65,536 /64s, each of which would otherwise get a
+    /// budget of its own. Raise it if many unrelated users reach you from one carrier's /48.
+    /// </remarks>
+    public int Ipv6SitePermitLimit { get; set; } = 100;
+
+    /// <summary>
     /// Network-specific NAT64 prefixes in front of this deployment, such as <c>2001:db8:64::/96</c>,
     /// with a length of 32, 40, 48, 56, 64 or 96. A client behind one is keyed on the IPv4 address
     /// inside it, as it already is for the well-known <c>64:ff9b::/96</c> and <c>64:ff9b:1::/48</c>.

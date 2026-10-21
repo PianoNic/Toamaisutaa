@@ -16,12 +16,14 @@ namespace Toamaisutaa.AspNetCore;
 internal sealed class PasswordRateLimiter : IDisposable
 {
     private readonly PartitionedRateLimiter<HttpContext> _limiter;
+    private readonly PartitionedRateLimiter<HttpContext> _callers;
+    private readonly PartitionedRateLimiter<HttpContext> _sites;
 
     private int _warnedAboutProxy;
 
     public PasswordRateLimiter(IOptions<ToamaisutaaLocalLoginOptions> options, ILogger<PasswordRateLimiter> logger)
     {
-        _limiter = PartitionedRateLimiter.Create<HttpContext, string>(context =>
+        _callers = PartitionedRateLimiter.Create<HttpContext, string>(context =>
         {
             var settings = options.Value.RateLimit;
 
@@ -53,12 +55,45 @@ internal sealed class PasswordRateLimiter : IDisposable
                     QueueLimit = 0,
                 });
         });
+
+        // Chained, so a caller spends from its own budget and its /48's at once.
+        _sites = PartitionedRateLimiter.Create<HttpContext, string>(context =>
+        {
+            var settings = options.Value.RateLimit;
+
+            return settings.Enabled && SiteKey(context.Connection.RemoteIpAddress, settings.Nat64Prefixes) is { } site
+                ? RateLimitPartition.GetFixedWindowLimiter(
+                    site,
+                    _ => new FixedWindowRateLimiterOptions
+                    {
+                        PermitLimit = settings.Ipv6SitePermitLimit,
+                        Window = settings.Window,
+                        QueueLimit = 0,
+                    })
+                : RateLimitPartition.GetNoLimiter("no-site");
+        });
+
+        _limiter = PartitionedRateLimiter.CreateChained(_callers, _sites);
+    }
+
+    /// <summary>The /48 of a native IPv6 caller; null for IPv4 and NAT64, which are keyed on one address.</summary>
+    internal static string? SiteKey(IPAddress? address, IEnumerable<string>? nat64Prefixes = null)
+    {
+        if (address is null || address.IsIPv4MappedToIPv6 || address.AddressFamily != AddressFamily.InterNetworkV6
+            || Nat64Match(address, nat64Prefixes) is not null)
+            return null;
+
+        var bytes = address.GetAddressBytes();
+        Array.Clear(bytes, 6, 10);
+
+        return $"{new IPAddress(bytes)}/48";
     }
 
     public ValueTask<RateLimitLease> AcquireAsync(HttpContext context) => _limiter.AcquireAsync(context);
 
     /// <summary>
-    /// An IPv6 caller is keyed by its /64, since one customer is handed the whole /64.
+    /// An IPv6 caller is keyed by its /64, the smallest network a customer is handed; its /48 is limited
+    /// as well, by <see cref="SiteKey"/>.
     /// </summary>
     internal static string PartitionKey(IPAddress? address, IEnumerable<string>? nat64Prefixes = null)
     {
@@ -74,21 +109,22 @@ internal sealed class PasswordRateLimiter : IDisposable
         var bytes = address.GetAddressBytes();
 
         // A NAT64 gateway puts every IPv4 client in one /64, so key on the embedded IPv4 address instead.
-        // Longest match wins: an operator's /96 carved from the well-known /48 embeds the client after
-        // its own prefix, where the /48 layout reads only zeros.
-        var matched = WellKnownNat64.Concat(ParseNat64Prefixes(nat64Prefixes))
-            .Where(prefix => prefix.Contains(address))
-            .OrderByDescending(prefix => prefix.PrefixLength)
-            .Cast<IPNetwork?>()
-            .FirstOrDefault();
-
-        if (matched is { } nat64)
+        if (Nat64Match(address, nat64Prefixes) is { } nat64)
             return new IPAddress(EmbeddedIpv4(bytes, nat64.PrefixLength)).ToString();
 
         Array.Clear(bytes, 8, 8);
 
         return $"{new IPAddress(bytes)}/64";
     }
+
+    // Longest match wins: an operator's /96 carved from the well-known /48 embeds the client after its
+    // own prefix, where the /48 layout reads only zeros.
+    private static IPNetwork? Nat64Match(IPAddress address, IEnumerable<string>? nat64Prefixes) =>
+        WellKnownNat64.Concat(ParseNat64Prefixes(nat64Prefixes))
+            .Where(prefix => prefix.Contains(address))
+            .OrderByDescending(prefix => prefix.PrefixLength)
+            .Cast<IPNetwork?>()
+            .FirstOrDefault();
 
     private static readonly IPNetwork[] WellKnownNat64 = [IPNetwork.Parse("64:ff9b::/96"), IPNetwork.Parse("64:ff9b:1::/48")];
 
@@ -138,7 +174,13 @@ internal sealed class PasswordRateLimiter : IDisposable
             || (bytes[0] == 192 && bytes[1] == 168);
     }
 
-    public void Dispose() => _limiter.Dispose();
+    // A chained limiter does not dispose the ones it wraps.
+    public void Dispose()
+    {
+        _limiter.Dispose();
+        _callers.Dispose();
+        _sites.Dispose();
+    }
 }
 
 internal sealed class PasswordRateLimitFilter(PasswordRateLimiter limiter, ToamaisutaaMetrics metrics) : IEndpointFilter

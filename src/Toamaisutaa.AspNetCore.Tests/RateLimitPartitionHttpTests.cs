@@ -124,6 +124,28 @@ public class RateLimitPartitionHttpTests
         await Assert.That(warnings.Count(message => message.Contains("X-Forwarded-For"))).IsEqualTo(0);
     }
 
+    /// <summary>
+    /// Each /64 had a budget of its own, and a free /48 holds 65,536 of them. Its /64s now also share
+    /// one budget for the /48, while a /64 in another /48 is untouched.
+    /// </summary>
+    [Test]
+    public async Task The_64s_of_one_48_share_a_budget_for_it()
+    {
+        await using var app = await StartLimitedAsync(
+            permitLimit: 1,
+            configure: settings => settings["LocalLogin:RateLimit:Ipv6SitePermitLimit"] = "2");
+
+        var first = await LoginFromAsync(app, "2001:db8:1:1::1");
+        var second = await LoginFromAsync(app, "2001:db8:1:2::1");
+        var third = await LoginFromAsync(app, "2001:db8:1:3::1");
+        var elsewhere = await LoginFromAsync(app, "2001:db8:2:1::1");
+
+        await Assert.That(first.StatusCode).IsNotEqualTo(HttpStatusCode.TooManyRequests);
+        await Assert.That(second.StatusCode).IsNotEqualTo(HttpStatusCode.TooManyRequests);
+        await Assert.That(third.StatusCode).IsEqualTo(HttpStatusCode.TooManyRequests);
+        await Assert.That(elsewhere.StatusCode).IsNotEqualTo(HttpStatusCode.TooManyRequests);
+    }
+
     private static Task<TestApp> StartLimitedAsync(
         int permitLimit,
         Action<IServiceCollection>? configureServices = null,
