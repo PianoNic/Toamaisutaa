@@ -161,6 +161,100 @@ public class InvitationHttpTests
         await Assert.That(latest.StatusCode).IsEqualTo(HttpStatusCode.Created);
     }
 
+    /// <summary>
+    /// A re-invite retired its reservation's links, then swept for duplicates. Another re-invite of the
+    /// same reservation landing in between gave it a fresh link, and the sweep took that for a
+    /// duplicate and deleted the reservation, so neither link worked and the second request failed.
+    /// </summary>
+    [Test]
+    public async Task Two_re_invites_of_one_reservation_leave_it_with_a_working_link()
+    {
+        var retiring = new OrderRetiring();
+        await using var app = await TestApp.StartAsync(configureServices: services =>
+            services.Decorate<IInvitationTokenStore>(inner => new RunsAroundRetiring(inner, retiring)));
+
+        var admin = await Account.RegisterAsync(app, TestApp.AdminUserName);
+        await app.Client.PostJson("/auth/invitations", new { email = "invited@example.com" }, admin.AccessToken);
+
+        // B finds the reservation and is held before retiring its links. A then finds it too, retires
+        // them, and waits while B finishes and leaves a fresh link, before A sweeps for duplicates.
+        retiring.Armed = true;
+        var concurrent = app.RawClient.PostJson("/auth/invitations", new { email = "invited@example.com" }, admin.AccessToken);
+        await retiring.FirstArrived.Task.WaitAsync(TimeSpan.FromSeconds(30));
+
+        retiring.First = concurrent;
+        var reinvite = await app.Client.PostJson("/auth/invitations", new { email = "invited@example.com" }, admin.AccessToken);
+
+        await Assert.That(retiring.Interleaved).IsTrue();
+        await Assert.That((await concurrent).StatusCode).IsEqualTo(HttpStatusCode.Created);
+        await Assert.That(reinvite.StatusCode).IsEqualTo(HttpStatusCode.Created);
+
+        var latest = await app.Client.PostJson(
+            "/auth/invitations/complete",
+            new { token = app.IssuedInvitations[^1].Token, userName = "invited", password = Account.DefaultPassword });
+
+        await Assert.That(latest.StatusCode).IsEqualTo(HttpStatusCode.Created);
+    }
+
+    private sealed class OrderRetiring
+    {
+        private int _calls;
+
+        internal volatile bool Armed;
+
+        internal TaskCompletionSource FirstArrived { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        internal TaskCompletionSource ReleaseFirst { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        internal Task? First { get; set; }
+
+        internal bool Interleaved { get; private set; }
+
+        internal int Next() => Armed ? Interlocked.Increment(ref _calls) : 0;
+
+        internal void Done() => Interleaved = true;
+    }
+
+    /// <summary>Holds the first re-invite before it retires its links, and runs it to the end after
+    /// the second has retired them.</summary>
+    private sealed class RunsAroundRetiring(IInvitationTokenStore inner, OrderRetiring order) : IInvitationTokenStore
+    {
+        public Task CreateAsync(ToamaisutaaInvitationToken token, CancellationToken cancellationToken = default) =>
+            inner.CreateAsync(token, cancellationToken);
+
+        public Task<ToamaisutaaInvitationToken?> FindByHashAsync(string tokenHash, CancellationToken cancellationToken = default) =>
+            inner.FindByHashAsync(tokenHash, cancellationToken);
+
+        public Task<bool> MarkConsumedAsync(Guid tokenId, DateTimeOffset consumedAt, CancellationToken cancellationToken = default) =>
+            inner.MarkConsumedAsync(tokenId, consumedAt, cancellationToken);
+
+        public Task<int> DeleteExpiredAsync(DateTimeOffset expiredBefore, CancellationToken cancellationToken = default) =>
+            inner.DeleteExpiredAsync(expiredBefore, cancellationToken);
+
+        public async Task InvalidateAllForUserAsync(Guid userId, DateTimeOffset consumedAt, CancellationToken cancellationToken = default)
+        {
+            var call = order.Next();
+
+            if (call == 1)
+            {
+                order.FirstArrived.SetResult();
+                await order.ReleaseFirst.Task.WaitAsync(TimeSpan.FromSeconds(30));
+            }
+
+            await inner.InvalidateAllForUserAsync(userId, consumedAt, cancellationToken);
+
+            if (call == 2)
+            {
+                order.ReleaseFirst.SetResult();
+                await order.First!.WaitAsync(TimeSpan.FromSeconds(30));
+                order.Done();
+            }
+        }
+
+        public Task<ToamaisutaaInvitationToken?> FindOpenByEmailAsync(string normalizedEmail, DateTimeOffset now, CancellationToken cancellationToken = default) =>
+            inner.FindOpenByEmailAsync(normalizedEmail, now, cancellationToken);
+    }
+
     /// <summary>Both requests past the lookup before either writes, which is where a real race puts them.</summary>
     private sealed class MeetBeforeLookingUp
     {
