@@ -216,7 +216,8 @@ public static class ToamaisutaaPasskeyEndpointExtensions
 
         try
         {
-            var registered = await passkeys.CompleteRegistrationAsync(user.Id, request, cancellationToken);
+            // The user, not its id: the stamp it carries is the one this caller's token was checked against.
+            var registered = await passkeys.CompleteRegistrationAsync(user, request, cancellationToken);
 
             // No Location header: no route serves a single credential.
             return Results.Json(registered, statusCode: StatusCodes.Status201Created);
