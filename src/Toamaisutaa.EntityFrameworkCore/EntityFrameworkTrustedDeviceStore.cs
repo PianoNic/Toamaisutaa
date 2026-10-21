@@ -33,22 +33,40 @@ internal sealed class EntityFrameworkTrustedDeviceStore<TContext>(TContext conte
                 cancellationToken) == 1;
 
     public async Task RevokeFamilyAsync(Guid familyId, string reason, DateTimeOffset revokedAt, CancellationToken cancellationToken = default) =>
-        await context.Set<ToamaisutaaTrustedDevice>()
-            .Where(device => device.FamilyId == familyId && device.RevokedAt == null)
-            .ExecuteUpdateAsync(
-                setters => setters
-                    .SetProperty(device => device.RevokedAt, revokedAt)
-                    .SetProperty(device => device.RevokedReason, reason),
-                cancellationToken);
+        await RevokeUntilNoneLeftAsync(device => device.FamilyId == familyId && device.RevokedAt == null, reason, revokedAt, cancellationToken);
 
     public async Task<int> RevokeAllForUserAsync(Guid userId, string reason, DateTimeOffset revokedAt, CancellationToken cancellationToken = default) =>
-        await context.Set<ToamaisutaaTrustedDevice>()
-            .Where(device => device.UserId == userId && device.RevokedAt == null)
-            .ExecuteUpdateAsync(
-                setters => setters
-                    .SetProperty(device => device.RevokedAt, revokedAt)
-                    .SetProperty(device => device.RevokedReason, reason),
-                cancellationToken);
+        await RevokeUntilNoneLeftAsync(device => device.UserId == userId && device.RevokedAt == null, reason, revokedAt, cancellationToken);
+
+    // Repeated until it matches nothing, as the refresh-token store does: one UPDATE never sees a row a
+    // rotation inserted after it started, and that rotation's re-read of its parent need not see the
+    // revocation either, so the new device would stay trusted.
+    private async Task<int> RevokeUntilNoneLeftAsync(
+        System.Linq.Expressions.Expression<Func<ToamaisutaaTrustedDevice, bool>> live,
+        string reason,
+        DateTimeOffset revokedAt,
+        CancellationToken cancellationToken)
+    {
+        var total = 0;
+
+        for (var pass = 0; pass < 10; pass++)
+        {
+            var revoked = await context.Set<ToamaisutaaTrustedDevice>()
+                .Where(live)
+                .ExecuteUpdateAsync(
+                    setters => setters
+                        .SetProperty(device => device.RevokedAt, revokedAt)
+                        .SetProperty(device => device.RevokedReason, reason),
+                    cancellationToken);
+
+            if (revoked == 0)
+                break;
+
+            total += revoked;
+        }
+
+        return total;
+    }
 
     public async Task<int> DeleteExpiredAsync(DateTimeOffset expiredBefore, CancellationToken cancellationToken = default) =>
         await context.Set<ToamaisutaaTrustedDevice>()
