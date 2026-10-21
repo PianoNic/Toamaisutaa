@@ -55,15 +55,24 @@ internal static class LockoutPolicy
         if (lockedByThisAttempt && state == after)
             return before;
 
+        // Only into the window this attempt was counted in. A later window never counted it, and the
+        // caller's clock is the one it reserved with, so comparing against now proves nothing.
         if (!IsLockedOut(state, now))
-            return state.FailedAttemptCount > 0 ? state with { FailedAttemptCount = state.FailedAttemptCount - 1 } : null;
+        {
+            return state.FailedAttemptCount > 0 && state.FirstFailedAttemptAt == after.FirstFailedAttemptAt
+                ? state with { FailedAttemptCount = state.FailedAttemptCount - 1 }
+                : null;
+        }
 
-        // Locked by another attempt's reservation. The account was open when this one reserved, so
-        // that lock was reached counting this right attempt, in this window: without it, the count
-        // stands one short of the threshold, unlocked. Outside the window the lock is someone else's.
+        // Locked by another attempt's reservation. When that lock was set inside this attempt's
+        // window, it was reached counting this right attempt, and without it the count stands one
+        // short of the threshold, unlocked. A lock set after the window closed is someone else's.
         if (!lockedByThisAttempt
             && after.FirstFailedAttemptAt is { } windowStart
-            && now - windowStart <= options.LockoutWindow)
+            && state.LockedOutUntil is { } until
+            && until - options.LockoutDuration is var lockedAt
+            && lockedAt >= windowStart
+            && lockedAt - windowStart <= options.LockoutWindow)
         {
             return new LockoutState(options.MaxFailedAttempts - 1, windowStart, null);
         }

@@ -85,6 +85,58 @@ public class CredentialWritesTests
         await Assert.That(credential.FailedAttemptCount).IsEqualTo(options.MaxFailedAttempts - 1);
     }
 
+    /// <summary>
+    /// The right attempt reserved at the end of one window and a burst locked the account in the next.
+    /// That lock never counted the right attempt, and refunding it unlocked the account, so a burst
+    /// timed past a right password never served its lockout.
+    /// </summary>
+    [Test]
+    public async Task A_right_attempt_does_not_undo_a_lock_reached_in_a_later_window()
+    {
+        var store = new FakePasswordStore();
+        var options = new ToamaisutaaLocalLoginOptions();
+        var start = DateTimeOffset.UtcNow;
+        var credential = new ToamaisutaaPasswordCredential { UserId = Guid.NewGuid(), UserName = "ada", NormalizedUserName = "ADA", PasswordHash = "h" };
+        await store.CreateAsync(credential);
+
+        await store.ReserveAttemptAsync(credential, options, start, CancellationToken.None);
+
+        var rightAt = start + options.LockoutWindow - TimeSpan.FromSeconds(1);
+        var right = await store.ReserveAttemptAsync(credential, options, rightAt, CancellationToken.None);
+
+        var burstAt = start + options.LockoutWindow + TimeSpan.FromSeconds(1);
+        for (var i = 0; i < options.MaxFailedAttempts; i++)
+            await store.ReserveAttemptAsync(credential, options, burstAt, CancellationToken.None);
+
+        await Assert.That(LockoutPolicy.IsLockedOut(credential, burstAt)).IsTrue();
+
+        await store.RefundAsync(right, rightAt, CancellationToken.None);
+
+        await Assert.That(LockoutPolicy.IsLockedOut(credential, burstAt)).IsTrue();
+    }
+
+    /// <summary>A refund outside the window it was counted in takes nothing off the window that
+    /// replaced it.</summary>
+    [Test]
+    public async Task A_right_attempt_takes_nothing_off_a_later_window()
+    {
+        var store = new FakePasswordStore();
+        var options = new ToamaisutaaLocalLoginOptions();
+        var start = DateTimeOffset.UtcNow;
+        var credential = new ToamaisutaaPasswordCredential { UserId = Guid.NewGuid(), UserName = "ada", NormalizedUserName = "ADA", PasswordHash = "h" };
+        await store.CreateAsync(credential);
+
+        var right = await store.ReserveAttemptAsync(credential, options, start, CancellationToken.None);
+
+        var later = start + options.LockoutWindow + TimeSpan.FromSeconds(1);
+        await store.ReserveAttemptAsync(credential, options, later, CancellationToken.None);
+        await store.ReserveAttemptAsync(credential, options, later, CancellationToken.None);
+
+        await store.RefundAsync(right, start, CancellationToken.None);
+
+        await Assert.That(credential.FailedAttemptCount).IsEqualTo(2);
+    }
+
     private sealed class LosesFirst(FakePasswordStore inner, int times) : IPasswordCredentialStore
     {
         private int _lost;
