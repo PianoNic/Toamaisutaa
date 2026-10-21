@@ -106,6 +106,10 @@ internal sealed class TwoFactorService(
         var enrolment = await enrolments.FindAsync(userId, cancellationToken)
             ?? throw new TwoFactorEnrolmentException("There is no enrolment to confirm. Start one first.");
 
+        // Taken now, before checking the code reloads the row: a begin landing in between would
+        // otherwise hand the confirm the new secret's key, and switch on a secret never checked.
+        var begunAt = enrolment.UpdatedAt;
+
         if (enrolment.IsEnabled)
             throw new TwoFactorEnrolmentException("This account already has a confirmed second factor.");
 
@@ -137,7 +141,7 @@ internal sealed class TwoFactorService(
         // Only the confirm columns, and only on the enrolment the code was checked against: a
         // whole-row write put back the used step read before the code was recorded, so the code
         // that confirmed worked once more at sign-in.
-        if (!await enrolments.ConfirmPendingAsync(userId, enrolment.UpdatedAt, now, cancellationToken))
+        if (!await enrolments.ConfirmPendingAsync(userId, begunAt, now, cancellationToken))
         {
             logger.LogWarning("Two-factor confirmation refused for user {UserId}: the enrolment changed while it was being confirmed.", userId);
             throw new TwoFactorEnrolmentException("This enrolment changed while it was being confirmed. Check the status, and begin again if it is not enabled.");
