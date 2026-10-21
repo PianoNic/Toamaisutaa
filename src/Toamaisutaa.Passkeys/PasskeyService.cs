@@ -82,14 +82,31 @@ internal sealed class PasskeyService(
     public async Task<PasskeySummary> CompleteRegistrationAsync(
         Guid userId,
         PasskeyRegistrationRequest request,
+        CancellationToken cancellationToken = default) =>
+        await CompleteRegistrationAsync(
+            userId,
+            (await users.FindByIdAsync(userId, cancellationToken))?.SecurityStamp,
+            request,
+            cancellationToken);
+
+    public Task<PasskeySummary> CompleteRegistrationAsync(
+        ToamaisutaaUser user,
+        PasskeyRegistrationRequest request,
         CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(user);
+        return CompleteRegistrationAsync(user.Id, user.SecurityStamp, request, cancellationToken);
+    }
+
+    private async Task<PasskeySummary> CompleteRegistrationAsync(
+        Guid userId,
+        string? stampAtStart,
+        PasskeyRegistrationRequest request,
+        CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(request);
 
         var now = timeProvider.GetUtcNow();
-
-        // As this request first read it, which is the stamp its caller was authenticated against.
-        var stampAtStart = (await users.FindByIdAsync(userId, cancellationToken))?.SecurityStamp;
 
         var stored = await RedeemAsync(request.Challenge, PasskeyCeremony.Registration, now, cancellationToken);
 

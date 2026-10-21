@@ -11,7 +11,7 @@ public interface IPasskeyService
 {
     /// <summary>
     /// Starts a registration for a user who is already signed in. Nothing is stored against the
-    /// account until <see cref="CompleteRegistrationAsync"/>.
+    /// account until <see cref="CompleteRegistrationAsync(ToamaisutaaUser, PasskeyRegistrationRequest, CancellationToken)"/>.
     /// </summary>
     /// <param name="userId">Whose account the credential would be added to.</param>
     /// <param name="proof">
@@ -26,10 +26,29 @@ public interface IPasskeyService
         CancellationToken cancellationToken = default);
 
     /// <summary>Verifies what the authenticator produced and stores the credential.</summary>
+    /// <remarks>
+    /// Checks the account's credentials did not change during the ceremony against a stamp it reads
+    /// itself, which can already be newer than the one the caller authenticated with. Prefer the
+    /// overload taking the authenticated <see cref="ToamaisutaaUser"/>.
+    /// </remarks>
     Task<PasskeySummary> CompleteRegistrationAsync(
         Guid userId,
         PasskeyRegistrationRequest request,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Verifies what the authenticator produced and stores the credential, unless the account's
+    /// credentials changed since <paramref name="user"/> was authenticated.
+    /// </summary>
+    /// <param name="user">The user as read when the caller was authenticated, carrying the stamp the
+    /// caller's token was checked against.</param>
+    /// <param name="request">What the authenticator produced.</param>
+    /// <param name="cancellationToken">Cancels the lookups.</param>
+    Task<PasskeySummary> CompleteRegistrationAsync(
+        ToamaisutaaUser user,
+        PasskeyRegistrationRequest request,
+        CancellationToken cancellationToken = default) =>
+        CompleteRegistrationAsync(user.Id, request, cancellationToken);
 
     /// <summary>
     /// Starts a sign-in. Takes no identifier, so it cannot answer "does this account exist": the

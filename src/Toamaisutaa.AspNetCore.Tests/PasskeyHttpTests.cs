@@ -629,6 +629,69 @@ public class PasskeyHttpTests
         await Assert.That((await verified.Json()).Has("access_token")).IsFalse();
     }
 
+    /// <summary>
+    /// Registration compared the stamp after inserting with one it read itself, which could already
+    /// be the stamp of a password change that landed after the caller was authenticated. Both reads
+    /// then agreed and the passkey outlived the change. Needs a store that reads afresh: EF hands the
+    /// request its first copy and hides it.
+    /// </summary>
+    [Test]
+    public async Task A_passkey_registered_after_the_caller_was_authenticated_and_credentials_changed_is_not_kept()
+    {
+        const string changedPassword = "a different passphrase";
+        Func<Task>? afterAuthenticating = null;
+
+        await using var app = await TestApp.StartAsync(configureServices: services =>
+        {
+            FreshUserReads.Register(services);
+            services.Decorate<ICurrentUser>(inner => new ChangesAfterAuthenticating(inner, () => Interlocked.Exchange(ref afterAuthenticating, null)));
+        });
+
+        var account = await Account.RegisterAsync(app);
+        using var authenticator = new SoftwareAuthenticator();
+
+        var begin = await Passkeys.BeginRegistrationAsync(app, account.AccessToken);
+        var created = Passkeys.Fields(authenticator.Create(await begin.Json(), TestApp.Origin, userVerified: true));
+
+        var changed = false;
+        afterAuthenticating = async () => changed = (await app.Client.PostJson(
+            "/auth/password",
+            new { currentPassword = account.Password, newPassword = changedPassword },
+            account.AccessToken)).IsSuccessStatusCode;
+
+        await app.Client.PostJson("/auth/passkeys/register/complete", created, account.AccessToken);
+
+        await Assert.That(changed).IsTrue();
+        await Assert.That((await Passkeys.SignInAsync(app, authenticator)).StatusCode).IsNotEqualTo(HttpStatusCode.OK);
+    }
+
+    /// <summary>Runs a credential change once, after the caller was authenticated and before the
+    /// endpoint goes on.</summary>
+    private sealed class ChangesAfterAuthenticating(ICurrentUser inner, Func<Func<Task>?> take) : ICurrentUser
+    {
+        public bool IsAuthenticated => inner.IsAuthenticated;
+
+        public string? Subject => inner.Subject;
+
+        public string? Name => inner.Name;
+
+        public IReadOnlyList<string> Roles => inner.Roles;
+
+        public bool IsInRole(string role) => inner.IsInRole(role);
+
+        public string? FindClaim(string type) => inner.FindClaim(type);
+
+        public async Task<ToamaisutaaUser> GetOrProvisionAsync(CancellationToken cancellationToken = default)
+        {
+            var user = await inner.GetOrProvisionAsync(cancellationToken);
+
+            if (take() is { } change)
+                await change();
+
+            return user;
+        }
+    }
+
     /// <summary>A password change that finished while a registration was verifying had already
     /// deleted every passkey, and the one inserted afterwards signed in on its own.</summary>
     [Test]
