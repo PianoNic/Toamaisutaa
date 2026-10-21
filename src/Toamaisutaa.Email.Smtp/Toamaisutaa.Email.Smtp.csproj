@@ -17,6 +17,8 @@
          Microsoft's own docs steer new code away from it - and MailKit is the de facto standard
          replacement: MIT-licensed, actively maintained, ~6.8k GitHub stars. -->
     <PackageReference Include="MailKit" />
+    <!-- MimeKit asks for 10.0.0, which has two denial-of-service advisories; referenced so consumers get the fix too. -->
+    <PackageReference Include="System.Security.Cryptography.Pkcs" />
   </ItemGroup>
   <ItemGroup>
     <InternalsVisibleTo Include="Toamaisutaa.Email.Smtp.Tests" />
