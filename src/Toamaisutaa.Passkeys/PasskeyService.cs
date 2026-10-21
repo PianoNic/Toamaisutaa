@@ -325,7 +325,11 @@ internal sealed class PasskeyService(
                 user.Id,
                 now,
                 cancellationToken,
-                authenticationMethods: $"{ToamaisutaaDefaults.HardwareKeyMethod} {ToamaisutaaDefaults.UserPresenceMethod}");
+                authenticationMethods: $"{ToamaisutaaDefaults.HardwareKeyMethod} {ToamaisutaaDefaults.UserPresenceMethod}",
+
+                // The stamp read before the credential was found again; read later, it can be the
+                // stamp of the revocation that just deleted this passkey.
+                securityStamp: user.SecurityStamp);
 
             logger.LogInformation(
                 "Passkey accepted for user {UserId} without user verification; a second factor is required.",

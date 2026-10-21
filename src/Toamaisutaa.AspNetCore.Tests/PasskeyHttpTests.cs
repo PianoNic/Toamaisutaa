@@ -585,6 +585,50 @@ public class PasskeyHttpTests
         await Assert.That(refreshed.StatusCode).IsEqualTo(HttpStatusCode.Unauthorized);
     }
 
+    /// <summary>
+    /// An unverified passkey's challenge took the stamp read when the challenge was issued, after the
+    /// credential was found again. A credential change landing in between gave the challenge the new
+    /// stamp, so the sign-in it was half of survived the change. Needs a store that reads afresh: EF
+    /// hands the request its first copy and hides it.
+    /// </summary>
+    [Test]
+    public async Task An_unverified_passkey_challenge_does_not_outlive_a_credential_change()
+    {
+        var race = new RevokeWhileAsserting();
+        await using var app = await TestApp.StartAsync(
+            configure: settings => settings["Passkeys:RequireUserVerification"] = "false",
+            configureServices: services =>
+            {
+                race.Register(services);
+                FreshUserReads.Register(services);
+            });
+
+        var account = await Account.RegisterAsync(app);
+        using var authenticator = new SoftwareAuthenticator();
+
+        await Passkeys.RegisterAsync(app, account.AccessToken, authenticator, userVerified: false);
+        await account.EnrolAsync();
+        var userId = Guid.Parse(account.Claims().String("sub")!);
+
+        race.AfterRecordingUse = async () =>
+        {
+            await using var scope = app.Services.CreateAsyncScope();
+            await scope.ServiceProvider.GetRequiredService<IUserStore>().UpdateSecurityStampAsync(userId, Guid.NewGuid().ToString("N"));
+        };
+
+        var body = await (await Passkeys.SignInAsync(app, authenticator, userVerified: false)).Json();
+        await Assert.That(race.AfterRecordingUse is null).IsTrue();
+        await Assert.That(body.String("challenge")).IsNotNull();
+
+        app.Time.AdvanceToNextTotpStep();
+        var verified = await app.Client.PostJson(
+            "/auth/2fa/verify",
+            new { challenge = body.String("challenge"), code = Totp.Code(account.Secret!, app.Time.Now) });
+
+        await Assert.That(verified.StatusCode).IsNotEqualTo(HttpStatusCode.OK);
+        await Assert.That((await verified.Json()).Has("access_token")).IsFalse();
+    }
+
     /// <summary>A password change that finished while a registration was verifying had already
     /// deleted every passkey, and the one inserted afterwards signed in on its own.</summary>
     [Test]
@@ -643,6 +687,8 @@ public class PasskeyHttpTests
 
         internal Func<Task>? BeforeCreating;
 
+        internal Func<Task>? AfterRecordingUse;
+
         internal void Register(IServiceCollection services) =>
             services.Decorate<IPasskeyCredentialStore>(inner => new Store(this, inner));
 
@@ -669,8 +715,13 @@ public class PasskeyHttpTests
                 await inner.CreateAsync(credential, cancellationToken);
             }
 
-            public Task RecordUseAsync(Guid credentialId, long signCount, bool isBackedUp, DateTimeOffset usedAt, CancellationToken cancellationToken = default) =>
-                inner.RecordUseAsync(credentialId, signCount, isBackedUp, usedAt, cancellationToken);
+            public async Task RecordUseAsync(Guid credentialId, long signCount, bool isBackedUp, DateTimeOffset usedAt, CancellationToken cancellationToken = default)
+            {
+                await inner.RecordUseAsync(credentialId, signCount, isBackedUp, usedAt, cancellationToken);
+
+                if (Interlocked.Exchange(ref owner.AfterRecordingUse, null) is { } revoke)
+                    await revoke();
+            }
 
             public Task<bool> DeleteAsync(Guid userId, Guid credentialId, CancellationToken cancellationToken = default) =>
                 inner.DeleteAsync(userId, credentialId, cancellationToken);
