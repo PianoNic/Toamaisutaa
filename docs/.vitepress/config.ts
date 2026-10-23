@@ -38,7 +38,6 @@ export default defineConfig({
       },
       { text: 'From a SPA', link: '/spa' },
       { text: 'Metrics', link: '/metrics' },
-      { text: 'Development', link: '/dev-setup' },
     ],
     sidebar: [
       {
@@ -90,13 +89,6 @@ export default defineConfig({
         collapsed: false,
         items: [
           { text: 'Metrics', link: '/metrics' },
-        ],
-      },
-      {
-        text: 'Development',
-        collapsed: false,
-        items: [
-          { text: 'Developer setup', link: '/dev-setup' },
         ],
       },
     ],
