@@ -92,8 +92,24 @@ public class UserInfoCacheTests
 
         var enricher = Enricher(userInfo);
 
+        // One client, so only the scope tells the two apart.
         await enricher.EnrichAsync(Context("sub-1", scope: "openid groups", client: "trusted"));
-        await enricher.EnrichAsync(Context("sub-1", scope: "openid", client: "integration"));
+        await enricher.EnrichAsync(Context("sub-1", scope: "openid", client: "trusted"));
+
+        await Assert.That(userInfo.Calls).IsEqualTo(2);
+    }
+
+    [Test]
+    public async Task A_client_is_not_served_what_another_client_fetched()
+    {
+        var userInfo = new CountingUserInfo(RolesBody);
+        userInfo.Release.SetResult();
+
+        var enricher = Enricher(userInfo);
+
+        // One scope, so only the client tells the two apart.
+        await enricher.EnrichAsync(Context("sub-1", scope: "openid groups", client: "trusted"));
+        await enricher.EnrichAsync(Context("sub-1", scope: "openid groups", client: "integration"));
 
         await Assert.That(userInfo.Calls).IsEqualTo(2);
     }
