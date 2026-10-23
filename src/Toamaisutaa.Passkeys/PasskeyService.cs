@@ -192,6 +192,20 @@ internal sealed class PasskeyService(
                 "Your account's credentials changed while this passkey was being registered, so it was not kept. Sign in again and register it.");
         }
 
+        // Counted again now it is in: the check at begin cannot see ceremonies begun alongside it,
+        // each of which would otherwise add one past the maximum.
+        var maximum = options.Value.MaxCredentialsPerUser;
+
+        if (maximum > 0 && await credentials.CountAsync(userId, cancellationToken) > maximum)
+        {
+            await credentials.DeleteAsync(userId, credential.Id, cancellationToken);
+
+            logger.LogWarning("Passkey registration refused for user {UserId}: the account would hold more than {Maximum} passkeys.", userId, maximum);
+
+            throw new PasskeyRegistrationException(
+                $"This account already has the configured maximum of {maximum} passkeys. Delete one before registering another.");
+        }
+
         await events.PublishAsync(
             new PasskeyRegistered
             {
