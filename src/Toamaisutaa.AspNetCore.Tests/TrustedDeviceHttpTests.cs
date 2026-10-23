@@ -74,6 +74,7 @@ public class TrustedDeviceHttpTests
 
         // At most one: the loser's reuse revoke can also refuse the winner, which is the refresh
         // path's rule too, so neither is a valid outcome.
+        await Assert.That(store.Met).IsTrue();
         await Assert.That(bodies.Count(body => body.Has("access_token"))).IsLessThanOrEqualTo(1);
 
         // Both reached the gate and got an answer, rather than failing before it.
@@ -158,6 +159,9 @@ public class TrustedDeviceHttpTests
     private sealed class MeetBeforeRotating
     {
         private readonly CountdownEvent _arrived = new(2);
+
+        /// <summary>Both requests reached the rotation, so the race under test happened.</summary>
+        internal bool Met => _arrived.IsSet;
 
         internal volatile bool Hold;
 
