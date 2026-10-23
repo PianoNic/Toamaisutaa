@@ -212,7 +212,7 @@ than an OIDC token on its own.
 
 ## Migrating from a hand-rolled JwtBearer block
 
-Two behaviours are likely to differ from what you have:
+Three behaviours are likely to differ from what you have:
 
 - **`MapInboundClaims` is off.** Claim types stay as the issuer wrote them (`sub`,
   `preferred_username`, `roles`). Check anything that reads `ClaimTypes.*` directly.

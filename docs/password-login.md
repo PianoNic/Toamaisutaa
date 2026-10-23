@@ -26,22 +26,23 @@ and all three are checked at startup rather than at the first request.
 | POST | `/auth/login` | 200 with a token pair, 200 with a two-factor challenge, or 401 |
 | POST | `/auth/refresh` | 200 with a rotated pair, or 401 |
 | POST | `/auth/logout` | 204 |
-| GET | `/auth/sessions` | 200. Authenticated. See [sessions](/sessions) |
-| DELETE | `/auth/sessions/{id}` | 204 or 404. Authenticated |
-| DELETE | `/auth/sessions` | 204. Authenticated. Signs out everywhere else |
 | POST | `/auth/register` | 201, 400, or 409. Only mapped when `AllowSelfRegistration` is true |
-| POST | `/auth/password` | 204. Authenticated. Sets a first password or changes an existing one |
+| POST | `/auth/password` | 204, 400, or 429. Authenticated. Sets a first password or changes an existing one |
 | POST | `/auth/password/forgot` | 204, always |
 | POST | `/auth/password/reset` | 204 or 400 |
-| POST | `/auth/email` | 204, 400, or 409. Authenticated. Only mapped when an `IEmailVerificationNotifier` is registered |
+| POST | `/auth/email` | 204, 400, 409, or 429. Authenticated. Only mapped when an `IEmailVerificationNotifier` is registered |
 | POST | `/auth/email/verify` | 204, 400, or 409. Only mapped when an `IEmailVerificationNotifier` is registered |
 | POST | `/auth/magic-link` | 204, always. Only mapped when an `IMagicLinkNotifier` is registered |
 | POST | `/auth/magic-link/verify` | 200 with a token pair, 200 with a two-factor challenge, or 401. Only mapped when an `IMagicLinkNotifier` is registered |
 | POST | `/auth/users` | 201, 400, 403, or 409. Admin only. Only mapped when an `IAdminPasswordIssuedNotifier` is registered and `Oidc:AdminRole` is set |
 | POST | `/auth/users/{userId}/password` | 204, 400, 403, or 502. Admin only. Only mapped when an `IAdminPasswordIssuedNotifier` is registered and `Oidc:AdminRole` is set |
 | POST | `/auth/invitations` | 201, 400, 403, or 502. Admin only. Only mapped when an `IInvitationNotifier` is registered and `Oidc:AdminRole` is set |
+| POST | `/auth/invitations/revoke` | 204, 403, or 404 when the address has no open invitation. Admin only. Mapped with `/auth/invitations` |
 | POST | `/auth/invitations/complete` | 201 with a token pair, 400, or 409. Only mapped when an `IInvitationNotifier` is registered |
 | GET | `/auth/.well-known/jwks.json` | 200 with the public signing keys. Only mapped when `SigningKeys` is set - see [signing local tokens](/token-signing) |
+
+The session list (`/auth/sessions`) is mapped separately, by `MapToamaisutaaSessionEndpoints()` - see
+[sessions](/sessions).
 
 ::: warning Requests are camelCase, token responses are not
 Request bodies bind to this package's own records, so they are camelCase: `identifier`,
