@@ -76,6 +76,37 @@ public class PublishedSecretsStartupCheckTests
         await Assert.That(proxied).IsEqualTo(HttpStatusCode.InternalServerError);
     }
 
+    /// <summary>
+    /// nginx's plain proxy_pass and most tunnels add no forwarding header, and the forwarded-headers
+    /// middleware strips the ones that arrive, so headers alone let those requests through. They still
+    /// name the public host, or leave X-Original-For behind.
+    /// </summary>
+    [Test]
+    [Arguments("Host", "auth.example.com")]
+    [Arguments("X-Original-For", "203.0.113.7")]
+    public async Task In_development_the_samples_values_are_not_served_to_a_request_from_elsewhere(string header, string value)
+    {
+        HttpStatusCode? direct = null, elsewhere = null;
+
+        var message = await StartAsync("signing", Environments.Development, whileRunning: async app =>
+        {
+            var client = app.GetTestClient();
+            direct = (await client.GetAsync("/ping")).StatusCode;
+
+            using var request = new HttpRequestMessage(HttpMethod.Get, "/ping");
+            if (header == "Host")
+                request.Headers.Host = value;
+            else
+                request.Headers.Add(header, value);
+
+            elsewhere = (await client.SendAsync(request)).StatusCode;
+        });
+
+        await Assert.That(message).IsNull();
+        await Assert.That(direct).IsEqualTo(HttpStatusCode.OK);
+        await Assert.That(elsewhere).IsEqualTo(HttpStatusCode.InternalServerError);
+    }
+
     [Test]
     public async Task Own_keys_are_served_through_a_proxy_in_development()
     {
