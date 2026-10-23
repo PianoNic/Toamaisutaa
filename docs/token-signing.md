@@ -46,13 +46,10 @@ OpenSSL:
 openssl ecparam -name prime256v1 -genkey -noout | openssl pkcs8 -topk8 -nocrypt
 ```
 
-The private key is a credential of exactly the weight of the symmetric one, so it belongs in the
-environment or a secret store - never in a settings file you commit. Everything the startup check
-knows about the symmetric key it also knows about these: a key that does not parse, a duplicated
-`kid` or a first entry that cannot sign refuses the host rather than failing on the first sign-in.
-That holds in a process that only validates tokens as well - if you bind `LocalLogin` in a service
-that calls `AddToamaisutaaBearer` and nothing else, a key it cannot read still stops the host rather
-than turning into a 401 on every token it was configured to accept.
+The private key belongs in the environment or a secret store - never in a settings file you commit.
+A key that does not parse, a duplicated `kid` or a first entry that cannot sign refuses the host
+rather than failing on the first sign-in - including in a service that binds `LocalLogin` and calls
+only `AddToamaisutaaBearer`.
 
 ## The JWKS endpoint
 
@@ -60,9 +57,8 @@ than turning into a 401 on every token it was configured to accept.
 GET /auth/.well-known/jwks.json
 ```
 
-Anonymous, under `LocalLogin:EndpointPrefix`, and **only mapped when `SigningKeys` is set**. A
-deployment signing HS256 has no public half, and answering an empty set would tell a gateway that
-this issuer publishes nothing rather than that it was never asked to.
+Anonymous, under `LocalLogin:EndpointPrefix`, and **only mapped when `SigningKeys` is set** - an
+HS256 deployment has no public half to publish.
 
 ```json
 {

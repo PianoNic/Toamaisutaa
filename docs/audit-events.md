@@ -95,14 +95,11 @@ account from a wrong password. `SignInFailed.Reason` is the internal outcome - `
 
 **No event carries a secret.** Not a password, a TOTP secret, a recovery code, a reset or invitation
 token, or a refresh token. The user id, the `amr` values and the time are enough to reconstruct what
-happened, and an audit table usually outlives every key rotation anyone remembers to perform.
+happened.
 
 **A sink that throws never fails the request.** The exception is logged and the next sink still gets
-the event. Auditing that turns a correct sign-in into a 500 is worse than no auditing. That covers a
-sink whose own HTTP call or database command times out - those arrive as `TaskCanceledException`
-without anything having cancelled the request, and only the request's own cancellation is let
-through - and a sink that throws from its constructor, which is why sinks are built when the first
-event of a request is published rather than when the services around them are resolved.
+the event. That includes a sink that throws from its constructor, and one whose own call times out
+with a `TaskCanceledException`; only the request's own cancellation is let through.
 
 **Delivery is in-process and best effort.** There is no retry and no queue. A sink that must not
 lose an event should write it somewhere durable itself - a row in the same transaction, an outbox -

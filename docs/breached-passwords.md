@@ -34,9 +34,7 @@ registered an `IPasswordValidator` of your own, it wraps yours - with the lifeti
 with. A scoped validator stays scoped, is handed the provider of the scope asking for it, and is
 disposed with that scope, so one that reads a per-request or per-tenant list goes on doing so.
 
-A password the length rules already refused is never looked up. There is nothing to learn about a
-password nobody is going to end up with, and asking would spend a request on every short password
-typed into an anonymous endpoint.
+A password the length rules already refused is never looked up.
 
 ## Five characters, and that is all that leaves
 
@@ -47,18 +45,16 @@ happens locally. The service learns that somebody typed one of several hundred t
 about which one. The request also asks for a padded response, so the number of entries coming back
 says nothing either.
 
-SHA-1 is not a security choice here. It is the index the corpus is published under, and nothing
-about a password is recoverable from five hex characters of it. Your passwords are still stored the
-way [password hashing](/password-hashing) describes.
+SHA-1 is only the index the corpus is published under; your passwords are still stored the way
+[password hashing](/password-hashing) describes.
 
 ## It fails open
 
 If the range API is unreachable, times out, or answers with something unexpected, the password is
 accepted and a warning is logged naming the address that could not be reached.
 
-That is a deliberate trade. This is a second opinion on a password the length rules already
-accepted, and a third party being down must not be the reason nobody in your deployment can
-register or change their password. If the trade is wrong for you, do not turn it off - mirror the
+A third party being down is never the reason nobody can register or change their password. If that
+trade is wrong for you, do not turn it off - mirror the
 [downloadable corpus](https://haveibeenpwned.com/Passwords) on your own network and point
 `ApiBaseAddress` at it, so there is no third party in the path to be down.
 

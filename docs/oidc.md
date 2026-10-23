@@ -69,9 +69,7 @@ cached on its own. The cache goes through
 [`HybridCache`](https://learn.microsoft.com/aspnet/core/performance/caching/hybrid). Two things
 follow from that:
 
-- Requests carrying the same token that arrive together share one userinfo call. A page reload
-  against a cold cache fires a dozen requests before any of them has answered, and that used to be
-  a dozen calls to your issuer.
+- Requests carrying the same token that arrive together share one userinfo call.
 - Every instance fetches once. Sharing the entry between them takes
   `Oidc:ShareUserInfoCacheAcrossInstances`, below.
 
@@ -88,21 +86,17 @@ Set `Oidc:FetchClaimsFromUserInfo` to `false` to stop the package calling your i
 change that on its own. Turn it on and the entries use your Redis or SQL Server as a second level,
 so a scaled-out deployment warms each subject once rather than once per instance.
 
-It is a switch rather than the default because of what these entries are. They decide authorization,
-and they carry whatever else your issuer puts in userinfo, which is usually an email and a name. On
-the way in, they become a plaintext value in a store the package does not own, next to every other
-tenant of it. Deciding that is fine is a reasonable thing to do, and it is not something the package
-can decide on your behalf from the presence of a Redis connection string.
+It is off by default because the entries decide authorization and carry whatever else your issuer
+puts in userinfo, usually an email and a name, as plaintext in a store the package does not own.
 
 The key names the issuer and the audiences this service accepts, so two services against one issuer
 sharing an unprefixed Redis do not read each other's entries even when they share the store.
 
 ## Health check
 
-A wrong `Oidc:Authority` or an unreachable `Oidc:InternalAuthority` is invisible until the first
-request carrying a token, and then it is a 401 - which reads as "my login is broken" rather than "the
-issuer was never reachable from this container". `AddToamaisutaaHealthChecks()` turns it into a
-failing probe at deploy time instead.
+A wrong `Oidc:Authority` or an unreachable `Oidc:InternalAuthority` is otherwise invisible until the
+first request carrying a token answers 401. `AddToamaisutaaHealthChecks()` turns it into a failing
+probe at deploy time instead.
 
 ```csharp
 builder.Services.AddToamaisutaaBearer(builder.Configuration);
@@ -122,23 +116,12 @@ The check fetches the same `.well-known/openid-configuration` the bearer handler
 | Degraded | The issuer stopped answering, and this process fetched the document less than `Oidc:HealthCheck:DegradedFor` ago | 200 |
 | Unhealthy | The issuer stopped answering and the last fetch is older than that, no document has ever been fetched, or no issuer is configured at all | 503 |
 
-Degraded rather than unhealthy for a recent fetch is the point of the distinction. A handler that
-loaded the document keeps validating tokens against the keys it already holds, so taking the
-instance out of rotation would break something that still works - but you want to know before the
-issuer rotates its signing keys.
+Degraded keeps the instance in rotation, because a handler that already loaded the document keeps
+validating tokens with the keys it holds. Set `Oidc:HealthCheck:DegradedFor` to `00:00:00` to report
+unhealthy on the first failure.
 
-That answer is bounded, because degraded is a 200 and a 200 keeps the instance in the load balancer.
-`Oidc:HealthCheck:DegradedFor` is how long the last successful fetch counts for; past it the check
-reports unhealthy, on the grounds that an issuer nobody here has reached for a quarter of an hour is
-no longer evidence of anything. Set it to `00:00:00` to report unhealthy on the first failure.
-
-What the check reports is what the check itself fetched. It has its own client and its own refresh
-interval, and cannot see the document the bearer handler holds - that one lives in the handler's
-`ConfigurationManager` and is loaded lazily on the first request carrying a token, so a process that
-has only served anonymous traffic has none at all.
-
-A 200 that is not a discovery document counts as a failure. A reverse proxy that has lost its route
-answers a sign-in page with one, and the handler needs the keys rather than the status.
+The check uses its own client and its own copy of the document, not the bearer handler's. A 200 that
+is not a discovery document - a proxy answering with a sign-in page - counts as a failure.
 
 It is registered as `toamaisutaa-oidc-discovery` and tagged `toamaisutaa`, `oidc` and `ready`, so a
 readiness endpoint can select it without naming it:
@@ -148,11 +131,9 @@ app.MapHealthChecks("/ready", new HealthCheckOptions { Predicate = check => chec
     .AllowAnonymous();
 ```
 
-A successful fetch is trusted for `Oidc:HealthCheck:RefreshInterval`, and probes in between are
-answered from it. Readiness probes run every few seconds across every replica, and fetching on each
-one would put a steady load on the issuer for an answer that changes rarely. A failed fetch is
-remembered for the same interval, and probes that arrive together share one request, so an issuer
-that is struggling is not also handed a fetch per probe - the health endpoint is usually anonymous.
+A successful or failed fetch is remembered for `Oidc:HealthCheck:RefreshInterval`, and probes in
+between - including ones that arrive together - are answered from it rather than each reaching the
+issuer.
 
 To put a proxy or a handler on the probe without touching the path a signed-in request takes,
 configure the named client `toamaisutaa-discovery`.
@@ -162,10 +143,9 @@ configure the named client `toamaisutaa-discovery`.
 The default mapper reads `sub`, `preferred_username`, `email`, `name` and `picture`, with the
 display name falling back `name` → `preferred_username` → `email`.
 
-Claim types are the raw JWT names. Inbound claim mapping is **off and not configurable**. .NET's
-default remaps claims to WS-Federation URIs, which leaves `Oidc:NameClaim` and `Oidc:RoleClaim`
-naming raw JWT claims that no longer exist on the principal - a `NameClaimType` that quietly matches
-nothing. Turning it off everywhere means one set of names, the issuer's.
+Claim types are the raw JWT names. Inbound claim mapping is **off and not configurable**, so
+`Oidc:NameClaim` and `Oidc:RoleClaim` name claims exactly as the issuer wrote them, never the
+WS-Federation URIs .NET would otherwise remap them to.
 
 To map claims differently, register your own `IClaimsProfileMapper` before
 `AddToamaisutaaProvisioning()`. `DefaultClaimsProfileMapper` is public so you can delegate to it for
@@ -173,8 +153,7 @@ the parts you do not care about.
 
 ## Deciding who gets a local row
 
-Provisioning creates a row the first time a subject is seen. Two seams sit on that path, and both
-are worth knowing before you decide you need to fork something.
+Provisioning creates a row the first time a subject is seen. Two seams sit on that path.
 
 **`IProvisioningPolicy` answers "should this subject get an account at all, and which one".** The
 default creates one for anybody your issuer vouched for. Replace it to refuse subjects outside a
@@ -189,13 +168,13 @@ builder.Services.AddToamaisutaaProvisioning();
 It returns a `ProvisioningDecision`, so refusing is a decision the pipeline understands rather than
 an exception you throw from inside a mapper.
 
-**`IExternalLoginProvisioner` is the whole read-or-create step**, if the policy seam is not enough
-and you want to own the sequence. Rarely the right one to reach for - most of what people want is
-`IClaimsProfileMapper` for the fields and `IProvisioningPolicy` for the decision.
+**`IExternalLoginProvisioner` is the whole read-or-create step**, if you want to own the sequence.
+Most needs are met by `IClaimsProfileMapper` for the fields and `IProvisioningPolicy` for the
+decision.
 
 Linking a second identity provider to an existing user raises
 `ExternalLoginConflictException` when that (provider, subject) pair already belongs to somebody
-else, which is the case worth handling deliberately rather than letting surface as a 500.
+else. Handle it, or it surfaces as a 500.
 
 ## SignalR and WebSockets
 
@@ -206,9 +185,8 @@ token as a query parameter. Honour it only where it is needed:
 { "Oidc": { "QueryToken": { "IncludePaths": ["/hubs"], "ExcludePaths": ["/hubs/node"] } } }
 ```
 
-An empty `IncludePaths` means the feature is off - there is no separate switch, so "enabled but
-scoped to nothing" cannot happen. `ExcludePaths` exists for a hub that authenticates something other
-than an OIDC token on its own.
+An empty `IncludePaths` means the feature is off; there is no separate switch. `ExcludePaths` is for
+a hub that authenticates something other than an OIDC token on its own.
 
 ## Migrating from a hand-rolled JwtBearer block
 

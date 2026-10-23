@@ -54,15 +54,12 @@ alongside the API the attempts are made against.
 
 ## Four things worth knowing before you graph them
 
-**No tag names a person.** No user id, no user name, no address, nothing derived from a credential.
-A time series outlives a log line by a long way and gets shared with whoever is on call, so the
-dimensions here are all small fixed sets. Which account something happened to is in the logs, where
-it can be aged out.
+**No tag names a person.** No user id, no user name, no address, nothing derived from a credential;
+the dimensions are all small fixed sets. Which account something happened to is in the logs.
 
 **A refresh is not a sign-in.** Rotating a refresh token does not touch
-`toamaisutaa.sign_in.attempts`, or your attempt rate would climb with session length rather than
-with traffic. Reuse detection has its own counter, and that one is never routine: every increment
-means two parties held the same chain.
+`toamaisutaa.sign_in.attempts`. Reuse detection has its own counter, and that one is never routine:
+every increment means two parties held the same chain.
 
 **`no_credential` should cost about what `succeeded` costs.** An identifier that does not exist is
 made to pay for a full key derivation on purpose, so response time cannot be used to enumerate

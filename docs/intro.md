@@ -20,9 +20,9 @@ your client; Toamaisutaa validates what it sends, enriches the claims when the i
 membership out of the access token, and hands you a local user if you want one.
 
 **Local username and password login** is the fallback, for deployments that cannot run an identity
-provider. Turning it on means becoming the identity provider, with everything that implies - so it
-is off unless you ask for it, and built to be conservative rather than convenient. It can be paired
-with [TOTP two-factor authentication](/two-factor), also off by default.
+provider. Turning it on means becoming the identity provider, so it is off unless you ask for it,
+and built to be conservative rather than convenient. It can be paired with
+[TOTP two-factor authentication](/two-factor), also off by default.
 
 Use OIDC if you can.
 

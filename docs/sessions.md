@@ -57,9 +57,8 @@ sessions proved a second factor and which only ever proved a password.
 Refreshing moves the first; nothing moves the second, so a session used every day still shows a date
 that comes closer.
 
-Sessions already past that point are not listed. They are refused at the next refresh rather than
-swept off a timer, so the row is still there - but offering somebody a session that is over, and a
-revoke button that changes nothing anyone can observe, is worse than leaving it out.
+Sessions already past that point are not listed, although their rows stay until the next refresh
+refuses them.
 
 ## Sign out everywhere else
 
@@ -79,9 +78,10 @@ The refresh family, immediately. The next `POST /auth/refresh` on that chain ans
 
 **Access tokens already issued keep working until they expire**, which is at most
 `AccessTokenLifetime` - fifteen minutes by default. Nothing in this package can recall a signed JWT;
-that is the trade a stateless token makes. Shorten `AccessTokenLifetime` if that window matters, and
-read [security stamps](/password-login#revoking-sessions-means-local-sessions) for the case where
-you want every session gone at once.
+that is the trade a stateless token makes. This holds for every revocation - a sign-out, a password
+change, a two-factor change - not only this one. Shorten `AccessTokenLifetime` if that window
+matters, and read [security stamps](/password-login#revoking-sessions-means-local-sessions) for the
+case where you want every session gone at once.
 
 Every revoke publishes a `session-revoked` [audit event](/audit-events) with the reason
 `revoked-by-user`, one per family, so a session somebody ended themselves appears in the same table
@@ -103,15 +103,15 @@ Both are recorded when the family starts and **carried across every rotation**. 
 take them again: `/auth/refresh` is the one call a background timer makes, so recomputing would
 eventually describe every session as whatever last renewed it.
 
-::: warning A session established before you upgraded
-The three columns are new. Rows that already existed have no user agent, no address, and a
-`lastUsedAt` of the Unix epoch until their next refresh writes a fresh row. Nothing breaks; an old
-session simply looks blank in the list for a while.
-:::
+A session started before these columns existed shows no user agent, no address, and a `lastUsedAt` of
+the Unix epoch until its next refresh.
 
 ### Addresses are off by default
 
-| `LocalLogin:IpAddressStorage` | Stores |
+`LocalLogin:IpAddressStorage` here, and `TrustedDevices:IpAddressStorage` for
+[trusted devices](/trusted-devices), take the same values and are set independently:
+
+| `IpAddressStorage` | Stores |
 |---|---|
 | `None` | Nothing. The default |
 | `Truncated` | IPv4 to /24, IPv6 to /48 - "a different network", not "a person" |
@@ -122,9 +122,6 @@ Anything other than `None` puts personal data in your database. Under GDPR that 
 privacy notice, and the feature works without it. `Truncated` is the useful middle: it answers "is
 this somewhere new" without identifying anyone.
 :::
-
-Its own setting rather than the trusted-device one it mirrors, so that an address you asked to store
-against a session does not depend on whether you switched trusted devices on.
 
 Behind a reverse proxy, the address the package sees is the proxy's unless
 `UseForwardedHeaders` is configured - and configured with `KnownProxies`, or the header is whatever a
@@ -152,6 +149,9 @@ request is. Read it from `toa_sid` on the caller's token, the way the endpoint d
 else. Keep those the same answer in whatever you return, or the endpoint becomes a way to discover
 another account's session ids.
 
+A custom `IRefreshTokenStore` has to implement `ListActiveAsync`: the live row of every family a user
+has, not rotated and not revoked.
+
 ## Configuration
 
 | Key | Default |
@@ -161,10 +161,3 @@ another account's session ids.
 
 `SessionEndpointPrefix` is a suffix, not a full path - the same way the two-factor endpoints append
 `/2fa`. The default is `/auth/sessions`, and moving `LocalLogin:EndpointPrefix` moves these with it.
-
-## A custom store
-
-`IRefreshTokenStore` gained `ListActiveAsync`, which returns the live row of every family a user has:
-not rotated, not revoked. There is no default implementation, deliberately - one that returned
-nothing would show an empty session list while the sessions were live, and answer 404 to every
-attempt to revoke one. A compile error is the cheaper failure.

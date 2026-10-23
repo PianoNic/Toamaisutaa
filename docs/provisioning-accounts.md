@@ -1,18 +1,15 @@
 # Provisioning accounts
 
 Three flows, one shape: a secret exists in the clear for exactly one in-process call to an interface
-you implement, and never reaches an HTTP response or a log line. Nothing you install for
-authentication implements any of them - sending mail, or generating a credentials sheet, is not an
-authentication library's job. The opt-in `Toamaisutaa.Email.Smtp` package is the exception, and it
-is a separate package for exactly that reason.
+you implement, and never reaches an HTTP response or a log line. Nothing in the core packages
+implements those interfaces; the opt-in `Toamaisutaa.Email.Smtp` package can.
 
 ## Password reset delivery is yours
 
 `IPasswordResetNotifier` is required and has no default implementation - startup fails without one.
 Requesting a reset always answers 204, for an unknown address, for an account owned by an identity
-provider, and for a notifier that threw alike. The log says which, and that line is the only way
-anyone diagnoses "no email ever arrived" - including when the reason is your notifier failing, not
-the account.
+provider, and for a notifier that threw alike. The log says which, and is the only way to diagnose
+"no email ever arrived".
 
 Writing your own is one method. Mail `resetToken` to `user.Email` as a link to a page of yours that
 posts it, with the new password, to `/auth/password/reset`:
@@ -38,9 +35,8 @@ builder.Services.AddToamaisutaaSmtpEmail(builder.Configuration);   // section "E
 builder.Services.AddToamaisutaaPasswordLogin(builder.Configuration);
 ```
 
-Nothing else changes: it is a plain `IPasswordResetNotifier`, so the package still ships no default
-and nothing about local login treats it specially. Host, port, sender address and the reset link
-template are checked at startup the same way the rest of `LocalLogin` is.
+It is a plain `IPasswordResetNotifier`. Host, port, sender address and the reset link template are
+checked at startup the same way the rest of `LocalLogin` is.
 
 | Key (`Email:Smtp:`) | Default | |
 |---|---|---|
@@ -72,11 +68,8 @@ only when `Oidc:AdminRole` names a role:
 }
 ```
 
-**With no admin role configured they are not mapped at all** - the same rule `/auth/register`
-follows for `AllowSelfRegistration`, and a 404 rather than a route behind a policy that was never
-registered. A notifier registered with no admin role configured logs a warning at startup saying
-exactly that, because the endpoints simply not being there is otherwise hard to tell from a typo in
-the path.
+**With no admin role configured they are not mapped at all**, so they answer 404. A notifier
+registered with no admin role configured logs a warning at startup saying exactly that.
 
 A locally issued token carries no roles until you say so: this package ships no roles table, so
 register an [`IUserRoleProvider`](/customizing-password-login#local-accounts-have-no-roles) that answers
@@ -94,12 +87,9 @@ credentials. Neither ever returns a password, typed or generated: the raw value 
 builder.Services.AddSingleton<IAdminPasswordIssuedNotifier, YourCredentialSheetGenerator>();
 ```
 
-Optional, unlike `IPasswordResetNotifier`: an application that never provisions accounts for someone
-else does not need to register one to use local login at all. Registering it is one of the two
-things that maps the two endpoints - an admin role is the other - and neither exists on the wire
-without both, the same reasoning `/auth/register` uses for `AllowSelfRegistration`. Calling either
-method directly without a notifier registered throws, at the call site rather than at startup,
-because the feature itself is optional.
+Optional, unlike `IPasswordResetNotifier`. Registering it, together with an admin role, is what maps
+the two endpoints - neither exists on the wire without both. Calling either method directly without
+a notifier registered throws, at the call site rather than at startup.
 
 If emailing the password is what you want, `Toamaisutaa.Email.Smtp` supplies a notifier that does:
 
@@ -108,14 +98,12 @@ builder.Services.AddToamaisutaaSmtpEmail(builder.Configuration);   // section "E
 builder.Services.AddToamaisutaaSmtpAdminPasswordEmail();
 ```
 
-Two calls rather than one, because the second is what puts the two endpoints on the wire, and an
-application that installed the package to send reset mail did not ask for them. `Email:Smtp:SignInUrl`
-is put at the end of the message when it is set.
+Two calls rather than one, because the second is what puts the two endpoints on the wire.
+`Email:Smtp:SignInUrl` is put at the end of the message when it is set.
 
 **Never called for a password a person chose for themselves.** Self-registration, a self-service
-change or reset, and completing a reserved invitation never reach `IAdminPasswordIssuedNotifier` -
-there is no code path from any of them to it. The only two ways a password reaches that interface
-are the two methods named above.
+change or reset, and completing a reserved invitation never reach `IAdminPasswordIssuedNotifier`;
+only the two methods named above do.
 
 `AdminSetPasswordAsync` needs no current password, because the caller is acting on someone else's
 account - and revokes every local session the account holds, the same as a self-service change.
@@ -123,9 +111,7 @@ account - and revokes every local session the account holds, the same as a self-
 ### When the notifier fails
 
 The revocation happens before the notifier is called and does not depend on it. A notifier that
-throws leaves the new password set and every session, trusted device and outstanding token gone -
-the account is locked down whether or not the mail went out, because that is the half an admin
-reset exists for.
+throws leaves the new password set and every session, trusted device and outstanding token gone.
 
 What the caller gets is a **502** rather than a 204, with the package's usual error body:
 
@@ -155,8 +141,7 @@ builder.Services.AddSingleton<IInvitationNotifier, YourInvitationEmailSender>();
 
 Same shape as `IAdminPasswordIssuedNotifier`: optional, resolved lazily, and what maps the two
 endpoints at all - with `POST /auth/invitations` wanting an admin role too, as above. The raw token
-exists in the clear only for the one call into `IInvitationNotifier` - never on the wire, and
-`POST /auth/invitations` never returns it.
+exists in the clear only for the one call into `IInvitationNotifier`.
 
 `Toamaisutaa.Email.Smtp` supplies this one too, and the same way:
 
@@ -166,8 +151,7 @@ builder.Services.AddToamaisutaaSmtpInvitationEmail();
 ```
 
 `Email:Smtp:InvitationLinkTemplate` is the page the email points at, with `{token}` replaced by the
-raw token, and startup fails without it - the same way the reset link template is handled, and for
-the same reason: the shipped template cannot invent a page it knows nothing about.
+raw token, and startup fails without it.
 
 Inviting an address that already has an open invitation reuses that reservation and retires its
 earlier links, so only the newest one works - a first link that leaked is dead the moment the address
