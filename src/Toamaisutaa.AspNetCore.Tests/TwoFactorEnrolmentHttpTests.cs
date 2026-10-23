@@ -116,11 +116,20 @@ public class TwoFactorEnrolmentHttpTests
         var confirm = await app.Client.PostJson("/auth/2fa/confirm", new { code }, account.AccessToken);
         await Assert.That(confirm.StatusCode).IsEqualTo(HttpStatusCode.OK);
 
-        var challenge = (await account.LoginAsync()).Json().Result.String("challenge")!;
+        // Otherwise a confirm that never landed signs in with no challenge, and the null posted below
+        // is refused for another reason.
+        var challenge = (await account.LoginAsync()).Json().Result.String("challenge");
+        await Assert.That(challenge).IsNotNull();
+
         var replayed = await app.Client.PostJson("/auth/2fa/verify", new { challenge, code });
 
         await Assert.That(replayed.StatusCode).IsNotEqualTo(HttpStatusCode.OK);
         await Assert.That((await replayed.Json()).Has("access_token")).IsFalse();
+
+        // The same challenge takes the next code, so the refusal above was the replayed code.
+        app.Time.AdvanceToNextTotpStep();
+        var next = await app.Client.PostJson("/auth/2fa/verify", new { challenge, code = Totp.Code(secret, app.Time.Now) });
+        await Assert.That(next.StatusCode).IsEqualTo(HttpStatusCode.OK);
     }
 
     [Test]
