@@ -126,27 +126,32 @@ traffic - there is no third option that does not cost a read per request.
 
 **[docs.toamaisutaa.pianonic.ch](https://docs.toamaisutaa.pianonic.ch)**
 
-- [What is Toamaisutaa?](https://docs.toamaisutaa.pianonic.ch/intro)
-- [Getting started](https://docs.toamaisutaa.pianonic.ch/getting-started)
-- [OIDC bearer validation](https://docs.toamaisutaa.pianonic.ch/oidc)
-- [Local password login](https://docs.toamaisutaa.pianonic.ch/password-login)
-- [Two-factor authentication](https://docs.toamaisutaa.pianonic.ch/two-factor)
-- [Trusted devices](https://docs.toamaisutaa.pianonic.ch/trusted-devices)
-- [Sessions](https://docs.toamaisutaa.pianonic.ch/sessions)
-- [Audit events](https://docs.toamaisutaa.pianonic.ch/audit-events)
-- [Storage and migrations](https://docs.toamaisutaa.pianonic.ch/storage)
-- [Metrics](https://docs.toamaisutaa.pianonic.ch/metrics)
-- [Developer setup](https://docs.toamaisutaa.pianonic.ch/dev-setup)
+Start with the **[quick start](https://docs.toamaisutaa.pianonic.ch/getting-started)**: password
+login with two-factor, running, in one `Program.cs`. Then whichever of these you need:
 
-## Get started (development)
+- Setup: [storage and migrations](https://docs.toamaisutaa.pianonic.ch/storage),
+  [the current user](https://docs.toamaisutaa.pianonic.ch/current-user),
+  [OpenAPI](https://docs.toamaisutaa.pianonic.ch/openapi)
+- Signing in: [OIDC bearer validation](https://docs.toamaisutaa.pianonic.ch/oidc),
+  [local password login](https://docs.toamaisutaa.pianonic.ch/password-login),
+  [two-factor](https://docs.toamaisutaa.pianonic.ch/two-factor),
+  [passkeys](https://docs.toamaisutaa.pianonic.ch/passkeys),
+  [trusted devices](https://docs.toamaisutaa.pianonic.ch/trusted-devices),
+  [magic links](https://docs.toamaisutaa.pianonic.ch/magic-link),
+  [sessions](https://docs.toamaisutaa.pianonic.ch/sessions)
+- Local login in depth: [signing local tokens](https://docs.toamaisutaa.pianonic.ch/token-signing),
+  [password hashing](https://docs.toamaisutaa.pianonic.ch/password-hashing),
+  [breached passwords](https://docs.toamaisutaa.pianonic.ch/breached-passwords),
+  [provisioning accounts](https://docs.toamaisutaa.pianonic.ch/provisioning-accounts),
+  [email verification](https://docs.toamaisutaa.pianonic.ch/email-verification),
+  [customizing](https://docs.toamaisutaa.pianonic.ch/customizing-password-login)
+- Clients and operations: [using this from a SPA](https://docs.toamaisutaa.pianonic.ch/spa),
+  [audit events](https://docs.toamaisutaa.pianonic.ch/audit-events),
+  [metrics](https://docs.toamaisutaa.pianonic.ch/metrics)
 
-Prerequisites: **.NET 10 SDK**, **Docker** for the sample's identity provider.
+## Contributing
 
-```bash
-dotnet build Toamaisutaa.slnx
-dotnet run --project src/Toamaisutaa.Core.Tests/Toamaisutaa.Core.Tests.csproj   # TUnit, runs itself
-cd samples/MinimalApiSample && dotnet run                                        # -> http://localhost:5203
-```
+Building, testing and releasing the package itself: [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Licence
 

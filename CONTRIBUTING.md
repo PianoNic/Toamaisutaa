@@ -1,4 +1,4 @@
-# Developer setup
+# Contributing
 
 Prerequisites: **.NET 10 SDK**, and **Docker** if you want to run the sample against an identity
 provider.
