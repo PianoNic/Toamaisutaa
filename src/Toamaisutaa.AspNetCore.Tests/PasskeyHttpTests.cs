@@ -692,6 +692,32 @@ public class PasskeyHttpTests
         }
     }
 
+    /// <summary>The maximum was checked only when a ceremony began, so ceremonies begun side by side
+    /// each completed and the account went past it.</summary>
+    [Test]
+    public async Task Ceremonies_begun_side_by_side_stop_at_the_maximum()
+    {
+        await using var app = await TestApp.StartAsync(configure: settings => settings["Passkeys:MaxCredentialsPerUser"] = "1");
+        var account = await Account.RegisterAsync(app);
+        using var first = new SoftwareAuthenticator();
+        using var second = new SoftwareAuthenticator();
+
+        var beginFirst = await (await Passkeys.BeginRegistrationAsync(app, account.AccessToken)).Json();
+        var beginSecond = await (await Passkeys.BeginRegistrationAsync(app, account.AccessToken)).Json();
+
+        var completedFirst = await app.Client.PostJson(
+            "/auth/passkeys/register/complete", Passkeys.Fields(first.Create(beginFirst, TestApp.Origin, userVerified: true)), account.AccessToken);
+        var completedSecond = await app.Client.PostJson(
+            "/auth/passkeys/register/complete", Passkeys.Fields(second.Create(beginSecond, TestApp.Origin, userVerified: true)), account.AccessToken);
+
+        await Assert.That(completedFirst.StatusCode).IsEqualTo(HttpStatusCode.Created);
+        await Assert.That(completedSecond.StatusCode).IsEqualTo(HttpStatusCode.BadRequest);
+        await Assert.That(await completedSecond.Content.ReadAsStringAsync()).Contains("maximum");
+
+        var listed = await (await app.Client.Get("/auth/passkeys", account.AccessToken)).Json();
+        await Assert.That(listed.GetArrayLength()).IsEqualTo(1);
+    }
+
     /// <summary>A password change that finished while a registration was verifying had already
     /// deleted every passkey, and the one inserted afterwards signed in on its own.</summary>
     [Test]
