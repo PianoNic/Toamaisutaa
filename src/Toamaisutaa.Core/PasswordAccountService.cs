@@ -31,8 +31,8 @@ internal sealed class PasswordAccountService(
         if (string.IsNullOrWhiteSpace(request.UserName))
             return AccountResult.Failure("Choose a user name.");
 
-        if (IsAddressShaped(request.UserName))
-            return AccountResult.Failure(AddressShapedUserName);
+        if (IsUnusableUserName(request.UserName))
+            return AccountResult.Failure(UnusableUserName);
 
         if (!string.IsNullOrWhiteSpace(request.Email) && !IsBareAddress(request.Email))
             return AccountResult.Failure(NotABareAddress);
@@ -170,8 +170,8 @@ internal sealed class PasswordAccountService(
         if (string.IsNullOrWhiteSpace(userName))
             return AccountResult.Failure("Choose a user name.");
 
-        if (IsAddressShaped(userName))
-            return AccountResult.Failure(AddressShapedUserName);
+        if (IsUnusableUserName(userName))
+            return AccountResult.Failure(UnusableUserName);
 
         if (!string.IsNullOrWhiteSpace(email) && !IsBareAddress(email))
             return AccountResult.Failure(NotABareAddress);
@@ -683,8 +683,8 @@ internal sealed class PasswordAccountService(
         if (string.IsNullOrWhiteSpace(userName))
             return AccountResult.Failure("Choose a user name.");
 
-        if (IsAddressShaped(userName))
-            return AccountResult.Failure(AddressShapedUserName);
+        if (IsUnusableUserName(userName))
+            return AccountResult.Failure(UnusableUserName);
 
         var now = timeProvider.GetUtcNow();
         var stored = await invitationTokens.FindByHashAsync(SecureTokens.HashToken(invitationToken), cancellationToken);
@@ -913,13 +913,16 @@ internal sealed class PasswordAccountService(
     }
 
     // An address-shaped user name would hold that address in a column proving the mailbox cannot release.
-    private const string AddressShapedUserName = "A user name cannot contain @. An email address goes in the email field.";
+    private const string UnusableUserName =
+        "A user name cannot contain @, or a letter that compares as a different one (such as the long s, ſ). "
+        + "An email address goes in the email field.";
 
     private const string NoSignInName =
         "This account has no user name to sign in with. An email address from an identity provider cannot stand in for one, "
         + "because nothing here has proved it.";
 
-    private static bool IsAddressShaped(string userName) => userName.Contains('@');
+    // A name that folds into another would hold that other name's identifier.
+    private static bool IsUnusableUserName(string userName) => userName.Contains('@') || !Normalizer.FoldsCleanly(userName);
 
     // A display name in front of the address would carry arbitrary text from this domain to any inbox.
     private const string NotABareAddress = "Give just the email address, with nothing around it.";
@@ -931,11 +934,12 @@ internal sealed class PasswordAccountService(
     private static bool IsBareAddress(string email) =>
         System.Net.Mail.MailAddress.TryCreate(email.Trim(), out var parsed)
         && parsed.DisplayName.Length == 0
-        && string.Equals(parsed.Address, email.Trim(), StringComparison.Ordinal);
+        && string.Equals(parsed.Address, email.Trim(), StringComparison.Ordinal)
+        && Normalizer.FoldsCleanly(email);
 
     // Never the email: it is only what an identity provider asserted.
     private static string? SignInName(ToamaisutaaUser user) =>
-        string.IsNullOrWhiteSpace(user.UserName) || IsAddressShaped(user.UserName) ? null : user.UserName.Trim();
+        string.IsNullOrWhiteSpace(user.UserName) || IsUnusableUserName(user.UserName) ? null : user.UserName.Trim();
 
     private ToamaisutaaPasswordCredential BuildCredential(Guid userId, string userName, string? email, string password, DateTimeOffset now) =>
         new()
