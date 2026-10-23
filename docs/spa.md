@@ -103,7 +103,7 @@ if (body.recovery_codes_running_low) promptToRegenerateCodes()
 signedIn(body)
 ```
 
-`recovery_codes_running_low` is `true` or absent, never `false` - test it as truthy.
+`recovery_codes_running_low` is `true` or `null`, never `false` - test it as truthy.
 
 ## Refresh on 401
 

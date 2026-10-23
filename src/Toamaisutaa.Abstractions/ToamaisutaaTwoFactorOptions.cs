@@ -4,7 +4,7 @@ namespace Toamaisutaa.Abstractions;
 public sealed class ToamaisutaaTwoFactorOptions
 {
     /// <summary>
-    /// Base64, at least 32 bytes. Required once two-factor is registered. Separate from the token
+    /// Base64, exactly 32 bytes. Required once two-factor is registered. Separate from the token
     /// signing key.
     /// </summary>
     /// <remarks>

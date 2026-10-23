@@ -14,8 +14,20 @@ provider, and for a notifier that threw alike. The log says which, and that line
 anyone diagnoses "no email ever arrived" - including when the reason is your notifier failing, not
 the account.
 
-Writing your own is one method. If SMTP is enough, `Toamaisutaa.Email.Smtp` is an opt-in package
-that supplies one instead:
+Writing your own is one method. Mail `resetToken` to `user.Email` as a link to a page of yours that
+posts it, with the new password, to `/auth/password/reset`:
+
+```csharp
+public sealed class MyResetNotifier : IPasswordResetNotifier
+{
+    public Task SendAsync(ToamaisutaaUser user, string resetToken, CancellationToken cancellationToken = default) =>
+        /* send https://app.example.com/reset?token={resetToken} to user.Email */ Task.CompletedTask;
+}
+
+builder.Services.AddSingleton<IPasswordResetNotifier, MyResetNotifier>();
+```
+
+If SMTP is enough, `Toamaisutaa.Email.Smtp` is an opt-in package that supplies one instead:
 
 ```bash
 dotnet add package Toamaisutaa.Email.Smtp
@@ -29,6 +41,21 @@ builder.Services.AddToamaisutaaPasswordLogin(builder.Configuration);
 Nothing else changes: it is a plain `IPasswordResetNotifier`, so the package still ships no default
 and nothing about local login treats it specially. Host, port, sender address and the reset link
 template are checked at startup the same way the rest of `LocalLogin` is.
+
+| Key (`Email:Smtp:`) | Default | |
+|---|---|---|
+| `Host` | | Required |
+| `Port` | `587` | |
+| `User` / `Password` | | Leave both out for a relay that takes no login |
+| `Security` | `Auto` | `Auto` uses TLS on 465 and required STARTTLS elsewhere. Also `StartTls`, `SslOnConnect`, `None` (local relay only) |
+| `From` / `FromDisplayName` | | `From` is required |
+| `PasswordResetLinkTemplate` | | Required. Your reset page, with `{token}` where the token goes |
+| `InvitationLinkTemplate` | | Required with `AddToamaisutaaSmtpInvitationEmail` |
+| `EmailVerificationLinkTemplate` | | Required with `AddToamaisutaaSmtpEmailVerification` |
+| `MagicLinkTemplate` | | Required with `AddToamaisutaaSmtpMagicLink` |
+| `SignInUrl` | | Optional, put at the end of an admin-issued password mail |
+| `Timeout` | `00:00:30` | |
+| `SkipCertificateVerification` | `false` | Self-signed relay on a private network only |
 
 ## The three admin endpoints need an admin role
 

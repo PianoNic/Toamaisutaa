@@ -88,7 +88,7 @@ const begin = await (await fetch('/auth/passkeys/register/begin', {
 })).json();
 
 const created = await navigator.credentials.create({
-  publicKey: decodeOptions(begin.options),   // base64url -> ArrayBuffer, see below
+  publicKey: decodeOptions(begin.options),   // the helpers are defined below
 });
 
 await fetch('/auth/passkeys/register/complete', {
@@ -130,7 +130,26 @@ register inside the window. Removing a passkey still takes the password alone.
 
 Every binary field is base64url in both directions. Standard base64 and padding either way are
 accepted too, because the encoding happens in whatever your client is written in and they do not
-agree.
+agree. The two helpers the snippets use:
+
+```js
+const b64url = buffer => buffer && btoa(String.fromCharCode(...new Uint8Array(buffer)))
+  .replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+
+const bytes = text => Uint8Array.from(atob(text.replace(/-/g, '+').replace(/_/g, '/')), c => c.charCodeAt(0));
+
+// The options arrive as JSON; the browser wants the challenge and the ids as bytes.
+const decodeOptions = options => ({
+  ...options,
+  challenge: bytes(options.challenge),
+  ...(options.user && { user: { ...options.user, id: bytes(options.user.id) } }),
+  ...(options.excludeCredentials && { excludeCredentials: options.excludeCredentials.map(c => ({ ...c, id: bytes(c.id) })) }),
+  ...(options.allowCredentials && { allowCredentials: options.allowCredentials.map(c => ({ ...c, id: bytes(c.id) })) }),
+});
+```
+
+Browsers that have `PublicKeyCredential.parseCreationOptionsFromJSON` and
+`parseRequestOptionsFromJSON` can use those instead of `decodeOptions`.
 
 ## Signing in, from a browser
 
@@ -229,9 +248,10 @@ one shot, so a failed one is not a typo.
 uses. `404` covers both a passkey that does not exist and one belonging to somebody else, so the
 endpoint cannot be used to find out which ids are real.
 
-It takes the same proof registering does - `{ "currentPassword": "..." }` in the body, or a second
-factor within `Passkeys:RegistrationProofWindow` - and answers `400` without it. A bearer token alone
-could otherwise delete every passkey on an account that has no password.
+It takes proof as registering does - `{ "currentPassword": "..." }` in the body, or a second factor
+within `Passkeys:RegistrationProofWindow` - and answers `400` without it. Unlike registering, the
+password alone is enough even on an account with a second factor, since removing a way in adds
+none. A bearer token alone could otherwise delete every passkey on an account that has no password.
 
 Deleting one ends every session on the account, including the one that asked. Nothing records which
 session a given key opened, and a key is removed when somebody suspects it is not only in their hands,
