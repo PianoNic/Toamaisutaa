@@ -111,26 +111,21 @@ changes no credential the account already has, so the token that called it keeps
 
 ::: warning A bearer token is not enough to register one
 `/register/begin` wants proof that the caller holds a credential the account already has -
-`currentPassword`, or a session that presented a second factor within `RegistrationProofWindow`. A
-passkey signs in with no password and no code, so adding one is adding a way into the account, which
-puts it alongside disabling the second factor rather than alongside reading a list.
-
-A stolen access token would otherwise buy a permanent one. `400` with `errors` when the proof is
-missing or wrong; `/register/complete` asks for nothing further, because the challenge it redeems
-was only issued against a proof that held.
+`currentPassword`, or a session that presented a second factor within `RegistrationProofWindow`.
+Otherwise a stolen access token would buy a permanent way in. `400` with `errors` when the proof is
+missing or wrong; `/register/complete` asks for nothing further.
 
 **An account with no password** - one an identity provider owns, or one whose only credential is
 already a passkey - proves a second factor instead: sign in with a passkey, or complete
 `/auth/2fa/step-up`, then register while `toa_2fa_at` is still inside the window.
 
 **An account with a confirmed second factor** has to present it too; the password alone is refused.
-The passkey would otherwise be a way in that skips the code. Complete `/auth/2fa/step-up`, then
-register inside the window. Removing a passkey still takes the password alone.
+Complete `/auth/2fa/step-up`, then register inside the window. Removing a passkey still takes the
+password alone.
 :::
 
-Every binary field is base64url in both directions. Standard base64 and padding either way are
-accepted too, because the encoding happens in whatever your client is written in and they do not
-agree. The two helpers the snippets use:
+Every binary field is base64url in both directions; standard base64 and padding are accepted too.
+The two helpers the snippets use:
 
 ```js
 const b64url = buffer => buffer && btoa(String.fromCharCode(...new Uint8Array(buffer)))
@@ -172,17 +167,14 @@ const tokens = await (await fetch('/auth/passkeys/assertion/complete', {
 })).json();
 ```
 
-The response is the body `/auth/login` returns: `access_token`, `refresh_token`, `expires_in`,
-`token_type`.
+The response is [the token body `/auth/login` returns](/password-login#bodies).
 
 ::: tip There is no user name box
 `/assertion/begin` takes no identifier. The browser finds a discoverable credential itself and the
-assertion says who it belongs to, so the endpoint has nothing that could answer whether an account
-exists - and your sign-in page needs no field before the button.
+assertion says who it belongs to, so your sign-in page needs no field before the button.
 
-The corollary is that credentials are always registered as discoverable. An authenticator that
-cannot store one is refused at registration rather than at the sign-in where it would silently fail
-to appear.
+Credentials are therefore always registered as discoverable, and an authenticator that cannot store
+one is refused at registration.
 :::
 
 ## What the token claims
@@ -194,11 +186,8 @@ to appear.
 | `toa_2fa_at` | When the assertion happened |
 
 `hwk` and `user` are RFC 8176: proof of possession of a hardware-secured key, and a user-presence
-test. `mfa` is the one a policy reads, and it is added only for an assertion the authenticator
-actually verified the user for - a PIN or a biometric, rather than a bare touch.
-
-All three are carried on the refresh family, so a rotation replays them. A session established with
-a passkey is still a passkey session an hour later.
+test. `mfa` is added only when the authenticator verified the user - a PIN or a biometric, rather
+than a bare touch. All three are carried on the refresh family, so a rotation keeps them.
 
 ## Enforcement
 
@@ -208,21 +197,19 @@ satisfies it outright:
 - **`RequiredForLocalLogin`** challenges an enrolled user during a *password* sign-in. A passkey
   sign-in is not one, and it already proved two factors.
 - **`RequiredForAll`** puts `toa_2fa_required` on the token of anyone who has not enrolled. A
-  verified passkey token does not carry it, so a user whose only second factor is their phone is
-  not told to go and set up an authenticator app as well.
+  verified passkey token does not carry it.
 
 An assertion without user verification - only possible with `RequireUserVerification` off - proves
 possession alone, and the enforcement above applies to it exactly as it does to a password:
 
 - An account with **no** confirmed TOTP enrolment signs in. The token carries `hwk user` and no
   `mfa`, and `toa_2fa_required` appears under `RequiredForAll` as it would on any other first factor.
-- An account **with** one is challenged. `/assertion/complete` answers the same shape `/auth/login`
-  does - `{ "two_factor_required": true, "challenge": "...", "expires_in": 300 }` - and the code goes
-  to `/auth/2fa/verify`. The finished token carries `hwk user otp mfa`: what the authenticator proved,
+- An account **with** one is challenged. `/assertion/complete` answers
+  [the challenge shape `/auth/login` does](/password-login#bodies), and the code goes to
+  `/auth/2fa/verify`. The finished token carries `hwk user otp mfa`: what the authenticator proved,
   replayed off the challenge, plus what the code proved.
 
-Enrolment alone decides that, in every enforcement mode. Somebody who turned a second factor on is
-asked for it, and one borrowed security key with no PIN is not the way around it.
+Enrolment alone decides that, in every enforcement mode.
 
 ## What is stored
 
@@ -233,14 +220,10 @@ The credential row holds the public key - public by definition, so unlike a TOTP
 nothing to encrypt - and the authenticator's signature counter. A counter that fails to advance is
 how a cloned authenticator gives itself away, and an assertion carrying one is refused.
 
-The challenge row holds the WebAuthn options exactly as they went to the browser. They carry the
-challenge, the relying party and the user verification requirement, and every one of those is a rule
-the completion step measures the authenticator against - so they are kept here rather than handed to
-the client to give back, which would let it mark its own work.
+The challenge row holds the WebAuthn options exactly as they went to the browser, so the completion
+step measures the authenticator against what the server sent rather than what the client gives back.
 
-A challenge is spent the moment it is redeemed, whether or not the assertion then verified. A
-mistyped six-digit code deserves a second try; an authenticator response is produced by software in
-one shot, so a failed one is not a typo.
+A challenge is spent the moment it is redeemed, whether or not the assertion then verified.
 
 ## Deleting one
 
@@ -250,24 +233,20 @@ endpoint cannot be used to find out which ids are real.
 
 It takes proof as registering does - `{ "currentPassword": "..." }` in the body, or a second factor
 within `Passkeys:RegistrationProofWindow` - and answers `400` without it. Unlike registering, the
-password alone is enough even on an account with a second factor, since removing a way in adds
-none. A bearer token alone could otherwise delete every passkey on an account that has no password.
+password alone is enough even on an account with a second factor.
 
-Deleting one ends every session on the account, including the one that asked. Nothing records which
-session a given key opened, and a key is removed when somebody suspects it is not only in their hands,
-so none of them is left to outlive it. Sign in again afterwards.
+Deleting one ends every session on the account, including the one that asked, since nothing records
+which session a given key opened. Sign in again afterwards.
 
 ### And by a password reset
 
 Setting a password deletes every passkey on the account, wherever it is set from: `/auth/password`,
-`/auth/password/reset` and the administrator's `/auth/users/{userId}/password`. It is the same list
-the sessions and the trusted devices are on, and for the same reason - somebody doing any of those
-is reacting to another person having had access, and a credential that signs in with no password at
-all would outlive the one remediation the package offers.
+`/auth/password/reset` and the administrator's `/auth/users/{userId}/password` - alongside the
+sessions and the trusted devices, because somebody doing any of those is reacting to another person
+having had access.
 
 Say so on the reset screen. Re-registering is one prompt on the device that still holds the
-credential, and the alternative is a reset that ends every session while leaving whatever somebody
-else registered exactly where it was.
+credential.
 
 ::: warning The last passkey on a passwordless account
 Nothing stops a user deleting their only credential. If they have no password either, that is the

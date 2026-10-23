@@ -9,8 +9,8 @@ not.** Fifteen minutes against fourteen days. Almost every decision below follow
 
 ## Where to put the tokens
 
-There is no single right answer, and the package deliberately does not choose for you - it returns
-tokens in a response body and reads them from a request body, so your application owns the transport.
+The package returns tokens in a response body and reads them from a request body, so your
+application owns the transport and the choice.
 
 | | Access token | Refresh token | Device token |
 |---|---|---|---|
@@ -34,18 +34,9 @@ render finishes.
 
 ## Signing in has two success shapes
 
-::: danger Read this one even if you skim the rest
-`POST /auth/login` returns **200 with tokens** or **200 with a challenge and no tokens**. Same status
-code, different bodies, and the second one does not exist until a user enrols in two-factor - after
-which it exists forever.
-
-A client that checks `response.ok` and reads `access_token` works perfectly until the first person
-turns on 2FA, then breaks for that person only, in production, long after this code was written.
-**Branch on `two_factor_required`.**
-:::
-
-This is the branch clients get wrong, because it does not exist until somebody enrols in two-factor
-and then it exists forever.
+`/auth/login` answers 200 with tokens **or** 200 with a two-factor challenge and no tokens - see
+[the two shapes](/password-login#bodies), and why requests are camelCase while these responses are
+snake_case. Branch on `two_factor_required`, never on `response.ok`:
 
 ```js
 const response = await fetch('/auth/login', {
@@ -71,20 +62,10 @@ if (body.two_factor_required) {
 signedIn(body)   // access_token, refresh_token, expires_in, token_type
 ```
 
-Both shapes are 200. A client that checks `response.ok` and reads `access_token` gets `undefined`
-the first time any user turns on two-factor, which is a bug that ships long after the code was
-written.
-
-::: tip Field names
-Request bodies are camelCase. **Sign-in responses are snake_case**, because they are the RFC 6749
-names a token endpoint is expected to use. Everything else this package returns is camelCase. See
-[the bodies](/password-login#bodies).
-:::
-
 ### Finishing with a code
 
 `challenge` is worth exactly one sign-in and expires in five minutes. `code` takes a TOTP code or a
-recovery code - one field, because the person typing it should not have to tell you which they hold.
+recovery code.
 
 ```js
 const response = await fetch('/auth/2fa/verify', {
@@ -129,10 +110,9 @@ async function api(path, init = {}) {
 }
 ```
 
-**The single-flight is not an optimisation.** Refresh tokens rotate: each one works once, and
-presenting an already-rotated token is how this package detects a stolen refresh token. Two parallel
-refreshes look exactly like theft, so the family is revoked, every session ends, and every trusted
-device goes with it. A dashboard that fires six requests on load will do this on the first expiry.
+**The single-flight is not an optimisation.** Two parallel refreshes look exactly like a stolen
+refresh token, so the family is revoked, every session ends, and every trusted device goes with it.
+A dashboard that fires six requests on load will do this on the first expiry.
 
 Refreshing proactively - a timer at `expires_in` minus a minute - is also fine, and does not remove
 the need for the 401 path. A laptop that slept through the expiry wakes up with a dead token.
@@ -180,11 +160,10 @@ showOnceAndOfferDownload(recoveryCodes)
 
 Three things to design around:
 
-**Your access token dies at step 3.** Confirming moves the user's security stamp, which revokes
-every session that existed before it - including the one that just called `confirm`. The next
-request answers **401 with `"error": "invalid_token"`**, so the refresh-on-401 wrapper above already
-handles it and the user notices nothing. If you call these endpoints outside that wrapper, refresh
-explicitly. The same is true of disabling two-factor and of regenerating recovery codes.
+**Your access token dies at step 3.** Confirming moves the user's security stamp, so the next request
+answers **401 with `"error": "invalid_token"`** and the refresh-on-401 wrapper above handles it. If
+you call these endpoints outside that wrapper, refresh explicitly. The same is true of disabling
+two-factor and of regenerating recovery codes.
 
 **Step 4 is the only time.** Recovery codes are stored hashed and cannot be shown again. A user who
 closes that dialog has to regenerate to get a new set. Make it hard to close by accident.
@@ -213,17 +192,9 @@ same body - store it and discard the old one. Presenting a spent one revokes the
 if (body.device_token) storeDeviceToken(body.device_token)   // on every sign-in, not just the first
 ```
 
-Two consequences worth knowing before somebody reports them as bugs:
-
-- **Two tabs signing in at once will lose the device.** Both present the same token, the second
-  looks like a replay, and the family is revoked. Refresh tokens behave the same way and it is the
-  right trade, but it is a real thing that happens.
-- **`device_expires_in` counts down and does not reset.** The thirty days run from when the device
-  was first trusted, so a rotated token reports a smaller number each time. That is the absolute
-  lifetime being visible, not a bug.
-
-A recovery code never produces a device token. Redeeming one means the authenticator is gone, so it
-revokes every trusted device instead.
+Two tabs signing in at once will lose the device: both present the same token, and the second looks
+like a replay. `device_expires_in` counts down rather than resetting. See
+[trusted devices](/trusted-devices) for everything that revokes one.
 
 ## Handling a 403 from a freshness policy
 
@@ -265,9 +236,6 @@ Three things to get right:
 - **The code field takes a recovery code too**, and using one here un-trusts every device, exactly
   as it does at sign-in. Say so next to the input.
 
-Not every 403 is worth a prompt: for a page the user simply cannot reach, showing the wall is
-kinder than asking for a code and then showing it anyway.
-
 ## Signing out
 
 ```js
@@ -282,10 +250,7 @@ Always 204, whether or not that token existed. It revokes the refresh family and
 leaves trusted devices alone** - a device surviving a sign-out is the entire point of having trusted
 it. Clear the access and refresh tokens on the client; keep the device token.
 
-Access tokens already issued keep working until they expire, up to
-`LocalLogin:AccessTokenLifetime`. There is no way to revoke one, by design - checking a revocation
-list on every request is a database read this package will not add. Shorten the lifetime if that
-window matters to you.
+The access token already issued keeps working [until it expires](/sessions#what-a-revoke-actually-ends).
 
 ## Configuration the client reads at startup
 

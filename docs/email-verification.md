@@ -7,11 +7,10 @@ comes back.** Asking changes nothing, mail proves control, redemption writes it.
 builder.Services.AddSingleton<IEmailVerificationNotifier, YourEmailSender>();
 ```
 
-Optional, like `IInvitationNotifier` and unlike `IPasswordResetNotifier`: an application that never
-verifies an address does not need one to use local login at all. Registering it is also what maps
-the two endpoints - neither exists on the wire without it. Calling
+Optional, like `IInvitationNotifier` and unlike `IPasswordResetNotifier`. Registering it is what
+maps the two endpoints - neither exists on the wire without it. Calling
 `IPasswordAccountService.RequestEmailChangeAsync` without one throws, at the call site rather than
-at startup, because the feature itself is optional.
+at startup.
 
 If SMTP is what you want, `Toamaisutaa.Email.Smtp` supplies a notifier:
 
@@ -76,10 +75,8 @@ verifies an address on its own, because nothing in this package sends mail on it
   `NormalizedEmail` are cleared. It typed the address in and never proved it; this account just did.
 
 **Sessions stay alive.** Proving an address is not a credential change, so the security stamp does
-not move and nobody is signed out. A *password* change is the other way round: it revokes the
-sessions, and it also retires any outstanding verification link, because a pending change of address
-is a credential in flight and a password change is the moment somebody is most likely reacting to a
-break-in.
+not move and nobody is signed out. A *password* change, by contrast, revokes the sessions and also
+retires any outstanding verification link.
 
 ## Requiring a verified address before a password reset
 
@@ -90,9 +87,8 @@ Off by default:
 ```
 
 With it on, `/auth/password/forgot` issues nothing for a credential whose address was never
-verified. The response is 204 either way - the whole point of that endpoint is that a caller cannot
-tell a real account from an unknown one - so the log line naming `EmailNotVerified` is the only way
-anyone diagnoses "no mail arrived". It says so in one line, with the user id and the option's name.
+verified. The response is still 204, so the log line naming `EmailNotVerified`, with the user id and
+the option's name, is the only way to diagnose "no mail arrived".
 
 ::: danger It takes password reset away from every existing account at once
 Every credential already in the database has `EmailConfirmedAt` null. Switching this on locks all of

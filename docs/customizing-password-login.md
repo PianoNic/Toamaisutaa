@@ -41,8 +41,9 @@ package signs with an RSA or EC key and publishes the public half itself - see
 builder.Services.AddSingleton<IAccessTokenIssuer, YourTokenIssuer>();
 ```
 
-If you add a claim, read [what `RefreshAsync` has to answer for](/password-login#a-new-claim-and-the-refresh-path)
-before you ship it.
+If you add a claim, decide what `RefreshAsync` does with it: recompute it, carry it on the refresh
+token row, or drop it deliberately. A claim the refresh path forgets is right at sign-in and missing
+one `AccessTokenLifetime` later.
 
 ## Local accounts have no roles
 

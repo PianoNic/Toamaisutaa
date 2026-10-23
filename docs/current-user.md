@@ -47,12 +47,10 @@ public sealed class ArchiveService(ICurrentUser currentUser)
 }
 ```
 
-- **`Roles`** reads the claim `Oidc:RoleClaim` names - `roles` by default, `groups` on Pocket ID,
-  Authentik and Entra - and the role claim type the principal's own identities name, which is the
-  one `RequireRole` reads and is .NET's own type for a principal that came from cookies or a scheme
-  of your own. Both reads, so a role check in a service and one on a route answer alike whichever
-  registration built the principal. Empty on an anonymous request, and empty for a locally
-  issued token until an
+- **`Roles`** reads both the claim `Oidc:RoleClaim` names - `roles` by default, `groups` on Pocket
+  ID, Authentik and Entra - and the role claim type the principal's own identities name, which is the
+  one `RequireRole` reads. So a role check in a service and one on a route answer alike. Empty on an
+  anonymous request, and empty for a locally issued token until an
   [`IUserRoleProvider`](/customizing-password-login#local-accounts-have-no-roles) supplies some.
 - **`IsInRole`** compares ordinally, the same comparison `RequireRole` makes.
 - **`FindClaim`** takes a raw JWT claim type - `tenant_id`, not the WS-Federation URI - because

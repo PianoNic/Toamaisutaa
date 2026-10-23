@@ -9,9 +9,8 @@ builder.Services.AddToamaisutaaTwoFactor(builder.Configuration);   // section "T
 app.MapToamaisutaaTwoFactorEndpoints();
 ```
 
-No new dependency. RFC 6238 is a keyed hash, a big-endian counter and a modulo, all of which are in
-the base class library, so there is no TOTP package here and no QR code renderer either - enrolment
-hands you an `otpauth://` URI and your application draws it.
+No new dependency, and no QR code renderer: enrolment hands you an `otpauth://` URI and your
+application draws it.
 
 ::: tip Passkeys are the other way to do this
 A [passkey](/passkeys) proves possession and verifies the person in one browser prompt, which is two
@@ -38,9 +37,8 @@ enrol, be handed recovery codes, and never once be challenged.
 | POST | `/auth/2fa/step-up` | Authenticated | 200 with a challenge, 400, or 401 |
 | POST | `/auth/2fa/step-up/verify` | Authenticated | 200 with a new access token, 400, or 401 |
 
-These are this package's own shapes, so they are camelCase in both directions. `/auth/2fa/verify` is
-the exception: it ends a sign-in, so it returns the same RFC 6749 token body as
-[`/auth/login`](/password-login#bodies).
+These are camelCase in both directions, except that `/auth/2fa/verify` ends a sign-in and returns
+the [RFC 6749 token body](/password-login#bodies) `/auth/login` does.
 
 ### Bodies
 
@@ -61,10 +59,8 @@ Send the current password:
 An account with no password - one an identity provider owns, or a passkey-only one - sends no body
 and instead needs a sign-in within `TwoFactor:EnrolmentProofWindow` (five minutes by default), read
 off the token's `auth_time` or `toa_2fa_at`. A wrong password counts toward the account lockout.
-
-That token is the access token, and many providers put `auth_time` only in the ID token - Entra and
-Auth0 leave it out of access tokens by default, and `prompt=login` does not change that. Configure
-the provider to include it, or a provider-only account gets 400 here however recently it signed in.
+Many providers leave `auth_time` out of access tokens - see
+[the warning on first passwords](/password-login#bodies), which applies here too.
 
 Render `uri` as a QR code; show `secret` for anyone typing it in by hand.
 
@@ -122,9 +118,7 @@ POST /auth/2fa/step-up/verify   authenticated            → 200 with a new acce
 ```
 
 **No refresh token comes back, and none is needed.** Your existing one keeps working; replace only
-the access token. Rotating the family here would mean a client that ignored a new refresh token
-presented a spent one at its next refresh, tripping reuse detection - so proving your identity would
-end every session you have.
+the access token.
 
 ### What it changes
 
@@ -135,13 +129,11 @@ end every session you have.
 | `amr` | `["pwd","mfa"]` | `["pwd","mfa","otp"]` |
 
 `amr` only ever grows. A session that signed in on a trusted device carries no `otp`, and after a
-live TOTP step-up it does - so a policy written as `RequireClaim("amr", "otp")` starts passing
-rather than the user who just did the most work being the one it refuses. Nothing is ever removed,
-so no policy that passed before a step-up can start failing after one.
+live TOTP step-up it does, so a policy written as `RequireClaim("amr", "otp")` starts passing. No
+policy that passed before a step-up can start failing after one.
 
-A recovery code adds only `mfa`, matching what a recovery *sign-in* records - RFC 8176 has no
-`recovery` value and this package does not invent claim values. Which factor it actually was lives
-in `toa_2fa_source`.
+A recovery code adds only `mfa`, matching what a recovery *sign-in* records. Which factor it actually
+was lives in `toa_2fa_source`.
 
 ### What it does not change
 
@@ -151,26 +143,21 @@ elevated, so proving you are yourself would sign you out.
 ### Things worth knowing before you wire it up
 
 - **A trusted device cannot satisfy a step-up.** There is no device token field on either endpoint -
-  a cached factor is exactly what step-up exists to refuse, so the way it is refused is that there
-  is nothing to present.
-- **A recovery code can, and it un-trusts every device.** Same inference as at sign-in: the
-  authenticator is gone. That does not change based on which endpoint it was typed into.
+  a cached factor is exactly what step-up exists to refuse.
+- **A recovery code can, and it un-trusts every device**, exactly as at sign-in: the authenticator is
+  gone.
 - **Wrong codes count toward lockout.** Somebody holding a stolen access token can lock the owner
-  out of step-up, and that is the right trade - the alternative is handing that same person an
-  unthrottled six-digit oracle. The user keeps ordinary access for the life of the token they hold
-  and loses step-up for the lockout window.
+  out of step-up for the lockout window; the owner keeps ordinary access for the life of the token
+  they hold.
 - **A signed-out session cannot step up**, even while its access token is still inside its lifetime.
 - **Identity-provider sessions cannot step up.** 400, not 401, naming the limitation: this package
-  cannot mint a replacement for a token it did not issue. Same boundary as everywhere else.
+  cannot mint a replacement for a token it did not issue.
 
 ## Enrolment is two steps, on purpose
 
 `begin` generates a secret and stores it **unconfirmed**. Nothing is enabled. `confirm` takes a
-working code, and only then is the second factor on.
-
-One step would mean that anyone who opened the settings page, generated a secret and closed the tab
-without scanning anything would be locked out of their own account with no way back in. The
-ceremony exists so that the account is never protected by a secret nobody has proved they hold.
+working code, and only then is the second factor on, so the account is never protected by a secret
+nobody has proved they hold.
 
 Calling `begin` twice replaces the first secret, which is correct - and does mean that someone who
 scanned the first QR code and then reloaded the page is holding a dead one. `confirm` cannot tell a
@@ -179,22 +166,10 @@ against, but it can tell that the row was rewritten, and says so.
 
 ## Signing in becomes two steps too
 
-`/auth/login` gains a second success shape. For an enrolled user it returns **200 with a challenge
-and no tokens**:
-
-```json
-{ "two_factor_required": true, "challenge": "No1CXq9-...", "expires_in": 300 }
-```
-
-Present that with a code to `/auth/2fa/verify` and you get the usual token pair back. The code field
-takes a TOTP code or a recovery code - one field, because the person typing it should not have to
-tell you which kind they are holding when the shape already says.
-
-::: warning Breaking change
-Existing clients that assume `/auth/login` returns tokens will break the moment a user enrols. This
-is why it is a status shape rather than a new status code: the branch is explicit and cannot be
-missed by a client that only checks for 200.
-:::
+For an enrolled user, `/auth/login` answers 200 with a challenge and no tokens - see
+[the two sign-in shapes](/password-login#bodies). Present that with a code to `/auth/2fa/verify` and
+you get the usual token pair back. The code field takes a TOTP code or a recovery code - one field,
+because the person typing it should not have to tell you which kind they are holding.
 
 ### The challenge is not a token
 
@@ -222,11 +197,9 @@ by an identity provider, or signing in with a passkey alone - keeps the same cou
 ## Recovery codes
 
 Ten of them, shown exactly once, and stored as an HMAC under a key derived from
-`TwoFactor:EncryptionKey`. A code is ten characters so a person can type it from paper, which is
-about fifty bits: plenty against guessing online, nowhere near enough against a copy of the table.
-Stored as a plain hash, one offline sweep recovered every user's codes; keyed, the table alone is not
-enough to check a guess. Codes hashed under a retired key, or issued before codes were keyed, are
-still accepted until the set is regenerated.
+`TwoFactor:EncryptionKey`, so a copy of the table alone is not enough to check a guess. Codes hashed
+under a retired key, or issued before codes were keyed, are still accepted until the set is
+regenerated.
 
 The ones issued before keying are still plain hashes, and a copy of the table still gives them up.
 They are the rows with a `HashVersion` of 0, so they can be counted:
@@ -247,8 +220,7 @@ Hyphens, spaces and case are ignored when a code is typed back.
 ## Replay protection
 
 A code is accepted only if its time step is strictly newer than the last one accepted. Without that,
-an observed code stays usable for the rest of its drift window - ninety seconds at the default - and
-anything that can see a code once can replay it.
+an observed code stays usable for the rest of its drift window - ninety seconds at the default.
 
 The cost is that the same code cannot be used twice in a row, which matters when scripting: wait for
 the next step.
@@ -267,10 +239,8 @@ in this package that cannot be a one-way function. AES-256-GCM, under **its own 
 }
 ```
 
-Use a different key from `LocalLogin:SigningKey`. They do different jobs, they rotate on different
-schedules - rotating a signing key signs people out for fifteen minutes, rotating this one means
-re-encrypting every enrolment - and a signing key can be
-[asymmetric](/token-signing), which an AES key cannot be.
+Use a different key from `LocalLogin:SigningKey`: they rotate on different schedules, and a signing
+key can be [asymmetric](/token-signing), which an AES key cannot be.
 
 Rotate the same way as the pepper - move the old key into `TwoFactor:RetiredEncryptionKeys` under its
 version marker, set a new key and version, and rows re-encrypt themselves as people sign in.
@@ -290,9 +260,9 @@ builder.Services.AddToamaisutaaTwoFactor(builder.Configuration);
 on the same terms the default does: decrypt anything you have a key for, re-encrypt under the current
 one as rows are touched.
 
-`ITotpProvider` and `IRecoveryCodeProvider` are seams for the same reason - generating and checking
-the codes, and generating the recovery codes - though there is rarely a reason to move off RFC 6238.
-Replace `IRecoveryCodeProvider` if you want a different code format from the `XXXXX-XXXXX` default.
+`ITotpProvider` and `IRecoveryCodeProvider` are seams too - generating and checking the codes, and
+generating the recovery codes. Replace `IRecoveryCodeProvider` if you want a different code format
+from the `XXXXX-XXXXX` default.
 
 ::: danger Lose the key and every enrolled user must enrol again
 There is no recovery. A TOTP secret cannot be re-derived from anything, and decryption fails closed
@@ -328,9 +298,8 @@ app.MapGet("/api/sensitive", () => "…").RequireAuthorization("Toamaisutaa.TwoF
 
 ### For identity-provider sign-ins, this package enforces nothing
 
-Your identity provider owns that exchange, and Toamaisutaa never sees it. There is no point at which
-this package could insist on a second factor for a user signing in through Keycloak - if you want
-that, configure it there.
+Your identity provider owns that exchange, and Toamaisutaa never sees it. If you want a second factor
+for users signing in through Keycloak, configure it there.
 
 What it can do is `AddToamaisutaaTwoFactorClaims`, an opt-in `IClaimsTransformation` that looks up
 the local enrolment and adds `toa_2fa_enrolled` to an externally issued token (and `toa_2fa_required`
@@ -339,9 +308,8 @@ by default. It replaces the framework's do-nothing transformation, but not one o
 
 `toa_2fa_enrolled` says the user has enrolled, and nothing about what they presented at this
 sign-in, so the `Toamaisutaa.TwoFactor` policy does not accept it: that policy wants `amr=mfa`, and
-for a provider sign-in only the provider can put it there. An earlier version wrote `amr=mfa` for any
-enrolled user, which let a phished provider password pass the second-factor policy. If "has enrolled"
-is genuinely what you want to require, say so with a policy of your own:
+for a provider sign-in only the provider can put it there. If "has enrolled" is genuinely what you
+want to require, say so with a policy of your own:
 
 ```csharp
 options.AddPolicy("Enrolled", policy => policy.RequireClaim("toa_2fa_enrolled", "true"));
@@ -350,43 +318,17 @@ options.AddPolicy("Enrolled", policy => policy.RequireClaim("toa_2fa_enrolled", 
 ## What revoking actually does
 
 Enabling, disabling and regenerating recovery codes each move the user's security stamp and revoke
-every refresh chain, exactly as a password change does. That ends the session at the next refresh -
-**it does not kill access tokens already in circulation.**
-
-The stamp is compared on refresh and wherever `ICurrentUser` resolves a user, both of which already
-read the database. It is deliberately not compared on every bearer request, which would cost a read
-per request forever.
-
-**The maximum window is `LocalLogin:AccessTokenLifetime`, fifteen minutes by default.** If you need
-revocation to be immediate, shorten it and accept the extra refresh traffic.
+every refresh chain, exactly as a password change does. The stamp is compared on refresh and wherever
+`ICurrentUser` resolves a user, not on every bearer request, so access tokens already issued keep
+working [until they expire](/sessions#what-a-revoke-actually-ends).
 
 ## Never log the enrolment response
 
-`/auth/2fa/begin` returns the secret in plaintext - as base32, and again inside the URI. It has to;
-an authenticator cannot be enrolled without it. That makes it the one response in this package that
-is itself a long-lived credential.
-
-Do not log it. Not the value, not the URI, not a truncated prefix, not at Debug. A log line added
-while chasing a bug ships to wherever your logs aggregate, outlives every key rotation anyone will
-remember to perform, and cannot be recalled - and putting it right means every affected user
-enrolling again. The same goes for recovery codes.
-
-Nothing in this package logs either one. Log the user id and what happened.
-
-### The leak is easiest to add by accident in your own pipeline
-
-Nothing here logs the secret, but this package cannot stop what wraps it, and one pattern gets it
-wrong reliably: **a mediator or middleware that logs every request and response generically.**
-
-`TwoFactorEnrolmentStarted` carries `Secret` and carries it again inside `Uri`. Put it in a response
-DTO of your own - which is the natural thing to do when you are composing this package's data with
-your own fields - and a pipeline behaviour that serialises responses will write a live TOTP secret
-to your logs without anyone writing a line of code that mentions it.
-
-`TwoFactorEnrolmentCompleted.RecoveryCodes` is the same class of thing.
-
-If you have that kind of behaviour, exclude these two types from it explicitly, and do it before you
-wrap them rather than after you find them in a log search.
+`/auth/2fa/begin` returns the TOTP secret in plaintext, in `secret` and again inside `uri`, and
+`confirm` and `recovery-codes` return recovery codes; all of them are long-lived credentials. Do not
+log any of them, at any level - nothing in this package does. If a mediator or middleware of yours
+logs responses generically, exclude `TwoFactorEnrolmentStarted` and `TwoFactorEnrolmentCompleted`
+from it before you wrap them.
 
 ## Calling `ITwoFactorService` yourself
 
@@ -408,8 +350,8 @@ their own account, so it says exactly what is wrong.
 | `EncryptionKey` | none | Required. Base64, exactly 32 bytes |
 | `EncryptionKeyVersion` | `1` | Stamped on every row this key encrypts |
 | `RetiredEncryptionKeys` | empty | Superseded keys, so old rows still decrypt |
-| `Digits` | `6` | Do not change this |
-| `Period` | `00:00:30` | Do not change this |
+| `Digits` | `6` | Do not change this - anything but 6 breaks Google Authenticator |
+| `Period` | `00:00:30` | Do not change this - anything but 30 seconds breaks Google Authenticator |
 | `DriftSteps` | `1` | Steps either side accepted, for clock drift |
 | `SecretSizeBytes` | `20` | The RFC 4226 recommendation |
 | `Issuer` | `Toamaisutaa` | The name the authenticator app shows |
@@ -422,10 +364,6 @@ their own account, so it says exactly what is wrong.
 | `Enforcement` | `Optional` | |
 | `EnrolledPolicyName` | `Toamaisutaa.TwoFactor` | |
 
-`Digits` and `Period` are configurable and documented as "do not change these" - anything other than
-6 and 30 breaks Google Authenticator. They exist so that somebody with an unusual authenticator does
-not have to fork the package, not because anyone should touch them.
-
 ## Storage
 
 Three tables, added by the `AddTwoFactor` migration:
@@ -435,8 +373,3 @@ Three tables, added by the `AddTwoFactor` migration:
 | `ToamaisutaaUserTwoFactors` | One enrolment per user: the encrypted secret, its key version, when it was confirmed, and the last accepted time step |
 | `ToamaisutaaRecoveryCodes` | Hashed single-use codes |
 | `ToamaisutaaTwoFactorChallenges` | Half-finished sign-ins, swept by `AddToamaisutaaTokenCleanup` |
-
-The `MoveSecurityStampToUser` migration ships alongside it and moves `SecurityStamp` from
-`ToamaisutaaPasswordCredentials` onto `ToamaisutaaUsers`, copying existing values across. A second
-factor belongs to the person, not to one way of proving they are them, and a user provisioned by an
-identity provider has no credential row to hang it off.

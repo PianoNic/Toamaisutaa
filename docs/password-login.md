@@ -15,9 +15,12 @@ Writing the browser side of this? [Using this from a SPA](/spa) covers the whole
 the sign-in branch, refresh on 401, and where the tokens should live.
 
 It needs `AddToamaisutaaBearer` as well - the tokens it issues are validated by the same pipeline
-that validates your identity provider's, which is why `Toamaisutaa.AspNetCore` depends on
-`Toamaisutaa.OpenIdConnect`. A store registration and an `IPasswordResetNotifier` are also required,
-and all three are checked at startup rather than at the first request.
+that validates your identity provider's, so policies, `ICurrentUser` and provisioning cannot tell the
+two apart. A store registration and an `IPasswordResetNotifier` are also required, and all three are
+checked at startup rather than at the first request.
+
+A user may have a password, external logins, or both. Adding a password to an account that arrived
+through OIDC is supported and touches nothing on the external side.
 
 ## The endpoints
 
@@ -48,10 +51,7 @@ The session list (`/auth/sessions`) is mapped separately, by `MapToamaisutaaSess
 Request bodies bind to this package's own records, so they are camelCase: `identifier`,
 `refreshToken`, `newPassword`. **Sign-in responses use the RFC 6749 names** - `access_token`,
 `refresh_token`, `expires_in`, `token_type` - because a token endpoint is a place where a standard
-already exists.
-
-The asymmetry is deliberate and it is the one thing here you cannot guess. Everything else this
-package returns is camelCase.
+already exists. Everything else this package returns is camelCase.
 :::
 
 ### Bodies
@@ -63,8 +63,9 @@ package returns is camelCase.
 { "identifier": "ada", "password": "correct horse battery staple", "deviceToken": null }
 ```
 
-Answers **200** with a token pair. `recovery_codes_running_low` is `true` or `null`, never `false`;
-`device_token` and `device_expires_in` are null unless a device was trusted.
+Answers **200** with a token pair: a short-lived access token, signed locally, and an opaque refresh
+token. `recovery_codes_running_low` is `true` or `null`, never `false`; `device_token` and
+`device_expires_in` are null unless a device was trusted.
 
 ```json
 {
@@ -79,12 +80,20 @@ Answers **200** with a token pair. `recovery_codes_running_low` is `true` or `nu
 ```
 
 Or **200 with a challenge and no tokens**, for a user who has enrolled in
-[two-factor authentication](/two-factor). Branch on `two_factor_required`, which is absent from the
-shape above:
+[two-factor authentication](/two-factor). Present it with a code to `/auth/2fa/verify` to finish
+signing in.
 
 ```json
 { "two_factor_required": true, "challenge": "No1CXq9-...", "expires_in": 300 }
 ```
+
+::: danger Branch on `two_factor_required`
+Both shapes are 200, and the second does not appear until a user enrols - after which it appears for
+them every time. A client that checks `response.ok` and reads `access_token` works until the first
+person turns on two-factor, then breaks for that person only. Every endpoint that ends a sign-in -
+`/auth/login`, `/auth/magic-link/verify`, `/auth/passkeys/assertion/complete` - can answer either
+shape.
+:::
 
 **`POST /auth/refresh`** answers the same token-pair shape, or 401.
 
@@ -123,18 +132,15 @@ claim on the access token - or these accounts will get 400 however recently they
 includes it by default.
 :::
 
-The new credential signs in with the user name and carries no email address. The provider's email is
-only what the provider asserted, and copying it in made it a reset address for a mailbox nobody had
-shown the account owns. Add the address through `/auth/email`, which proves it.
+The new credential signs in with the user name and carries no email address, because the provider's
+email was never proven to this package. Add the address through `/auth/email`, which proves it.
 
 The user name is the provider's handle, and never its email. An account whose handle is missing or
-shaped like an address (a UPN is one) gets 400 here: in the user-name column an address becomes a
-hold on it that proving the mailbox cannot release. Such an account can use passkeys or magic links
-instead.
+shaped like an address (a UPN is one) gets 400 here, and can use passkeys or magic links instead.
 
 **A user name cannot contain `@`**, wherever it is chosen - registration, admin creation, invitation
 completion - and answers 400. The sign-in box takes a user name or an email, so an address-shaped
-user name claimed that address for sign-in before its owner ever arrived.
+user name would claim that address for sign-in before its owner arrived.
 
 ```json
 { "currentPassword": "the old one", "newPassword": "the new one" }
@@ -142,10 +148,9 @@ user name claimed that address for sign-in before its owner ever arrived.
 
 **`POST /auth/password/forgot`** answers 204 always - for an unknown address and for an account an
 identity provider owns alike. The lookup and the mail happen after the response, on a background
-queue, so a real account takes no longer to answer than an unknown address: waiting on the mail
-server inside the request told the clock what the body would not. A second request for the same
-address inside `LocalLogin:MailRequestCooldown` (a minute by default) is dropped, whether or not the
-address has an account.
+queue, so a real account takes no longer to answer than an unknown address. A second request for the
+same address inside `LocalLogin:MailRequestCooldown` (a minute by default) is dropped, whether or not
+the address has an account.
 
 ::: warning Your notifier runs without a request
 `IPasswordResetNotifier.SendAsync` is called after the 204, in a scope of its own, with no
@@ -164,25 +169,23 @@ configuration.
 { "token": "the token from the notifier", "newPassword": "the new one" }
 ```
 
-**`POST /auth/email`** - authenticated, asks for a verification link and moves nothing yet. The link
-goes to `newEmail` and only there; the account changes when it is redeemed. `currentPassword` is
-required, including when `newEmail` is the address the account already has, which is how a link is
-asked for again. Answers 204, 400, or 409 - see [Email verification](/email-verification).
+**`POST /auth/email`** - authenticated, mails a verification link to `newEmail` and moves nothing
+until it is redeemed. `currentPassword` is required. See [Email verification](/email-verification).
 
 ```json
 { "newEmail": "ada@newplace.example", "currentPassword": "the one they signed in with" }
 ```
 
 **`POST /auth/email/verify`** - anonymous, but only usable with a valid token. Writes the address the
-token names and stamps it confirmed. Answers 204, 400, or 409.
+token names and stamps it confirmed.
 
 ```json
 { "token": "the token from the notifier" }
 ```
 
 **`POST /auth/users`** - admin only, provisions an account on someone else's behalf. `password` is
-optional; omit it and Toamaisutaa generates one. Answers 201, 400, 403, or 409. Never signs the caller in
-as the new account, and the response never carries a password - see
+optional; omit it and Toamaisutaa generates one. Never signs the caller in as the new account, and
+the response never carries a password - see
 [Admin-provisioned accounts](/provisioning-accounts#admin-provisioned-accounts).
 
 ```json
@@ -194,8 +197,8 @@ as the new account, and the response never carries a password - see
 ```
 
 **`POST /auth/users/{userId}/password`** - admin only, overwrites `userId`'s password with no
-current-password check. `password` is optional; omit it and Toamaisutaa generates one. Answers 204,
-400, 403, or 502 when the password was set but could not be delivered - never a password.
+current-password check. `password` is optional; omit it and Toamaisutaa generates one. 502 means
+the password was set but could not be delivered; no answer ever carries a password.
 
 The password is mailed only to the credential's own address, never to the profile email an
 identity provider writes. An account with none gets no mail, so give the password in the request
@@ -209,9 +212,9 @@ answers 400 before anything changes.
 { "password": null }
 ```
 
-**`POST /auth/invitations`** - admin only, reserves an account with nothing but an email. Answers
-201, 400, 403, or 502 when nothing could be delivered and the reservation was rolled back. Never
-returns the invitation token - see
+**`POST /auth/invitations`** - admin only, reserves an account with nothing but an email. 502 means
+nothing could be delivered and the reservation was rolled back. Never returns the invitation token -
+see
 [Completing a reserved invitation](/provisioning-accounts#completing-a-reserved-invitation).
 
 ```json
@@ -224,7 +227,7 @@ returns the invitation token - see
 
 **`POST /auth/invitations/complete`** - anonymous, but only usable with a valid token. Sets the user
 name and password on the one reserved account the token names, and signs in - the same shape
-`/auth/register` answers with. Answers 201, 400, or 409 for a taken user name.
+`/auth/register` answers with. 409 is a taken user name.
 
 ```json
 { "token": "the token from the notifier", "userName": "newparent", "password": "the one they chose" }
@@ -247,16 +250,6 @@ These strings are written to be shown to the person who typed the input:
 { "errors": ["Use at least 8 characters."] }
 ```
 
-A successful sign-in returns a short-lived access token and an opaque refresh token. The access
-token is signed locally and validated by the same bearer pipeline, so policies, `ICurrentUser` and
-provisioning cannot tell the two apart.
-
-A user may have a password, external logins, or both. Adding a password to an account that arrived
-through OIDC is supported and touches nothing on the external side.
-
-Once a user enrols in [two-factor authentication](/two-factor), `/auth/login` returns a challenge
-instead of tokens and the sign-in finishes at `/auth/2fa/verify`.
-
 ## Things to know before switching it on
 
 Password hashing, and how to replace it, is its own page: [Password hashing](/password-hashing).
@@ -274,8 +267,7 @@ by middleware you have to remember to add.
 ### Behind a proxy, configure forwarded headers
 
 The limiter keys on the connection's address. An IPv4 caller counts as its address. An IPv6 caller
-counts as its /64, and all the /64s of one /48 also share `Ipv6SitePermitLimit` between them, since a
-/48 is free to get and would otherwise be 65,536 separate budgets. Behind a reverse proxy the connection
+counts as its /64, and all the /64s of one /48 also share `Ipv6SitePermitLimit` between them. Behind a reverse proxy the connection
 comes from the proxy, so unless `UseForwardedHeaders()` rewrites it, every client shares one limit and
 ten junk logins a minute answer 429 for the whole site. When requests arrive from a private or
 loopback address with `X-Forwarded-For` still on them, the package logs a warning once saying so.
@@ -301,10 +293,9 @@ account that only typed it loses it. Otherwise registering somebody else's addre
 its owner out of every way in.
 
 For the same reason a local access token carries `email` only once the address is verified, and then
-it is the credential's address, read again on every issue including a refresh. `email` is the claim
-an identity provider's token uses too, and everything downstream reads it as proven: a token that
-asserted a typed address let anyone register as somebody else's and pass every policy keyed on it.
-If you replace `IAccessTokenIssuer`, write `AccessTokenRequest.VerifiedEmail`, not `User.Email`.
+it is the credential's address, read again on every issue including a refresh. Everything downstream
+reads `email` as proven. If you replace `IAccessTokenIssuer`, write
+`AccessTokenRequest.VerifiedEmail`, not `User.Email`.
 
 That email round trip - and two other ways to get someone into an account without open
 registration - are their own page: [Provisioning accounts](/provisioning-accounts). Proving that an
@@ -314,7 +305,8 @@ address belongs to whoever typed it, and changing it afterwards, is
 ### Revoking sessions means local sessions
 
 A password change or reset revokes every refresh token this package issued. An access token your
-identity provider issued keeps working until it expires, because we cannot revoke it.
+identity provider issued keeps working until it expires, because we cannot revoke it - and so does a
+local one, for [up to `AccessTokenLifetime`](/sessions#what-a-revoke-actually-ends).
 
 It also un-trusts every device and deletes every [passkey](/passkeys) on the account. Both are ways
 of signing in that a new password would otherwise not touch, and somebody changing their password is
@@ -344,16 +336,6 @@ Rotation alone would keep a session alive forever, so a chain also has an absolu
 
 A family is what this package means by a session, and a user can see and end their own:
 [Sessions](/sessions).
-
-### A new claim and the refresh path
-
-If you replace `IAccessTokenIssuer` and add a claim, decide in the same change what
-`RefreshAsync` does with it: **recompute it, carry it on the refresh token row, or drop it
-deliberately.** All three are defensible; not having decided is not.
-
-A refresh that silently drops a claim produces a token that is correct at sign-in and wrong exactly
-one `AccessTokenLifetime` later, which reads as a policy failure rather than a refresh failure. This
-package has made that mistake three times and never once caught it with a test.
 
 ## Calling the services yourself
 
@@ -391,8 +373,7 @@ Two things worth knowing before you build on them:
 
 - **`SignInOutcome` tells you what really happened, and the endpoints deliberately throw that away.**
   `UnknownUser`, `InvalidPassword` and `LockedOut` are three different values here and one 401 on the
-  wire, because telling a caller which one it was tells them which user names are real. If you shape
-  your own response, keep that collapse.
+  wire. If you shape your own response, keep that collapse.
 - **Every result type is a sealed record with public `init` members**, so they compose into DTOs of
   your own and construct in a test without reflection. `SignInResult.Succeeded` is computed from
   `Outcome`, so set the outcome rather than looking for a setter.
@@ -430,7 +411,7 @@ hands you - rather than expecting to construct one.
 | `LocalLogin:AllowSelfRegistration` | `false` | When false the endpoint is not mapped at all |
 | `LocalLogin:EndpointPrefix` | `/auth` | |
 | `LocalLogin:SessionEndpointPrefix` | `/sessions` | Appended to `EndpointPrefix`. See [sessions](/sessions) |
-| `LocalLogin:IpAddressStorage` | `None` | What a session row keeps of the caller's address |
+| `LocalLogin:IpAddressStorage` | `None` | What a session row keeps of the caller's address. See [sessions](/sessions#addresses-are-off-by-default) |
 | `LocalLogin:RateLimit:Enabled` | `true` | Per caller address, fixed window. One budget across the anonymous endpoints and the signed-in ones that take a password or code as proof |
 | `LocalLogin:RateLimit:PermitLimit` / `Window` | `10` / `00:01:00` | |
 | `LocalLogin:RateLimit:Ipv6SitePermitLimit` | `100` | Shared by every /64 of one IPv6 /48 per window. Raise it if many unrelated users reach you from one carrier's /48 |
