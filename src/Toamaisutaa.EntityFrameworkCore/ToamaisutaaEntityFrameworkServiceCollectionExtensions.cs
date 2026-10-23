@@ -8,9 +8,10 @@ namespace Microsoft.Extensions.DependencyInjection;
 public static class ToamaisutaaEntityFrameworkServiceCollectionExtensions
 {
     /// <summary>
-    /// Backs provisioning with a <c>DbContext</c> you already have. Apply
-    /// <c>ApplyToamaisutaaConfiguration()</c> in its <c>OnModelCreating</c> and generate the
-    /// migration in your own project.
+    /// Backs provisioning with a <c>DbContext</c> you already have. Call
+    /// <c>modelBuilder.ApplyToamaisutaaConfiguration(Database)</c> in its <c>OnModelCreating</c>, passing
+    /// the context's <c>Database</c> so SQL Server and MySQL get an exact collation for subjects, and
+    /// generate the migration in your own project.
     /// </summary>
     public static IServiceCollection AddToamaisutaaEntityFrameworkStores<TContext>(this IServiceCollection services)
         where TContext : DbContext
