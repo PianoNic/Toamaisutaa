@@ -22,6 +22,14 @@ internal sealed class MailRequestQueue(IServiceScopeFactory scopes, ToamaisutaaM
         Channel.CreateBounded<Func<IServiceProvider, CancellationToken, Task>>(
             new BoundedChannelOptions(Capacity) { FullMode = BoundedChannelFullMode.Wait });
 
+    /// <summary>
+    /// Jobs running at once, abandoned ones included: a reader walks away from a hung job, but the job
+    /// keeps its thread and scope until it ends, so without a cap a hung mail server leaks both.
+    /// </summary>
+    internal const int MaxInFlight = Readers * 4;
+
+    private readonly SemaphoreSlim _inFlight = new(MaxInFlight, MaxInFlight);
+
     private int _pending;
 
     internal TimeSpan JobTimeout { get; set; } = TimeSpan.FromMinutes(2);
@@ -73,20 +81,42 @@ internal sealed class MailRequestQueue(IServiceScopeFactory scopes, ToamaisutaaM
         {
             await foreach (var work in _work.Reader.ReadAllAsync(stoppingToken))
             {
-                // A notifier that never answers would otherwise hold its reader until shutdown.
-                using var deadline = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);
-                deadline.CancelAfter(JobTimeout);
+                var deadline = CancellationToken.None;
 
                 try
                 {
+                    // A slot first, held until the job really ends, so jobs abandoned below still count.
+                    await _inFlight.WaitAsync(stoppingToken);
+
+                    // Started once there is a slot, or a job that waited for one is abandoned on arrival.
+                    var source = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);
+                    source.CancelAfter(JobTimeout);
+                    deadline = source.Token;
+
                     // Stops waiting at the deadline even when the job ignores its token, and off this
                     // thread, because a synchronous SMTP send blocks before it returns a task to wait
-                    // on. The job keeps its scope until it does finish.
-                    await Task.Run(() => RunInScopeAsync(work, deadline.Token), CancellationToken.None).WaitAsync(deadline.Token);
+                    // on. The job owns its scope and its deadline until it does finish: disposed when
+                    // this reader moved on, a job that had not started yet failed without sending.
+                    await Task.Run(
+                        async () =>
+                        {
+                            try
+                            {
+                                await RunInScopeAsync(work, deadline);
+                            }
+                            finally
+                            {
+                                source.Dispose();
+                                _inFlight.Release();
+                            }
+                        },
+                        CancellationToken.None).WaitAsync(deadline);
                 }
                 catch (OperationCanceledException) when (deadline.IsCancellationRequested && !stoppingToken.IsCancellationRequested)
                 {
-                    logger.LogError("A queued reset or magic-link request was abandoned after {Timeout}; nothing was sent.", JobTimeout);
+                    logger.LogError(
+                        "A queued reset or magic-link request was abandoned after {Timeout}. It is still running and may yet send its mail.",
+                        JobTimeout);
                 }
                 catch (Exception exception) when (exception is not OperationCanceledException || !stoppingToken.IsCancellationRequested)
                 {

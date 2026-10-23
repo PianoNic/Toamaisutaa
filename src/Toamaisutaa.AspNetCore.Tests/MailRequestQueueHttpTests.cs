@@ -72,6 +72,45 @@ public class MailRequestQueueHttpTests
         blocked.Set();
     }
 
+    /// <summary>
+    /// Readers walked away from a hung job and started the next straight away, while the hung one
+    /// kept its thread and scope. Against a mail server that stops answering, jobs piled up without
+    /// limit, so this checks no more than the cap ever start.
+    /// </summary>
+    [Test]
+    public async Task Hung_jobs_count_against_the_limit_after_they_are_abandoned()
+    {
+        await using var app = await TestApp.StartAsync();
+        var queue = app.Services.GetRequiredService<MailRequestQueue>();
+        queue.JobTimeout = TimeSpan.FromMilliseconds(50);
+
+        using var blocked = new ManualResetEventSlim();
+        var started = 0;
+
+        for (var i = 0; i < MailRequestQueue.MaxInFlight + 10; i++)
+        {
+            queue.Enqueue((_, _) =>
+            {
+                Interlocked.Increment(ref started);
+                blocked.Wait();
+                return Task.CompletedTask;
+            });
+        }
+
+        // Long enough for every reader to abandon its job many times over.
+        await Task.Delay(TimeSpan.FromSeconds(2));
+        var reached = Volatile.Read(ref started);
+
+        blocked.Set();
+
+        // Idle means every reader is done with its job, not that the job ran, so wait for the jobs.
+        for (var i = 0; i < 300 && Volatile.Read(ref started) < MailRequestQueue.MaxInFlight + 10; i++)
+            await Task.Delay(100);
+
+        await Assert.That(reached).IsEqualTo(MailRequestQueue.MaxInFlight);
+        await Assert.That(Volatile.Read(ref started)).IsEqualTo(MailRequestQueue.MaxInFlight + 10);
+    }
+
     [Test]
     [Arguments("/auth/password/forgot")]
     [Arguments("/auth/magic-link")]
