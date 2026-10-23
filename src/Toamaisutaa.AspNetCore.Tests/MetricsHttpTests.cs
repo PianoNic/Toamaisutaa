@@ -72,8 +72,13 @@ public class LockoutMetricHttpTests
 {
     /// <summary>Wrong current passwords lock the account like wrong sign-ins do, and the lockout
     /// counter missed it, so an attack through a stolen token never showed on it.</summary>
+    /// <remarks>Every endpoint that asks for the current password, since each passes the counter on
+    /// itself and one that drops it still compiles.</remarks>
     [Test]
-    public async Task A_lockout_from_wrong_current_passwords_is_counted()
+    [Arguments("/auth/password")]
+    [Arguments("/auth/2fa/begin")]
+    [Arguments("/auth/passkeys/register/begin")]
+    public async Task A_lockout_from_wrong_current_passwords_is_counted(string path)
     {
         await using var app = await TestApp.StartAsync();
         var account = await Account.RegisterAsync(app);
@@ -81,7 +86,7 @@ public class LockoutMetricHttpTests
         using var probe = new InstrumentProbe(app, "toamaisutaa.lockouts");
 
         for (var i = 0; i < 5; i++)
-            await app.Client.PostJson("/auth/password", new { currentPassword = "not the password", newPassword = "a different passphrase" }, account.AccessToken);
+            await app.Client.PostJson(path, new { currentPassword = "not the password", newPassword = "a different passphrase" }, account.AccessToken);
 
         // Locked: the right password is refused too.
         await Assert.That((await account.LoginAsync()).StatusCode).IsEqualTo(HttpStatusCode.Unauthorized);
