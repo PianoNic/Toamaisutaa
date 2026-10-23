@@ -1,31 +1,141 @@
 # Getting started
 
-## Requirements
+Password login with two-factor authentication, on SQLite, in one `Program.cs`. Everything else -
+an identity provider, passkeys, another database - is a step on from this, linked at the end.
 
-- **.NET 10.** Every package targets `net10.0` and nothing older.
-- An OIDC provider, if you want the recommended path. Anything that publishes a discovery document
-  works: Keycloak, Authentik, Pocket ID, Okta, Entra.
+Needs **.NET 10**.
 
-## Install
-
-A resource server validating tokens from your identity provider:
+## Quick start
 
 ```sh
-dotnet add package Toamaisutaa.OpenIdConnect
+dotnet new web -n MyApp && cd MyApp
+dotnet add package Toamaisutaa.AspNetCore
+dotnet add package Toamaisutaa.EntityFrameworkCore.Migrations.Sqlite
+```
+
+Two keys, one to sign tokens and one to encrypt the two-factor secrets. Generate each:
+
+```sh
+openssl rand -base64 32
+# or, in PowerShell: [Convert]::ToBase64String([Security.Cryptography.RandomNumberGenerator]::GetBytes(32))
+```
+
+`appsettings.json`:
+
+```json
+{
+  "LocalLogin": {
+    "SigningKey": "<first key>",
+    "Audience": "my-app",
+    "AllowSelfRegistration": true
+  },
+  "TwoFactor": {
+    "EncryptionKey": "<second key>"
+  }
+}
+```
+
+`Program.cs`:
+
+```csharp
+using Microsoft.EntityFrameworkCore;
+using Toamaisutaa.Abstractions;
+using Toamaisutaa.EntityFrameworkCore;
+
+var builder = WebApplication.CreateBuilder(args);
+
+builder.Services.AddToamaisutaaBearer(builder.Configuration);
+builder.Services.AddToamaisutaaAuthorization(builder.Configuration);
+builder.Services.AddToamaisutaaDbContext(db => db.UseSqlite("Data Source=app.db",
+    sqlite => sqlite.MigrationsAssembly("Toamaisutaa.EntityFrameworkCore.Migrations.Sqlite")));
+builder.Services.AddToamaisutaaPasswordLogin(builder.Configuration);
+builder.Services.AddToamaisutaaTwoFactor(builder.Configuration);
+builder.Services.AddSingleton<IPasswordResetNotifier, ConsoleResetNotifier>();
+
+var app = builder.Build();
+
+using (var scope = app.Services.CreateScope())
+    scope.ServiceProvider.GetRequiredService<ToamaisutaaDbContext>().Database.Migrate();
+
+app.UseAuthentication();
+app.UseAuthorization();
+
+app.MapToamaisutaaPasswordEndpoints();
+app.MapToamaisutaaTwoFactorEndpoints();
+
+app.MapGet("/hello", () => "Signed in.");
+
+app.Run();
+
+// Replace with real mail before anyone else uses this.
+sealed class ConsoleResetNotifier : IPasswordResetNotifier
+{
+    public Task SendAsync(ToamaisutaaUser user, string resetToken, CancellationToken cancellationToken = default)
+    {
+        Console.WriteLine($"Reset token for {user.Email}: {resetToken}");
+        return Task.CompletedTask;
+    }
+}
+```
+
+`dotnet run`. Every endpoint now needs a token unless it says `.AllowAnonymous()`, and a missing key
+or setting stops startup with a message naming it rather than failing at the first request.
+
+## Try it
+
+1. **Register** - `POST /auth/register` with `{ "userName": "ada", "email": "ada@example.com",
+   "password": "correct horse battery staple" }`. Answers `201` with an `access_token`.
+2. **Call your endpoint** - `GET /hello` with `Authorization: Bearer <access_token>`. `200`; without
+   the header, `401`.
+3. **Turn on two-factor** - `POST /auth/2fa/begin` with `{ "currentPassword": "..." }` and the token.
+   Scan the returned `uri` (or type the `secret`) into an authenticator app, then `POST
+   /auth/2fa/confirm` with `{ "code": "123456" }`. Answers the recovery codes, once.
+4. **Sign in** - `POST /auth/login` with `{ "identifier": "ada", "password": "..." }` now answers
+   `two_factor_required: true` and a `challenge` instead of tokens. `POST /auth/2fa/verify` with
+   `{ "challenge": "...", "code": "123456" }` answers the tokens.
+
+Refresh with `POST /auth/refresh` and `{ "refreshToken": "..." }`, sign out with `POST /auth/logout`.
+Every route and body: [local password login](/password-login).
+
+## Before it goes public
+
+- **Keys from the environment**, never committed: `LocalLogin__SigningKey`, `TwoFactor__EncryptionKey`.
+  The sample's published keys are refused outside Development. [Signing local tokens](/token-signing)
+  covers rotating keys and asymmetric signing.
+- **Real mail** for password resets: your own `IPasswordResetNotifier`, or the SMTP package -
+  [provisioning accounts](/provisioning-accounts).
+- **Behind a reverse proxy**, forward the client's address, or every caller shares one rate limit -
+  [behind a proxy](/password-login#behind-a-proxy-configure-forwarded-headers).
+- **Decide who may register.** `AllowSelfRegistration` lets anyone; without it, accounts come from an
+  admin or an invitation - [provisioning accounts](/provisioning-accounts).
+- **A production database** - [storage and migrations](/storage).
+
+## Next steps
+
+| To add | Read |
+|---|---|
+| Sign-in through Keycloak, Entra, Authentik or another OIDC provider | [OIDC bearer validation](/oidc) |
+| Postgres, SQL Server, MySQL, or your own `DbContext` | [Storage and migrations](/storage) |
+| A browser front end: the sign-in branch, refresh, where tokens live | [Using this from a SPA](/spa) |
+| Passkeys | [Passkeys](/passkeys) |
+| "Remember this device" for the second factor | [Trusted devices](/trusted-devices) |
+| Sign-in by emailed link | [Magic-link sign-in](/magic-link), which needs [email verification](/email-verification) |
+| Admin-created accounts and invitations | [Provisioning accounts](/provisioning-accounts) |
+| A list of a user's sessions, and signing out elsewhere | [Sessions](/sessions) |
+| Roles for local accounts, and other hooks | [Customizing local login](/customizing-password-login) |
+| Who is calling, from a service | [The current user](/current-user) |
+| Argon2id, or a breached-password check | [Password hashing](/password-hashing), [breached passwords](/breached-passwords) |
+| An audit trail, or metrics | [Audit events](/audit-events), [metrics](/metrics) |
+| These endpoints in your OpenAPI document | [OpenAPI](/openapi) |
+
+## With an identity provider instead
+
+A resource server whose users all come from an OIDC provider needs no database and no keys of its
+own:
+
+```sh
 dotnet add package Toamaisutaa.AspNetCore
 ```
-
-Plus, if you want a local user row or local password login:
-
-```sh
-dotnet add package Toamaisutaa.EntityFrameworkCore
-dotnet add package Toamaisutaa.EntityFrameworkCore.Migrations.Postgres   # or .Sqlite, .SqlServer, .MySql
-```
-
-`Toamaisutaa.Abstractions` and `Toamaisutaa.Core` arrive as dependencies. Reference `Abstractions`
-directly from a domain project that wants `ICurrentUser` without ASP.NET.
-
-## The minimum
 
 ```csharp
 builder.Services.AddToamaisutaaBearer(builder.Configuration);
@@ -33,14 +143,7 @@ builder.Services.AddToamaisutaaAuthorization(builder.Configuration);
 
 app.UseAuthentication();
 app.UseAuthorization();
-app.MapToamaisutaaConfiguration();   // GET /api/app, for the SPA to read at startup
 ```
-
-That authenticates every endpoint by default, opts individual ones out with `[AllowAnonymous]`, and
-needs no database at all. For a resource server whose identity provider owns every user, that is the
-whole integration.
-
-Configuration lives under `Oidc`:
 
 ```json
 {
@@ -53,227 +156,11 @@ Configuration lives under `Oidc`:
 }
 ```
 
-See [OIDC bearer validation](/oidc) for every key.
-
-## With a local user
-
-Provisioning is opt-in. Add it when you want a row of your own to hang data off:
-
-```csharp
-builder.Services.AddToamaisutaaProvisioning();
-builder.Services.AddToamaisutaaDbContext(db => db.UseNpgsql(connectionString,
-    npgsql => npgsql.MigrationsAssembly("Toamaisutaa.EntityFrameworkCore.Migrations.Postgres")));
-builder.Services.AddToamaisutaaCurrentUser();
-```
-
-Then inject `ICurrentUser`:
-
-```csharp
-app.MapGet("/api/me", async (ICurrentUser currentUser, CancellationToken cancellationToken) =>
-{
-    var user = await currentUser.GetOrProvisionAsync(cancellationToken);
-    return Results.Ok(new { user.Id, user.DisplayName, user.Email });
-});
-```
-
-The row is created on the first request that ever carries that subject, and read - not rewritten -
-on every request after. See [Storage and migrations](/storage).
-
-## Roles and claims without `HttpContext`
-
-`ICurrentUser` also reports what the token says about the caller, so code that is not an endpoint
-can answer "is this an admin" without reaching for `HttpContext` - which is the thing the interface
-exists to avoid:
-
-```csharp
-public sealed class ArchiveService(ICurrentUser currentUser)
-{
-    public Task PurgeAsync()
-    {
-        if (!currentUser.IsInRole("archivist"))
-            throw new UnauthorizedAccessException();
-
-        var tenant = currentUser.FindClaim("tenant_id");
-        ...
-    }
-}
-```
-
-- **`Roles`** reads the claim `Oidc:RoleClaim` names - `roles` by default, `groups` on Pocket ID,
-  Authentik and Entra - and the role claim type the principal's own identities name, which is the
-  one `RequireRole` reads and is .NET's own type for a principal that came from cookies or a scheme
-  of your own. Both reads, so a role check in a service and one on a route answer alike whichever
-  registration built the principal. Empty on an anonymous request, and empty for a locally
-  issued token until an
-  [`IUserRoleProvider`](/customizing-password-login#local-accounts-have-no-roles) supplies some.
-- **`IsInRole`** compares ordinally, the same comparison `RequireRole` makes.
-- **`FindClaim`** takes a raw JWT claim type - `tenant_id`, not the WS-Federation URI - because
-  inbound claim mapping is off. It returns the first non-empty value.
-
-This is a read of the token, not an authorization decision. It answers "what does this caller
-carry"; `[Authorize]` answers "may this caller in", and a check that only happens inside a service
-is one an unprotected route still skips.
-
-The whole set is available on a project that references only `Toamaisutaa.Abstractions`. An
-implementation of your own - a worker, a test double - inherits an empty answer for all three and
-only overrides what it can actually answer.
-
-## The runtime configuration endpoint
-
-`MapToamaisutaaConfiguration()` serves the authority, client id, scope and redirect URIs at
-`/api/app` so a SPA build stays environment-agnostic. It is anonymous, because it is needed before
-anyone has signed in.
-
-```json
-{
-  "authority": "https://id.example.com",
-  "clientId": "your-app",
-  "redirectUri": "https://app.example.com/",
-  "postLogoutRedirectUri": "https://app.example.com/",
-  "scope": "openid profile email roles"
-}
-```
-
-The route is a parameter: `MapToamaisutaaConfiguration("/api/config")`. This is an application
-configuration endpoint rather than an auth one, so it is the likeliest of these to collide with
-conventions you already have.
-
-To serve **your own fields alongside these, or from a route of your own**, skip the map call and
-inject `IToamaisutaaClientConfigurationProvider` into an endpoint you write:
-
-```csharp
-app.MapGet("/api/app", (HttpContext context, IToamaisutaaClientConfigurationProvider provider) =>
-    Results.Ok(new
-    {
-        Auth = provider.GetConfiguration(context),
-        FeatureFlags = /* whatever else your SPA reads at startup */
-    }))
-    .AllowAnonymous();
-```
-
-The redirect-URI resolution, which is the only part with real logic in it, stays in one place either
-way.
-
-## Adding these endpoints to your OpenAPI document
-
-Every endpoint this package maps describes itself: response types, status codes, summaries, and a
-tag per group. They appear in a generated document with no work from you.
-
-**The security schemes are one call.** A security scheme is a document-level declaration, so
-somebody has to add it: without one, nothing marks which endpoints need a token and Scalar or
-Swagger UI shows no Authorize box, which is how most people first try an API.
-
-```sh
-dotnet add package Toamaisutaa.OpenApi
-```
-
-```csharp
-builder.Services.AddToamaisutaaOpenApi(builder.Configuration);   // section "Oidc"
-
-if (app.Environment.IsDevelopment())
-    app.MapOpenApi().AllowAnonymous();
-```
-
-Anonymous, because an API explorer reads the document before anybody has a token. Development-only
-because the document describes every endpoint you have, and publishing it is a decision rather than
-a default - map it outside development when you meant to.
-
-That puts four things in the document:
-
-- a **`Bearer`** HTTP scheme, for a token pasted in from `/auth/login` or `/auth/2fa/verify`;
-- an **`OAuth2`** authorization-code scheme, with the authorization and token URLs read from your
-  issuer's discovery document and the scopes from `Oidc:Scope`;
-- the **requirement, document-wide**, naming both schemes as alternatives - either token gets in;
-- **no padlock on anonymous endpoints**. `/auth/login` is the endpoint you call because you have no
-  token yet.
-
-Its own package, because `Microsoft.AspNetCore.OpenApi` is not part of the shared framework and an
-application documenting itself some other way should not pay for it.
-
-If your issuer cannot be reached while the document is generated, the `OAuth2` scheme is left out,
-the rest of the document is unchanged, and one warning line says which address failed. With no
-`Oidc:Authority` configured at all there is no authorization server to describe, and the `Bearer`
-scheme stands alone - which is exactly right for a deployment that only issues its own tokens.
-
-The discovery answer is held for five minutes, so how often this process reaches for your issuer does
-not depend on how often the document is read. And where `Oidc:InternalAuthority` is set, an endpoint
-the issuer answered with under that address is moved onto `Oidc:Authority` before it reaches the
-document: Keycloak with no `KC_HOSTNAME` builds its endpoint URLs from the Host header it was reached
-at, and the browser cannot resolve a container name. Endpoints on any other host are left as they
-came.
-
-To render it, `Scalar.AspNetCore` is one line:
-
-```csharp
-app.MapScalarApiReference().AllowAnonymous();   // /scalar
-```
-
-`samples/MinimalApiSample` has both, wired exactly as above.
-
-### With transformers of your own
-
-`AddOpenApi` called twice for the same document registers everything twice, so pass your own
-configuration through instead:
-
-```csharp
-builder.Services.AddToamaisutaaOpenApi(
-    builder.Configuration,
-    configureOptions: options => options.AddDocumentTransformer(YourOwnTransformer));
-```
-
-Or, where the document is already yours, add the schemes to it:
-
-```csharp
-builder.Services.AddOpenApi(options =>
-{
-    options.AddToamaisutaaSecuritySchemes();
-    // ... whatever else you already had
-});
-```
-
-## Endpoints of yours that resolve the current user
-
-`ICurrentUser.GetOrProvisionAsync` throws `SecurityStampChangedException` when the token was issued
-before a credential on the account changed - a password change, a two-factor enrolment. The token is
-genuinely stale even though its signature and expiry are fine, and the client only needs to refresh.
-
-Toamaisutaa's own endpoints answer 401 for this. **Endpoints you write need to as well**, or it
-surfaces as a 500 for something that is an ordinary authentication failure:
-
-```csharp
-internal sealed class StaleSecurityStampHandler : IExceptionHandler
-{
-    public async ValueTask<bool> TryHandleAsync(
-        HttpContext context,
-        Exception exception,
-        CancellationToken cancellationToken)
-    {
-        if (exception is not SecurityStampChangedException)
-            return false;
-
-        context.Response.StatusCode = StatusCodes.Status401Unauthorized;
-        context.Response.Headers.WWWAuthenticate = "Bearer error=\"invalid_token\"";
-
-        await context.Response.WriteAsJsonAsync(
-            new ErrorResponse { Error = "invalid_token", ErrorDescription = exception.Message },
-            cancellationToken);
-
-        return true;
-    }
-}
-```
-
-```csharp
-builder.Services.AddExceptionHandler<StaleSecurityStampHandler>();
-builder.Services.AddProblemDetails();
-
-var app = builder.Build();
-app.UseExceptionHandler();
-```
+Both together work too: local password login next to the provider, each validated by the same
+pipeline. [OIDC bearer validation](/oidc) has every key.
 
 ## The sample
 
-`samples/MinimalApiSample` in the repository runs the whole thing against a throwaway identity
-provider: an anonymous endpoint, a provisioning endpoint, an admin-only endpoint, one behind the
-two-factor policy, the configuration endpoint, and the local sign-in and two-factor endpoints. Four
-lines of Docker and a `dotnet run`.
+`samples/MinimalApiSample` in the repository wires nearly everything at once against a throwaway
+identity provider: password login, two-factor, passkeys, trusted devices, magic links, sessions,
+OpenAPI. Four lines of Docker and a `dotnet run`.

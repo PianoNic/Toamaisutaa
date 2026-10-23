@@ -291,7 +291,7 @@ window matters to you.
 
 `GET /api/app` is anonymous and serves the authority, client id, scope and redirect URIs, so your
 build stays environment-agnostic. See
-[the runtime configuration endpoint](/getting-started#the-runtime-configuration-endpoint) - including
+[the runtime configuration endpoint](/current-user#the-runtime-configuration-endpoint) - including
 how to serve your own fields from it.
 
 ## A checklist

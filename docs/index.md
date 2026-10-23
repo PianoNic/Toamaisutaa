@@ -10,7 +10,7 @@ hero:
     alt: Toamaisutaa
   actions:
     - theme: brand
-      text: Getting started
+      text: Quick start
       link: /getting-started
     - theme: alt
       text: What is Toamaisutaa?

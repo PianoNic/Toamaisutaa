@@ -7,6 +7,8 @@ Toamaisutaa is an authentication package for ASP.NET Core. It validates the toke
 provider issues, maps their claims onto a user you can actually store, and - when you have no
 identity provider to lean on - issues tokens of its own from a username and a password.
 
+Here to set it up? [Getting started](/getting-started) has it working in one `Program.cs`.
+
 It exists because the same authentication code kept getting written four times, slightly differently
 each time: the same JwtBearer block, the same claims fallback chain, the same runtime configuration
 endpoint, the same `ICurrentUser`. Four copies drift. This is the copy that does not.
