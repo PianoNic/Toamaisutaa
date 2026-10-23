@@ -22,8 +22,8 @@ export default defineConfig({
     // One entry per sidebar section, so the bar stays readable as features land. The pages
     // themselves live in the sidebar and in the dropdown.
     nav: [
-      { text: 'Intro', link: '/intro' },
       { text: 'Getting started', link: '/getting-started' },
+      { text: 'Storage', link: '/storage' },
       {
         text: 'Signing in',
         items: [
@@ -41,13 +41,15 @@ export default defineConfig({
       { text: 'Development', link: '/dev-setup' },
     ],
     sidebar: [
-      { text: 'What is Toamaisutaa?', link: '/intro' },
       {
         text: 'Setup',
         collapsed: false,
         items: [
           { text: 'Getting started', link: '/getting-started' },
+          { text: 'What is Toamaisutaa?', link: '/intro' },
           { text: 'Storage and migrations', link: '/storage' },
+          { text: 'The current user', link: '/current-user' },
+          { text: 'OpenAPI', link: '/openapi' },
         ],
       },
       {
