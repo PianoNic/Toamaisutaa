@@ -26,11 +26,21 @@ openssl rand -base64 32
 {
   "LocalLogin": {
     "SigningKey": "<first key>",
-    "Audience": "my-app",
-    "AllowSelfRegistration": true
+    "Audience": "my-app"
   },
   "TwoFactor": {
     "EncryptionKey": "<second key>"
+  }
+}
+```
+
+`appsettings.Development.json` - open registration on your machine only, so there is an account to
+try things with:
+
+```json
+{
+  "LocalLogin": {
+    "AllowSelfRegistration": true
   }
 }
 ```
@@ -50,7 +60,15 @@ builder.Services.AddToamaisutaaDbContext(db => db.UseSqlite("Data Source=app.db"
     sqlite => sqlite.MigrationsAssembly("Toamaisutaa.EntityFrameworkCore.Migrations.Sqlite")));
 builder.Services.AddToamaisutaaPasswordLogin(builder.Configuration);
 builder.Services.AddToamaisutaaTwoFactor(builder.Configuration);
-builder.Services.AddSingleton<IPasswordResetNotifier, ConsoleResetNotifier>();
+
+// Prints links to the console, which is fine on your machine and nowhere else: anyone who can read
+// the logs could take over any account. Startup refuses it outside Development.
+if (!builder.Environment.IsDevelopment())
+    throw new InvalidOperationException("ConsoleMail prints reset and verification links to the console. Register real mail first.");
+
+builder.Services.AddSingleton<ConsoleMail>();
+builder.Services.AddSingleton<IPasswordResetNotifier>(services => services.GetRequiredService<ConsoleMail>());
+builder.Services.AddSingleton<IEmailVerificationNotifier>(services => services.GetRequiredService<ConsoleMail>());
 
 var app = builder.Build();
 
@@ -68,11 +86,17 @@ app.MapGet("/hello", () => "Signed in.");
 app.Run();
 
 // Replace with real mail before anyone else uses this.
-sealed class ConsoleResetNotifier : IPasswordResetNotifier
+sealed class ConsoleMail : IPasswordResetNotifier, IEmailVerificationNotifier
 {
     public Task SendAsync(ToamaisutaaUser user, string resetToken, CancellationToken cancellationToken = default)
     {
         Console.WriteLine($"Reset token for {user.Email}: {resetToken}");
+        return Task.CompletedTask;
+    }
+
+    public Task SendAsync(ToamaisutaaUser user, string email, string verificationToken, CancellationToken cancellationToken = default)
+    {
+        Console.WriteLine($"Verification token for {email}: {verificationToken}");
         return Task.CompletedTask;
     }
 }
@@ -81,10 +105,15 @@ sealed class ConsoleResetNotifier : IPasswordResetNotifier
 `dotnet run`. Every endpoint now needs a token unless it says `.AllowAnonymous()`, and a missing key
 or setting stops startup with a message naming it rather than failing at the first request.
 
+A password reset goes only to an address that has been verified, which is why a verification
+notifier is registered even this early: without one, startup refuses, because no reset could ever
+be sent.
+
 ## Try it
 
 1. **Register** - `POST /auth/register` with `{ "userName": "ada", "email": "ada@example.com",
-   "password": "correct horse battery staple" }`. Answers `201` with an `access_token`.
+   "password": "correct horse battery staple" }`. Answers `201` with an `access_token`. Run in
+   Development (`dotnet run` is, by default), since registration is only open there.
 2. **Call your endpoint** - `GET /hello` with `Authorization: Bearer <access_token>`. `200`; without
    the header, `401`.
 3. **Turn on two-factor** - `POST /auth/2fa/begin` with `{ "currentPassword": "..." }` and the token.
@@ -102,11 +131,14 @@ Every route and body: [local password login](/password-login).
 - **Keys from the environment**, never committed: `LocalLogin__SigningKey`, `TwoFactor__EncryptionKey`.
   The sample's published keys are refused outside Development. [Signing local tokens](/token-signing)
   covers rotating keys and asymmetric signing.
-- **Real mail** for password resets: your own `IPasswordResetNotifier`, or the SMTP package -
-  [provisioning accounts](/provisioning-accounts).
+- **Real mail** for password resets and address verification: your own notifiers, or the SMTP
+  package - [provisioning accounts](/provisioning-accounts). The console one above refuses to start
+  outside Development, because anyone reading the logs could take over any account.
 - **Behind a reverse proxy**, forward the client's address, or every caller shares one rate limit -
   [behind a proxy](/password-login#behind-a-proxy-configure-forwarded-headers).
-- **Decide who may register.** `AllowSelfRegistration` lets anyone; without it, accounts come from an
+- **Decide who may register.** It is on in Development only. Turned on everywhere, anyone can create
+  an account and call every endpoint that only asks for a signed-in user, and registration answers
+  409 for a taken name, which tells a stranger who has an account. Without it, accounts come from an
   admin or an invitation - [provisioning accounts](/provisioning-accounts).
 - **A production database** - [storage and migrations](/storage).
 
