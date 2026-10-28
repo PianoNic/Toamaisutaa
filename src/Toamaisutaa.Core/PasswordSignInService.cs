@@ -262,7 +262,7 @@ internal sealed class PasswordSignInService(
             if (redemption.Outcome == SignInOutcome.InvalidTwoFactorCode && reservation is { } reserved)
                 await ReportWrongCodeAsync(reserved, "Sign-in", now, cancellationToken);
             else if (redemption.Outcome == SignInOutcome.InvalidTwoFactorCode && enrolmentReservation?.LockedUntil is { } until)
-                await ReportLockedOutAsync(redemption.UserId!.Value, until, now, cancellationToken);
+                await ReportLockedOutAsync(redemption.UserId!.Value, until, enrolmentReservation.Value.After.Strikes, now, cancellationToken);
             else
                 await GiveBackLostRaceAsync(redemption.Outcome, redemption.UserId, reservation, enrolmentReservation, now, cancellationToken);
 
@@ -956,16 +956,16 @@ internal sealed class PasswordSignInService(
             credential.LockedOutUntil is { } until ? $"; locked out until {until:O}" : string.Empty);
 
         if (reservation.LockedByThisAttempt && credential.LockedOutUntil is { } lockedOutUntil)
-            await ReportLockedOutAsync(credential.UserId, lockedOutUntil, now, cancellationToken);
+            await ReportLockedOutAsync(credential.UserId, lockedOutUntil, credential.LockoutStrikes, now, cancellationToken);
     }
 
-    private async Task ReportLockedOutAsync(Guid userId, DateTimeOffset lockedOutUntil, DateTimeOffset now, CancellationToken cancellationToken)
+    private async Task ReportLockedOutAsync(Guid userId, DateTimeOffset lockedOutUntil, int strikes, DateTimeOffset now, CancellationToken cancellationToken)
     {
         logger.LogWarning("User {UserId} is locked out until {LockedOutUntil}.", userId, lockedOutUntil);
         metrics.LockedOut();
 
         await events.PublishAsync(
-            new AccountLockedOut { OccurredAt = now, UserId = userId, LockedOutUntil = lockedOutUntil },
+            new AccountLockedOut { OccurredAt = now, UserId = userId, LockedOutUntil = lockedOutUntil, Strikes = strikes },
             cancellationToken);
     }
 }

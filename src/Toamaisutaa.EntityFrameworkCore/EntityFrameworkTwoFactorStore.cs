@@ -140,6 +140,26 @@ internal sealed class EntityFrameworkTwoFactorStore<TContext>(TContext context)
                 setters => setters.SetProperty(enrolment => enrolment.LastUsedStep, step),
                 cancellationToken) == 1;
 
+    public Task<bool> UpdateFailedAttemptsAsync(
+        Guid userId,
+        int expectedFailedAttemptCount,
+        DateTimeOffset? expectedFirstFailedAttemptAt,
+        DateTimeOffset? expectedLockedOutUntil,
+        int failedAttemptCount,
+        DateTimeOffset? firstFailedAttemptAt,
+        DateTimeOffset? lockedOutUntil,
+        CancellationToken cancellationToken = default) =>
+        UpdateFailedAttemptsAsync(
+            userId,
+            expectedFailedAttemptCount,
+            expectedFirstFailedAttemptAt,
+            expectedLockedOutUntil,
+            failedAttemptCount,
+            firstFailedAttemptAt,
+            lockedOutUntil,
+            lockoutStrikes: 0,
+            cancellationToken);
+
     public async Task<bool> UpdateFailedAttemptsAsync(
         Guid userId,
         int expectedFailedAttemptCount,
@@ -148,6 +168,7 @@ internal sealed class EntityFrameworkTwoFactorStore<TContext>(TContext context)
         int failedAttemptCount,
         DateTimeOffset? firstFailedAttemptAt,
         DateTimeOffset? lockedOutUntil,
+        int lockoutStrikes,
         CancellationToken cancellationToken = default)
     {
         var written = await context.Set<ToamaisutaaUserTwoFactor>()
@@ -159,7 +180,8 @@ internal sealed class EntityFrameworkTwoFactorStore<TContext>(TContext context)
                 setters => setters
                     .SetProperty(enrolment => enrolment.FailedAttemptCount, failedAttemptCount)
                     .SetProperty(enrolment => enrolment.FirstFailedAttemptAt, firstFailedAttemptAt)
-                    .SetProperty(enrolment => enrolment.LockedOutUntil, lockedOutUntil),
+                    .SetProperty(enrolment => enrolment.LockedOutUntil, lockedOutUntil)
+                    .SetProperty(enrolment => enrolment.LockoutStrikes, lockoutStrikes),
                 cancellationToken) == 1;
 
         // The write bypassed the change tracker; reload so a later whole-row write cannot put an old

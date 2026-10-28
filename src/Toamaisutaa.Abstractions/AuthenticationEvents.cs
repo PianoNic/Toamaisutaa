@@ -66,6 +66,13 @@ public sealed record AccountLockedOut : AuthenticationEvent
     /// sign in from anywhere else.
     /// </summary>
     public bool SourceOnly { get; init; }
+
+    /// <summary>
+    /// How many locks this account has had since it last completed a sign-in, this one included. More
+    /// than one means somebody holding the password keeps guessing codes: the moment to tell the owner.
+    /// Always 1 for a lock on a source, which does not escalate.
+    /// </summary>
+    public int Strikes { get; init; } = 1;
 }
 
 /// <summary>A password was set through a path that proved something first: the current password, or

@@ -332,7 +332,13 @@ internal sealed class TwoFactorService(
             provider.GetService<ToamaisutaaMetrics>()?.LockedOut();
 
             await events.PublishAsync(
-                new AccountLockedOut { OccurredAt = now, UserId = userId, LockedOutUntil = lockedOutUntil },
+                new AccountLockedOut
+                {
+                    OccurredAt = now,
+                    UserId = userId,
+                    LockedOutUntil = lockedOutUntil,
+                    Strikes = credential?.LockoutStrikes ?? enrolmentReservation?.After.Strikes ?? 1,
+                },
                 cancellationToken);
         }
 

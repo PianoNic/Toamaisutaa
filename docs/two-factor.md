@@ -195,6 +195,33 @@ per-address rate limiter. The count lives on the password credential; an account
 by an identity provider, or signing in with a passkey alone - keeps the same count, under the same
 `LocalLogin` thresholds, on its two-factor enrolment instead.
 
+### Repeated locks grow
+
+Somebody who has the password could otherwise guess five codes, wait out the fifteen minutes, and
+guess five more, indefinitely - about 240 guesses a day, which finds a six-digit code within a year.
+So each lock that follows another, with no completed sign-in in between, lasts twice as long as the
+last: 15 minutes, 30, an hour, two, up to `LocalLogin:LockoutMaxDuration` (a day by default). After a
+few rounds that is five guesses a day. A completed sign-in, or a new password, starts it again from
+fifteen minutes.
+
+A lock that is not the first means somebody holding the password is guessing codes. Every lock
+publishes an `account-locked-out` [audit event](/audit-events) whose `Strikes` says which one it is,
+which is the moment to tell the owner to change their password:
+
+```csharp
+internal sealed class TellTheOwner(IUserStore users, YourMailer mailer) : IAuthenticationEventSink
+{
+    public async Task HandleAsync(AuthenticationEvent authenticationEvent, CancellationToken cancellationToken = default)
+    {
+        if (authenticationEvent is not AccountLockedOut { SourceOnly: false, Strikes: > 1, UserId: { } userId })
+            return;
+
+        if (await users.FindByIdAsync(userId, cancellationToken) is { Email: { } email })
+            await mailer.SendPasswordGuessedWarningAsync(email, cancellationToken);
+    }
+}
+```
+
 ## Recovery codes
 
 Ten of them, shown exactly once, and stored as an HMAC under a key derived from

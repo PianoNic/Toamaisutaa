@@ -19,6 +19,7 @@ public sealed class ToamaisutaaUserTwoFactorConfiguration : IEntityTypeConfigura
         builder.Property(enrolment => enrolment.FailedAttemptCount).HasDefaultValue(0);
         builder.Property(enrolment => enrolment.FirstFailedAttemptAt).HasConversion(InstantConverters.NullableInstant);
         builder.Property(enrolment => enrolment.LockedOutUntil).HasConversion(InstantConverters.NullableInstant);
+        builder.Property(enrolment => enrolment.LockoutStrikes).HasDefaultValue(0);
 
         // Sized generously because SecretSizeBytes is configurable.
         builder.Property(enrolment => enrolment.SecretCiphertext).HasMaxLength(256).IsRequired();

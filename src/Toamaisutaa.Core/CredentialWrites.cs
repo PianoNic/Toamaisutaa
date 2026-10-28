@@ -172,7 +172,7 @@ internal static class CredentialWrites
             metrics?.LockedOut();
 
             await events.PublishAsync(
-                new AccountLockedOut { OccurredAt = now, UserId = credential.UserId, LockedOutUntil = lockedOutUntil },
+                new AccountLockedOut { OccurredAt = now, UserId = credential.UserId, LockedOutUntil = lockedOutUntil, Strikes = credential.LockoutStrikes },
                 cancellationToken);
         }
 
@@ -307,6 +307,7 @@ internal static class CredentialWrites
             to.FailedAttemptCount,
             to.FirstFailedAttemptAt,
             to.LockedOutUntil,
+            to.Strikes,
             cancellationToken);
 
     /// <summary>

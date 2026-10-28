@@ -31,6 +31,33 @@ public class PasswordlessTwoFactorLockoutTests
     }
 
     [Test]
+    public async Task A_second_lock_on_an_account_with_no_password_lasts_twice_as_long()
+    {
+        var harness = PasswordHarness.Create(withTwoFactor: true);
+        var user = harness.ProvisionExternalUser();
+        await harness.EnrolAsync(user.Id);
+
+        for (var round = 0; round < 2; round++)
+        {
+            var challenge = await harness.Gate.IssueChallengeAsync(user.Id, harness.Clock.GetUtcNow(), CancellationToken.None);
+
+            for (var i = 0; i < harness.Options.MaxFailedAttempts; i++)
+            {
+                harness.Clock.Now += TimeSpan.FromSeconds(30);
+                await harness.SignIn.VerifyTwoFactorAsync(new TwoFactorSignInRequest { ChallengeToken = challenge.Token, Code = "000000" });
+            }
+
+            if (round == 0)
+                harness.Clock.Now += TimeSpan.FromMinutes(16);
+        }
+
+        var enrolment = (await harness.TwoFactorStore.FindAsync(user.Id))!;
+
+        await Assert.That(enrolment.LockoutStrikes).IsEqualTo(2);
+        await Assert.That(enrolment.LockedOutUntil!.Value - harness.Clock.Now).IsEqualTo(TimeSpan.FromMinutes(30));
+    }
+
+    [Test]
     public async Task A_right_code_clears_the_count_on_an_account_with_no_password()
     {
         var harness = PasswordHarness.Create(withTwoFactor: true);

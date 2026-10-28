@@ -142,6 +142,10 @@ for one request, and stops a late write moving the step backwards.
 expected count is zero and there is none yet. Key the table on (user, source), so two first failures
 from one source collide rather than each inserting a row that counts one.
 
+The overload of `ITwoFactorStore.UpdateFailedAttemptsAsync` taking `lockoutStrikes` writes it with the
+count. Its default drops the strikes, so a store of your own that does not implement it keeps every
+lock at the first length.
+
 `ITwoFactorStore.UpdateFailedAttemptsAsync` holds the wrong-code count for an account with no
 password credential. Write it only where the stored count still equals the expected one, and return
 whether a row changed; the flows re-read and retry, so parallel wrong codes each count.
