@@ -243,6 +243,13 @@ internal sealed class TwoFactorService(
     }
 
     /// <summary>
+    /// A code presented as proof by another package's ceremony, counted exactly as one here is.
+    /// </summary>
+    /// <returns>Null when the code is right, otherwise what to tell the caller.</returns>
+    internal async Task<string?> ProveAsync(Guid userId, string code, CancellationToken cancellationToken) =>
+        (await VerifyProofAsync(userId, code, timeProvider.GetUtcNow(), cancellationToken)).Refusal;
+
+    /// <summary>
     /// Counted like a wrong code at sign-in, or a stolen access token is an unthrottled six-digit
     /// oracle whose prize is the second factor itself.
     /// </summary>

@@ -12,10 +12,20 @@ namespace Toamaisutaa.Passkeys;
 /// </remarks>
 public sealed record PasskeyRegistrationProof
 {
-    /// <summary>The account's current password. Not needed by a session which presented a second
-    /// factor within <c>Passkeys:RegistrationProofWindow</c>.</summary>
+    /// <summary>
+    /// The account's current password, required to register on an account with one and no TOTP
+    /// enrolment. To remove a passkey, a session which presented a second factor within
+    /// <c>Passkeys:RegistrationProofWindow</c> may leave it out.
+    /// </summary>
     [JsonPropertyName("currentPassword")]
     public string? CurrentPassword { get; init; }
+
+    /// <summary>
+    /// A TOTP or recovery code. Required to register a passkey on an account with a confirmed TOTP
+    /// enrolment, whatever else is sent, and counted against lockout like any wrong code.
+    /// </summary>
+    [JsonPropertyName("code")]
+    public string? Code { get; init; }
 
     /// <summary>
     /// When the calling session last presented a live second factor, read from <c>toa_2fa_at</c>.

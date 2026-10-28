@@ -583,11 +583,39 @@ internal sealed class PasskeyService(
 
     // A passkey signs in on its own, so registering one on an account with a second factor takes that
     // second factor: the password alone would mint a way in that skips it. Removing one gives nothing.
-    private readonly record struct ProvenOperation(string Name, string Doing, string Retry, bool NeedsSecondFactorWhenEnrolled);
+    private readonly record struct ProvenOperation(
+        string Name,
+        string Doing,
+        string Retry,
+        bool NeedsSecondFactorWhenEnrolled,
+        bool AcceptsRecentSecondFactor);
 
-    private static readonly ProvenOperation Registration = new("Passkey registration", "Registering a passkey", "register", NeedsSecondFactorWhenEnrolled: true);
+    private async Task RequireCodeAsync(Guid userId, PasskeyRegistrationProof proof, ProvenOperation operation, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(proof.Code))
+        {
+            logger.LogWarning("{Operation} refused for user {UserId}: the account has a second factor, and no code was sent.", operation.Name, userId);
 
-    private static readonly ProvenOperation Removal = new("Passkey removal", "Removing a passkey", "remove it", NeedsSecondFactorWhenEnrolled: false);
+            throw new PasskeyRegistrationException(
+                $"This account has a second factor, so {operation.Doing.ToLowerInvariant()} needs a code from the "
+                + "authenticator app, or a recovery code, sent as code.");
+        }
+
+        if (provider.GetService<ITwoFactorService>() is not TwoFactorService twoFactorService)
+            throw new InvalidOperationException("AddToamaisutaaTwoFactor() is not registered, so a code cannot be checked.");
+
+        if (await twoFactorService.ProveAsync(userId, proof.Code, cancellationToken) is { } refusal)
+        {
+            logger.LogWarning("{Operation} refused for user {UserId}: the code was not accepted.", operation.Name, userId);
+            throw new PasskeyRegistrationException(refusal);
+        }
+    }
+
+    private static readonly ProvenOperation Registration = new(
+        "Passkey registration", "Registering a passkey", "register", NeedsSecondFactorWhenEnrolled: true, AcceptsRecentSecondFactor: false);
+
+    private static readonly ProvenOperation Removal = new(
+        "Passkey removal", "Removing a passkey", "remove it", NeedsSecondFactorWhenEnrolled: false, AcceptsRecentSecondFactor: true);
 
     private async Task RequireLiveCredentialAsync(
         Guid userId,
@@ -599,27 +627,28 @@ internal sealed class PasskeyService(
         var window = options.Value.RegistrationProofWindow;
 
         // A time ahead of now is refused so a skewed issuer clock cannot extend the window.
-        if (proof.SecondFactorAt is { } presentedAt && presentedAt <= now && now - presentedAt <= window)
-            return;
+        var recentSecondFactor = proof.SecondFactorAt is { } presentedAt && presentedAt <= now && now - presentedAt <= window;
 
-        if (operation.NeedsSecondFactorWhenEnrolled
-            && provider.GetService<ITwoFactorStore>() is { } enrolments
-            && await enrolments.FindAsync(userId, cancellationToken) is { ConfirmedAt: not null })
+        var enrolled = provider.GetService<ITwoFactorStore>() is { } enrolments
+            && await enrolments.FindAsync(userId, cancellationToken) is { ConfirmedAt: not null };
+
+        // A code in this very request, not a recent one on the token: a token stolen minutes after a
+        // second factor would otherwise add a passkey that outlives every sign-out and revocation.
+        if (enrolled && operation.NeedsSecondFactorWhenEnrolled)
         {
-            logger.LogWarning(
-                "{Operation} refused for user {UserId}: the account has a second factor, and none was presented recently.",
-                operation.Name,
-                userId);
-
-            throw new PasskeyRegistrationException(
-                $"This account has a second factor, so {operation.Doing.ToLowerInvariant()} needs it too, not only the "
-                + $"password. Complete a step-up, then {operation.Retry} while it is still fresh.");
+            await RequireCodeAsync(userId, proof, operation, cancellationToken);
+            return;
         }
 
         // Resolved rather than injected: the password stores may not be registered, and passwordless
         // accounts prove a second factor instead.
         var passwords = provider.GetService<IPasswordCredentialStore>();
         var credential = passwords is null ? null : await passwords.FindByUserIdAsync(userId, cancellationToken);
+
+        // A recent second factor is the only thing an account with neither a password nor a TOTP
+        // enrolment has to show, so there it still counts. Elsewhere only where the operation allows.
+        if (recentSecondFactor && (credential is null || operation.AcceptsRecentSecondFactor))
+            return;
 
         if (credential is null)
         {

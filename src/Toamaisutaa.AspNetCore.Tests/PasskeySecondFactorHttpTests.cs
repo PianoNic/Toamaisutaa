@@ -138,7 +138,8 @@ public class PasskeySecondFactorHttpTests
         var account = await Account.RegisterAsync(app);
         await account.EnrolAsync();
         using var authenticator = new SoftwareAuthenticator();
-        await Passkeys.RegisterAsync(app, account.AccessToken, authenticator, currentPassword: null);
+        app.Time.AdvanceToNextTotpStep();
+        await Passkeys.RegisterAsync(app, account.AccessToken, authenticator, code: Totp.Code(account.Secret!, app.Time.Now));
 
         var body = await (await account.LoginAsync()).Json();
 
