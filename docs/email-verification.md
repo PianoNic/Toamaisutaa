@@ -50,6 +50,16 @@ may have sat unread while somebody else proved the address. An address another a
 in, and never verified, is not a 409: redeeming the link proves this account holds it, and releases
 it from the other.
 
+That makes the link's wording matter. Its recipient is the mailbox's owner, who may well be the
+other account - somebody who registered with their own address and never verified it. A routine
+"confirm your address" would get clicked, and the address would move to whoever asked. So in that
+case `IEmailVerificationNotifier` is called with `EmailVerificationContext.TakesFromAnotherAccount`,
+and the SMTP template sends a different message: that somebody wants the address on their account,
+that it is currently on another one which may be the reader's, and not to use the link unless they
+asked. It names no account, since a user name is whatever the asker typed.
+
+A notifier of your own should implement the overload taking the context; the default drops it.
+
 `POST /auth/email` answers 429 in two cases, each with an `errors` body saying which: the per-address
 rate limit, and a per-account cooldown of `LocalLogin:MailRequestCooldown` (a minute by default)
 between links, so one account cannot mail an inbox without pause.
@@ -73,6 +83,8 @@ verifies an address on its own, because nothing in this package sends mail on it
   addressing mail to where this account used to be.
 - On any other account holding the same address unverified: its credential's `Email` and
   `NormalizedEmail` are cleared. It typed the address in and never proved it; this account just did.
+  An `email-address-released` [audit event](/audit-events) names that account, the address, and who
+  took it, which is the moment to tell it.
 
 **Sessions stay alive.** Proving an address is not a credential change, so the security stamp does
 not move and nobody is signed out. A *password* change, by contrast, revokes the sessions and also

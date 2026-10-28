@@ -26,6 +26,23 @@ public class SmtpEmailVerificationNotifierTests
     }
 
     [Test]
+    public async Task HandsTheTemplateWhatTheMessageHasToWarnAbout()
+    {
+        var sender = new FakeSmtpMessageSender();
+        var template = new FakeEmailVerificationEmailTemplate();
+        var notifier = new SmtpEmailVerificationNotifier(
+            template,
+            sender,
+            Options.Create(new ToamaisutaaSmtpEmailOptions { From = "noreply@example.com" }),
+            new FakeLogger<SmtpEmailVerificationNotifier>());
+
+        IEmailVerificationNotifier asInterface = notifier;
+        await asInterface.SendAsync(User(), "held@example.com", VerificationToken, new EmailVerificationContext { TakesFromAnotherAccount = true });
+
+        await Assert.That(template.Context?.TakesFromAnotherAccount).IsEqualTo(true);
+    }
+
+    [Test]
     public async Task SendsToTheAddressBeingVerifiedRatherThanTheOneOnTheAccount()
     {
         var (notifier, sender, _) = Build();

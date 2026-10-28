@@ -10,5 +10,13 @@ internal sealed class FakeEmailVerificationEmailTemplate : IEmailVerificationEma
         PlainTextBody = "confirm it",
     };
 
+    public EmailVerificationContext? Context { get; private set; }
+
     public EmailVerificationEmailContent Build(ToamaisutaaUser user, string email, string verificationToken) => Content;
+
+    public EmailVerificationEmailContent Build(ToamaisutaaUser user, string email, string verificationToken, EmailVerificationContext context)
+    {
+        Context = context;
+        return Content;
+    }
 }

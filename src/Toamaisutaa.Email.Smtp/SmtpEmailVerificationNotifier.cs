@@ -12,17 +12,26 @@ internal sealed class SmtpEmailVerificationNotifier(
     IOptions<ToamaisutaaSmtpEmailOptions> options,
     ILogger<SmtpEmailVerificationNotifier> logger) : IEmailVerificationNotifier
 {
+    public Task SendAsync(
+        ToamaisutaaUser user,
+        string email,
+        string verificationToken,
+        CancellationToken cancellationToken = default) =>
+        SendAsync(user, email, verificationToken, new EmailVerificationContext(), cancellationToken);
+
     public async Task SendAsync(
         ToamaisutaaUser user,
         string email,
         string verificationToken,
+        EmailVerificationContext context,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(user);
         ArgumentNullException.ThrowIfNull(email);
         ArgumentNullException.ThrowIfNull(verificationToken);
+        ArgumentNullException.ThrowIfNull(context);
 
-        var content = template.Build(user, email, verificationToken);
+        var content = template.Build(user, email, verificationToken, context);
         var message = SmtpMessages.Create(options.Value, email, content.Subject, content.PlainTextBody, content.HtmlBody);
 
         await sender.SendAsync(message, cancellationToken).ConfigureAwait(false);
