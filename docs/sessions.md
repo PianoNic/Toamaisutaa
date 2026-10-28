@@ -80,8 +80,9 @@ The refresh family, immediately. The next `POST /auth/refresh` on that chain ans
 `AccessTokenLifetime` - fifteen minutes by default. Nothing in this package can recall a signed JWT;
 that is the trade a stateless token makes. This holds for every revocation - a sign-out, a password
 change, a two-factor change - not only this one. Shorten `AccessTokenLifetime` if that window
-matters, and read [security stamps](/password-login#revoking-sessions-means-local-sessions) for the
-case where you want every session gone at once.
+matters. A credential change also moves the [security stamp](/password-login#revoking-sessions-means-local-sessions),
+which admin endpoints always compare and every endpoint compares with
+`LocalLogin:CheckSecurityStampOnEveryRequest` on. Signing out one session does not move it.
 
 Every revoke publishes a `session-revoked` [audit event](/audit-events) with the reason
 `revoked-by-user`, one per family, so a session somebody ended themselves appears in the same table

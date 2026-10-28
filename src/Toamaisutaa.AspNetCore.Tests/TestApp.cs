@@ -110,6 +110,9 @@ internal sealed class TestApp : IAsyncDisposable
             ["LocalLogin:MailRequestCooldown"] = "00:00:00",
             // A second per refused sign-in would make the suite crawl. The floor has its own test.
             ["LocalLogin:SignInRefusalFloor"] = "00:00:00",
+            // Tokens are stamped from Time, which TOTP tests move ahead of the system clock the bearer
+            // handler checks nbf against. The shipped 30 seconds has its own test.
+            ["Oidc:ClockSkew"] = "00:05:00",
             ["TwoFactor:EncryptionKey"] = Convert.ToBase64String(new byte[32]),
             ["TrustedDevices:IpAddressStorage"] = "Truncated",
             ["LocalLogin:IpAddressStorage"] = "Truncated",

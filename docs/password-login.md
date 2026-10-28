@@ -305,8 +305,23 @@ address belongs to whoever typed it, and changing it afterwards, is
 ### Revoking sessions means local sessions
 
 A password change or reset revokes every refresh token this package issued. An access token your
-identity provider issued keeps working until it expires, because we cannot revoke it - and so does a
-local one, for [up to `AccessTokenLifetime`](/sessions#what-a-revoke-actually-ends).
+identity provider issued keeps working until it expires, because we cannot revoke it.
+
+A local access token carries the account's security stamp in `toa_stamp`, and every credential
+change moves the stamp. Where the stamp is compared, the old token stops working at once:
+
+- **Endpoints carrying the admin policy always compare it**, so a stolen admin token stops working
+  the moment the owner changes their password.
+- **Every other endpoint compares it only with `LocalLogin:CheckSecurityStampOnEveryRequest` on.**
+  That costs one primary-key read per request. With it off, a local token keeps working for
+  [up to `AccessTokenLifetime`](/sessions#what-a-revoke-actually-ends) on an endpoint that does not
+  resolve [`ICurrentUser`](/current-user).
+
+Either way a refused token is a 401 with `error="invalid_token"`, so the client refreshes and the
+refresh is refused too.
+
+Removing a role does not move the stamp, because roles come from your own `IUserRoleProvider`. Call
+`AdminRevokeSessionsAsync` (or `POST /auth/users/{userId}/sessions/revoke`) after taking a role away.
 
 It also un-trusts every device and deletes every [passkey](/passkeys) on the account. Both are ways
 of signing in that a new password would otherwise not touch, and somebody changing their password is
@@ -390,6 +405,7 @@ hands you - rather than expecting to construct one.
 | `LocalLogin:Issuer` | `toamaisutaa` | Changing it invalidates every token in flight |
 | `LocalLogin:Audience` | `Oidc:ClientId` | |
 | `LocalLogin:AccessTokenLifetime` | `00:15:00` | |
+| `LocalLogin:CheckSecurityStampOnEveryRequest` | `false` | Refuses a local token issued before a credential changed on every request, not only on admin endpoints. One read per request |
 | `LocalLogin:RefreshTokenLifetime` | `14.00:00:00` | |
 | `LocalLogin:RefreshTokenAbsoluteLifetime` | `90.00:00:00` | How long a rotating chain may live |
 | `LocalLogin:Pbkdf2Iterations` | `600000` | Startup floor; `50000000` is the ceiling a stored row may name |

@@ -24,6 +24,7 @@ Everything binds from the `Oidc` section.
 | `Oidc:ValidateIssuer` | `true` | |
 | `Oidc:ValidateAudience` | `true` | |
 | `Oidc:ValidAudiences:0` | `[ClientId]` | |
+| `Oidc:ClockSkew` | `00:00:30` | Leeway on expiry. JwtBearer's own default is five minutes, which is also five more minutes a revoked token lives |
 | `Oidc:NameClaim` | `name` | |
 | `Oidc:RoleClaim` | `roles` | Set to `groups` for Pocket ID, Authentik and Entra |
 | `Oidc:FetchClaimsFromUserInfo` | `true` | Reads roles from userinfo when the access token omits them |
