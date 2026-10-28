@@ -54,8 +54,9 @@ public class EmailVerificationHttpTests
         await Assert.That(app.IssuedEmailVerifications).IsEmpty();
     }
 
+    /// <summary>A 409 here let any signed-in account list which addresses have accounts.</summary>
     [Test]
-    public async Task Requesting_an_address_another_account_holds_answers_409()
+    public async Task Requesting_an_address_another_account_has_proven_answers_as_if_sent_and_issues_no_link()
     {
         await using var app = await TestApp.StartAsync();
         var account = await Account.RegisterAsync(app);
@@ -63,14 +64,15 @@ public class EmailVerificationHttpTests
         // Verified, because an unproven hold gives way to whoever proves the address.
         var grace = await Account.RegisterAsync(app, "grace");
         await grace.VerifyEmailAsync();
+        var issuedBefore = app.IssuedEmailVerifications.Count;
 
         var response = await app.Client.PostJson(
             "/auth/email",
             new { newEmail = "grace@example.com", currentPassword = account.Password },
             account.AccessToken);
 
-        await Assert.That(response.StatusCode).IsEqualTo(HttpStatusCode.Conflict);
-        await Assert.That((await response.Json()).Strings("errors")).IsNotEmpty();
+        await Assert.That(response.StatusCode).IsEqualTo(HttpStatusCode.NoContent);
+        await Assert.That(app.IssuedEmailVerifications.Count).IsEqualTo(issuedBefore);
     }
 
     [Test]

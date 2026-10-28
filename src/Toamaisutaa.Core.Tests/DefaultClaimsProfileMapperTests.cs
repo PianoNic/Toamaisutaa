@@ -130,4 +130,20 @@ public class DefaultClaimsProfileMapperTests
         await Assert.That(profile.UserName).IsEqualTo("nic@example.com");
         await Assert.That(profile.DisplayName).IsEqualTo("Niclas");
     }
+
+    [Test]
+    [Arguments("true", true)]
+    [Arguments("false", false)]
+    [Arguments(null, null)]
+    public async Task Carries_the_providers_email_verified(string? value, bool? expected)
+    {
+        var mapper = new DefaultClaimsProfileMapper(Microsoft.Extensions.Options.Options.Create(new ToamaisutaaProvisioningOptions()));
+        System.Security.Claims.Claim[] claims = value is null
+            ? [new("sub", "s"), new("email", "a@example.com")]
+            : [new("sub", "s"), new("email", "a@example.com"), new("email_verified", value)];
+
+        var profile = mapper.Map(new System.Security.Claims.ClaimsPrincipal(new System.Security.Claims.ClaimsIdentity(claims, "test")));
+
+        await Assert.That(profile.EmailVerified).IsEqualTo(expected);
+    }
 }

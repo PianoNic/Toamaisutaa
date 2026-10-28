@@ -15,6 +15,12 @@ public sealed record ExternalUserProfile
 
     public string? Email { get; init; }
 
+    /// <summary>
+    /// The provider's <c>email_verified</c>, or null when it sent none. Nothing here uses it; a custom
+    /// policy that links accounts by email should require it true, or it links whoever typed the address.
+    /// </summary>
+    public bool? EmailVerified { get; init; }
+
     /// <summary>Already resolved through the fallback chain, so consumers never repeat it.</summary>
     public string? DisplayName { get; init; }
 

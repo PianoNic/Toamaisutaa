@@ -37,6 +37,7 @@ public sealed class DefaultClaimsProfileMapper(IOptions<ToamaisutaaProvisioningO
             Issuer = Find(principal, names.Issuer),
             UserName = userName,
             Email = email,
+            EmailVerified = bool.TryParse(Find(principal, "email_verified"), out var verified) ? verified : null,
             // A human's name first: preferred_username is a handle, and this field is displayed.
             DisplayName = displayName ?? userName ?? email,
             PictureUrl = Find(principal, names.Picture),

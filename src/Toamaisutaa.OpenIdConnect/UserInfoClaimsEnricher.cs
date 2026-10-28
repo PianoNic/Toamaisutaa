@@ -53,9 +53,12 @@ internal sealed class UserInfoClaimsEnricher(
         {
             var claims = await FetchAsync(context, accessToken, context.HttpContext.RequestAborted);
 
+            // Only the role claim, which is what userinfo is fetched for. Anything else it returns can be a
+            // profile attribute the user edits, and a toa_2fa_at, amr or toa_stamp among them would vouch
+            // for things the provider never checked.
             foreach (var claim in claims)
             {
-                if (!identity.HasClaim(claim.Type, claim.Value))
+                if (string.Equals(claim.Type, settings.RoleClaim, StringComparison.Ordinal) && !identity.HasClaim(claim.Type, claim.Value))
                     identity.AddClaim(new Claim(claim.Type, claim.Value));
             }
         }

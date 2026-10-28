@@ -68,6 +68,7 @@ internal sealed class PasswordAccountService(
         }
 
         logger.LogInformation("Registered local account for user {UserId}.", user.Id);
+        await events.PublishAsync(new AccountCreated { OccurredAt = now, UserId = user.Id, Source = "registration" }, cancellationToken);
 
         var tokens = await signIn.SignInAsync(
             new PasswordSignInRequest { Identifier = request.UserName.Trim(), Password = request.Password },
@@ -213,6 +214,7 @@ internal sealed class PasswordAccountService(
         await adminNotifier.PasswordIssuedAsync(user, effectivePassword, cancellationToken);
 
         logger.LogInformation("Admin-created local account for user {UserId}.", user.Id);
+        await events.PublishAsync(new AccountCreated { OccurredAt = now, UserId = user.Id, Source = "administrator" }, cancellationToken);
 
         return new AccountResult { Succeeded = true, UserId = user.Id };
     }
@@ -413,10 +415,14 @@ internal sealed class PasswordAccountService(
 
         // Checked here as well as on redemption so no unusable link is mailed. An address held but
         // unproven by another account is not refused: redeeming this link proves it and releases theirs.
+        // Held and proven, the caller hears what it would have, or any signed-in account could list
+        // which addresses have accounts; the address's owner hears instead.
         if (await IsHeldFirmlyByAnotherAsync(normalized, userId, cancellationToken))
         {
-            logger.LogInformation("Email change refused for user {UserId}: another local account already uses that address.", userId);
-            return AccountResult.Taken("That email address is already in use.");
+            logger.LogInformation("Email change for user {UserId}: another local account already uses that address. No link issued.", userId);
+
+            await verificationNotifier.SendAddressInUseAsync(user, trimmed, cancellationToken);
+            return new AccountResult { Succeeded = true, UserId = userId };
         }
 
         var now = timeProvider.GetUtcNow();
@@ -452,6 +458,7 @@ internal sealed class PasswordAccountService(
             cancellationToken);
 
         logger.LogInformation("Email verification token issued for user {UserId} and handed to the notifier.", userId);
+        await events.PublishAsync(new EmailChangeRequested { OccurredAt = now, UserId = userId, Email = trimmed }, cancellationToken);
 
         return new AccountResult { Succeeded = true, UserId = userId };
     }
@@ -610,6 +617,7 @@ internal sealed class PasswordAccountService(
         }
 
         logger.LogInformation("Magic-link token issued for user {UserId} and handed to the notifier.", credential.UserId);
+        await events.PublishAsync(new MagicLinkRequested { OccurredAt = now, UserId = credential.UserId }, cancellationToken);
         return MagicLinkRequestOutcome.Sent;
     }
 
@@ -701,6 +709,7 @@ internal sealed class PasswordAccountService(
         }
 
         logger.LogInformation("Invitation created for user {UserId} and handed to the notifier.", user.Id);
+        await events.PublishAsync(new InvitationSent { OccurredAt = now, UserId = user.Id, Email = email.Trim() }, cancellationToken);
 
         return new AccountResult { Succeeded = true, UserId = user.Id };
     }
@@ -832,6 +841,7 @@ internal sealed class PasswordAccountService(
         await users.SetUserNameAsync(user.Id, trimmedUserName, cancellationToken);
 
         logger.LogInformation("Invitation completed for user {UserId}.", user.Id);
+        await events.PublishAsync(new AccountCreated { OccurredAt = now, UserId = user.Id, Source = "invitation" }, cancellationToken);
 
         var tokens = await signIn.SignInAsync(
             new PasswordSignInRequest { Identifier = trimmedUserName, Password = password },
@@ -923,6 +933,7 @@ internal sealed class PasswordAccountService(
         }
 
         logger.LogInformation("Password reset token issued for user {UserId} and handed to the notifier.", credential.UserId);
+        await events.PublishAsync(new PasswordResetRequested { OccurredAt = now, UserId = credential.UserId }, cancellationToken);
         return PasswordResetRequestOutcome.Sent;
     }
 

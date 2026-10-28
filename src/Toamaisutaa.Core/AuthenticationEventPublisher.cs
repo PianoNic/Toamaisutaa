@@ -3,6 +3,12 @@ using Toamaisutaa.Abstractions;
 
 namespace Toamaisutaa.Core;
 
+/// <summary>Who is signed in on the current request. Implemented by the ASP.NET Core package, since Core has no request.</summary>
+internal interface IAuthenticationActor
+{
+    string? Subject { get; }
+}
+
 /// <summary>
 /// Sinks are resolved lazily inside the publisher's try block, so a sink whose constructor throws
 /// cannot fail the request the way injecting an <c>IEnumerable</c> of sinks would.
@@ -11,10 +17,14 @@ internal sealed record AuthenticationEventSinkRegistration(Type SinkType, Func<I
 
 internal sealed class AuthenticationEventPublisher(
     IEnumerable<AuthenticationEventSinkRegistration> sinks,
-    ILogger<AuthenticationEventPublisher> logger)
+    ILogger<AuthenticationEventPublisher> logger,
+    IAuthenticationActor? actor = null)
 {
     internal async Task PublishAsync(AuthenticationEvent authenticationEvent, CancellationToken cancellationToken)
     {
+        if (authenticationEvent.ActorSubject is null && actor?.Subject is { } subject)
+            authenticationEvent = authenticationEvent with { ActorSubject = subject };
+
         foreach (var registration in sinks)
         {
             try

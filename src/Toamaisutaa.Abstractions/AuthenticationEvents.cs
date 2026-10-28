@@ -24,6 +24,51 @@ public abstract record AuthenticationEvent
     /// token, which is most of these.
     /// </summary>
     public IReadOnlyList<string> AuthenticationMethods { get; init; } = [];
+
+    /// <summary>
+    /// The <c>sub</c> of whoever was signed in on the request that caused this, filled in by the
+    /// publisher. Differs from <see cref="UserId"/> when an administrator acted on someone else's
+    /// account; null on an anonymous request, a sign-in for example.
+    /// </summary>
+    public string? ActorSubject { get; init; }
+}
+
+/// <summary>An account came into existence.</summary>
+public sealed record AccountCreated : AuthenticationEvent
+{
+    public override string Kind => "account-created";
+
+    /// <summary><c>registration</c>, <c>administrator</c>, <c>invitation</c> or <c>external-login</c>.</summary>
+    public required string Source { get; init; }
+}
+
+/// <summary>An invitation link was issued and handed to the notifier.</summary>
+public sealed record InvitationSent : AuthenticationEvent
+{
+    public override string Kind => "invitation-sent";
+
+    public required string Email { get; init; }
+}
+
+/// <summary>A password reset link was issued and handed to the notifier. Requests that sent nothing
+/// - an unknown address, an unverified one - publish nothing, as they name no account.</summary>
+public sealed record PasswordResetRequested : AuthenticationEvent
+{
+    public override string Kind => "password-reset-requested";
+}
+
+/// <summary>A magic sign-in link was issued and handed to the notifier.</summary>
+public sealed record MagicLinkRequested : AuthenticationEvent
+{
+    public override string Kind => "magic-link-requested";
+}
+
+/// <summary>A verification link for a new address was issued; nothing has moved until it is redeemed.</summary>
+public sealed record EmailChangeRequested : AuthenticationEvent
+{
+    public override string Kind => "email-change-requested";
+
+    public required string Email { get; init; }
 }
 
 /// <summary>A token pair was issued. <see cref="SessionId"/> is the refresh family, which is what

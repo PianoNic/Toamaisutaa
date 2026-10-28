@@ -9,7 +9,8 @@ public class ExternalLoginProvisionerTests
     private static readonly DateTimeOffset Now = new(2026, 8, 11, 12, 0, 0, TimeSpan.Zero);
 
     private static (ExternalLoginProvisioner Provisioner, FakeStore Store, FixedTimeProvider Clock) Build(
-        ProfileSyncMode mode = ProfileSyncMode.OnChange)
+        ProfileSyncMode mode = ProfileSyncMode.OnChange,
+        RecordingEventSink? events = null)
     {
         var clock = new FixedTimeProvider(Now);
         var store = new FakeStore(clock);
@@ -23,7 +24,12 @@ public class ExternalLoginProvisionerTests
             options,
             Options.Create(new ToamaisutaaLocalLoginOptions()),
             clock,
-            NullLogger<ExternalLoginProvisioner>.Instance);
+            NullLogger<ExternalLoginProvisioner>.Instance,
+            events is null
+                ? null
+                : new AuthenticationEventPublisher(
+                    [new AuthenticationEventSinkRegistration(typeof(RecordingEventSink), () => events)],
+                    NullLogger<AuthenticationEventPublisher>.Instance));
 
         return (provisioner, store, clock);
     }
@@ -35,6 +41,21 @@ public class ExternalLoginProvisionerTests
             ("preferred_username", "pianonic"),
             ("email", "nic@example.com"),
             ("name", displayName));
+
+    [Test]
+    public async Task AFirstSignInPublishesAnAccountCreatedByExternalLoginAndALaterOneDoesNot()
+    {
+        var events = new RecordingEventSink();
+        var (provisioner, _, _) = Build(events: events);
+
+        var user = await provisioner.ProvisionAsync(Principal());
+        await provisioner.ProvisionAsync(Principal());
+
+        var created = events.OfKind<AccountCreated>().Single();
+
+        await Assert.That(created.UserId).IsEqualTo(user.Id);
+        await Assert.That(created.Source).IsEqualTo("external-login");
+    }
 
     [Test]
     public async Task FirstSignInCreatesTheUserAndTheLink()

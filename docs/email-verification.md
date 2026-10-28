@@ -43,10 +43,13 @@ another device. The token is what proves anything here.
 { "token": "the token from the notifier" }
 ```
 
-Both answer 409 when another local account holds the address **and has proven it**, or holds it as a
-user name from before user names could not contain `@`. That is checked twice: when the link is
-asked for, so a link that cannot work is never sent, and again when it is redeemed, because the link
-may have sat unread while somebody else proved the address. An address another account only typed
+When another local account holds the address **and has proven it**, or holds it as a user name from
+before user names could not contain `@`, no link is issued. `POST /auth/email` still answers 204, as
+if one had been: a 409 would let any signed-in account find out which addresses have accounts here.
+The address's owner gets `IEmailVerificationNotifier.SendAddressInUseAsync` instead - with the SMTP
+package, a short mail saying someone tried to use it and nothing changed. The default sends nothing.
+Redeeming checks again, and answers 409, because a link may have sat unread while somebody else
+proved the address; that needs the link, so it reveals nothing new. An address another account only typed
 in, and never verified, is not a 409: redeeming the link proves this account holds it, and releases
 it from the other.
 

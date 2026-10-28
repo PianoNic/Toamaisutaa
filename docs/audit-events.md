@@ -43,7 +43,10 @@ authentication service. Register as many as you like: all of them are called, in
 
 ## What is published
 
-Every event carries `Kind`, `OccurredAt`, `UserId` and the `amr` values the resulting token carries.
+Every event carries `Kind`, `OccurredAt`, `UserId` and the `amr` values the resulting token carries,
+and `ActorSubject`: the `sub` of whoever was signed in on the request that caused it. On an
+administrator's action it names the administrator while `UserId` names the account acted on; on an
+anonymous request, a sign-in for example, it is null.
 `Kind` is a stable string meant for a column - it never changes once shipped, which a type name
 cannot promise.
 
@@ -66,6 +69,11 @@ cannot promise.
 | `trusted-device-revoked` | A device stopped being trusted | `DeviceId`, `Reason` |
 | `session-revoked` | A refresh family stopped being usable | `SessionId`, `Reason` |
 | `refresh-token-reuse-detected` | An already-rotated refresh token was presented | `SessionId` |
+| `account-created` | An account came into existence | `Source`: `registration`, `administrator`, `invitation` or `external-login` |
+| `invitation-sent` | An invitation link was issued | `Email` |
+| `password-reset-requested` | A reset link was issued (an unknown or unverified address issues nothing, and publishes nothing) | |
+| `magic-link-requested` | A sign-in link was issued | |
+| `email-change-requested` | A verification link for a new address was issued | `Email` |
 | `account-disabled` | An administrator disabled the account | |
 | `account-enabled` | An administrator enabled it again | |
 
@@ -86,6 +94,40 @@ once, which is what a credential change does.
 account from a wrong password. `SignInFailed.Reason` is the internal outcome - `UnknownUser`,
 `InvalidPassword`, `LockedOut` - because a sink is on the inside of that distinction.
 :::
+
+## Telling the owner
+
+Nothing here mails anyone about their own account on its own. A sink is where to do it, since it
+sees every change with the account's address to hand. The common ones: a password changed or reset,
+an address changed - `EmailChanged.PreviousEmail` is the address to warn, since the new one is in the
+hands of whoever just proved it - a passkey added, and a repeated lock:
+
+```csharp
+internal sealed class SecurityNotices(IUserStore users, YourMailer mailer) : IAuthenticationEventSink
+{
+    public async Task HandleAsync(AuthenticationEvent e, CancellationToken cancellationToken = default)
+    {
+        var to = e switch
+        {
+            EmailChanged { PreviousEmail: { } previous } changed when previous != changed.Email => previous,
+            PasswordChanged or PasswordReset or PasskeyRegistered or AccountLockedOut { Strikes: > 1 }
+                => e.UserId is { } id ? (await users.FindByIdAsync(id, cancellationToken))?.Email : null,
+            _ => null,
+        };
+
+        if (to is not null)
+            await mailer.SendSecurityNoticeAsync(to, e.Kind, e.OccurredAt, cancellationToken);
+    }
+}
+```
+
+## Mail that must not be lost
+
+The package's own notifiers send from an in-memory queue of a thousand, behind the per-address rate
+limit and a per-address cooldown. Enough callers spread across enough addresses can still fill it,
+and a full queue drops new mail; a restart loses what is queued. If a reset or an invitation must
+survive either, register notifiers that write to a durable outbox in your own database and send from
+there.
 
 ## What is deliberately not an event
 

@@ -63,6 +63,35 @@ public class EmailAddressTakeoverHttpTests
         await Assert.That(released.Email).IsEqualTo(victim.Email);
     }
 
+    [Test]
+    public async Task Asking_for_an_address_another_account_has_proven_tells_that_address_instead()
+    {
+        var sent = new List<(string Email, EmailVerificationContext Context)>();
+        var inUse = new List<string>();
+        await using var app = await TestApp.StartAsync(configureServices: services =>
+            services.AddSingleton<IEmailVerificationNotifier>(new RecordingNotifier(sent, inUse)));
+
+        var owner = await Account.RegisterAsync(app, "owner");
+        var asker = await Account.RegisterAsync(app, "asker");
+
+        await ProveAsync(app, owner);
+
+        await RequestAsync(app, asker, owner.Email);
+
+        await Assert.That(sent).IsEmpty();
+        await Assert.That(inUse).IsEquivalentTo(new[] { owner.Email });
+    }
+
+    private static async Task ProveAsync(TestApp app, Account account)
+    {
+        await using var scope = app.Services.CreateAsyncScope();
+        var store = scope.ServiceProvider.GetRequiredService<IPasswordCredentialStore>();
+        var credential = (await store.FindByIdentifierAsync(account.UserName.ToUpperInvariant()))!;
+
+        credential.EmailConfirmedAt = app.Time.Now;
+        await store.UpdateAsync(credential);
+    }
+
     private static async Task RequestAsync(TestApp app, Account account, string newEmail)
     {
         var response = await app.Client.PostJson("/auth/email", new { newEmail, currentPassword = account.Password }, account.AccessToken);
@@ -71,8 +100,16 @@ public class EmailAddressTakeoverHttpTests
             throw new InvalidOperationException($"Email change failed: {response.StatusCode} {await response.Content.ReadAsStringAsync()}");
     }
 
-    private sealed class RecordingNotifier(List<(string Email, EmailVerificationContext Context)> sent) : IEmailVerificationNotifier
+    private sealed class RecordingNotifier(List<(string Email, EmailVerificationContext Context)> sent, List<string>? inUse = null) : IEmailVerificationNotifier
     {
+        public Task SendAddressInUseAsync(ToamaisutaaUser requester, string email, CancellationToken cancellationToken = default)
+        {
+            lock (sent)
+                inUse?.Add(email);
+
+            return Task.CompletedTask;
+        }
+
         public Task SendAsync(ToamaisutaaUser user, string email, string verificationToken, CancellationToken cancellationToken = default) =>
             throw new InvalidOperationException("The package should call the overload that carries the context.");
 

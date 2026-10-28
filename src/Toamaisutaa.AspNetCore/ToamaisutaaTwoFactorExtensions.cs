@@ -96,6 +96,7 @@ public static class ToamaisutaaTwoFactorExtensions
         services.AddOptions<ToamaisutaaTrustedDeviceOptions>();
         services.TryAddScoped<TrustedDeviceGate>();
         services.TryAddScoped<AuthenticationEventPublisher>();
+        Toamaisutaa.AspNetCore.HttpContextAuthenticationActor.Register(services);
         services.TryAddScoped<ITwoFactorService, TwoFactorService>();
 
         services.TryAddEnumerable(

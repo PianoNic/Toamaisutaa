@@ -13,7 +13,8 @@ internal sealed class ExternalLoginProvisioner(
     IOptions<ToamaisutaaProvisioningOptions> options,
     IOptions<ToamaisutaaLocalLoginOptions> localLoginOptions,
     TimeProvider timeProvider,
-    ILogger<ExternalLoginProvisioner> logger) : IExternalLoginProvisioner
+    ILogger<ExternalLoginProvisioner> logger,
+    AuthenticationEventPublisher? events = null) : IExternalLoginProvisioner
 {
     public async Task<ToamaisutaaUser> ProvisionAsync(ClaimsPrincipal principal, CancellationToken cancellationToken = default)
     {
@@ -150,6 +151,14 @@ internal sealed class ExternalLoginProvisioner(
             {
                 var user = await userStore.CreateAsync(profile, cancellationToken);
                 await externalLoginStore.LinkAsync(user.Id, providerKey, profile, cancellationToken);
+
+                if (events is not null)
+                {
+                    await events.PublishAsync(
+                        new AccountCreated { OccurredAt = timeProvider.GetUtcNow(), UserId = user.Id, Source = "external-login" },
+                        cancellationToken);
+                }
+
                 return user;
             }
 

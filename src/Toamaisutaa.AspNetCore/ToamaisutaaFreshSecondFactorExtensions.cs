@@ -1,4 +1,7 @@
 using System.Globalization;
+using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 using Toamaisutaa.Abstractions;
 
 namespace Microsoft.AspNetCore.Authorization;
@@ -28,7 +31,18 @@ public static class ToamaisutaaFreshSecondFactorExtensions
 
         return builder.RequireAssertion(context =>
         {
-            var claim = context.User.FindFirst(ToamaisutaaDefaults.SecondFactorAtClaim)?.Value;
+            var services = (context.Resource as HttpContext)?.RequestServices;
+
+            // Only this application's own tokens: toa_2fa_at is its claim, and on another issuer's token
+            // it is whatever that issuer, or a user editing their profile there, put in it.
+            var localIssuer = services?.GetService<IOptions<ToamaisutaaLocalLoginOptions>>()?.Value.Issuer;
+
+            // The clock that stamped toa_2fa_at, so the two agree on what "now" is.
+            var now = (services?.GetService<TimeProvider>() ?? TimeProvider.System).GetUtcNow();
+
+            var claim = context.User.FindAll(ToamaisutaaDefaults.SecondFactorAtClaim)
+                .FirstOrDefault(found => localIssuer is not null && string.Equals(found.Issuer, localIssuer, StringComparison.Ordinal))
+                ?.Value;
 
             if (!long.TryParse(claim, NumberStyles.Integer, CultureInfo.InvariantCulture, out var unixSeconds))
                 return false;
@@ -36,7 +50,7 @@ public static class ToamaisutaaFreshSecondFactorExtensions
             var presentedAt = DateTimeOffset.FromUnixTimeSeconds(unixSeconds);
 
             // A timestamp from the future is refused, so a skewed issuer cannot mint a long-lived "fresh" factor.
-            return presentedAt <= DateTimeOffset.UtcNow && DateTimeOffset.UtcNow - presentedAt <= within;
+            return presentedAt <= now && now - presentedAt <= within;
         });
     }
 }

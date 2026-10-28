@@ -56,6 +56,7 @@ public static class ToamaisutaaPasskeyExtensions
         services.AddOptions<ToamaisutaaTwoFactorOptions>();
         services.TryAddScoped<TwoFactorGate>();
         services.TryAddScoped<AuthenticationEventPublisher>();
+        Toamaisutaa.AspNetCore.HttpContextAuthenticationActor.Register(services);
         services.TryAddScoped<LocalSessionIssuer>();
 
         // Built from our options rather than the library's AddFido2, so nothing depends on a registration

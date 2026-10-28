@@ -76,19 +76,22 @@ public class IdentifierNamespaceHttpTests
     }
 
     [Test]
-    public async Task Changing_an_email_to_another_accounts_user_name_is_refused()
+    public async Task Changing_an_email_to_another_accounts_user_name_issues_no_link()
     {
         await using var app = await TestApp.StartAsync();
         var victim = await Account.RegisterAsync(app);
         await GiveAnAddressShapedUserNameAsync(app, victim.UserName, LegacyUserName);
         var mallory = await Account.RegisterAsync(app, "mallory");
+        var issuedBefore = app.IssuedEmailVerifications.Count;
 
         var change = await app.Client.PostJson(
             "/auth/email",
             new { newEmail = LegacyUserName, currentPassword = mallory.Password },
             mallory.AccessToken);
 
-        await Assert.That(change.StatusCode).IsEqualTo(HttpStatusCode.Conflict);
+        // Answered as if sent, so it reveals nothing; no link exists to take the name with.
+        await Assert.That(change.StatusCode).IsEqualTo(HttpStatusCode.NoContent);
+        await Assert.That(app.IssuedEmailVerifications.Count).IsEqualTo(issuedBefore);
     }
 
     private const string LegacyUserName = "legacy@example.com";

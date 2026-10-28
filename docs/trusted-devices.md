@@ -103,14 +103,16 @@ options.AddPolicy("FreshSecondFactor", policy => policy
     .RequireAuthenticatedUser()
     .RequireAssertion(context =>
     {
-        var at = context.User.FindFirst("toa_2fa_at")?.Value;
+        // Only from this application's own tokens: on another issuer's, it is whatever that issuer put there.
+        var at = context.User.FindAll("toa_2fa_at").FirstOrDefault(claim => claim.Issuer == "your LocalLogin:Issuer")?.Value;
         return long.TryParse(at, out var seconds)
             && DateTimeOffset.UtcNow.ToUnixTimeSeconds() - seconds < 300;
     }));
 ```
 
-Both fail closed: a token with no `toa_2fa_at`, or one that cannot be parsed, is refused rather than
-waved through.
+Both fail closed: a token with no `toa_2fa_at`, one that cannot be parsed, or one an identity
+provider issued, is refused rather than waved through. The built-in one also reads the clock from
+the registered `TimeProvider`, the one that stamped the claim.
 
 A request failing the policy gets a **403**. What the user does next is
 [step-up](/two-factor#step-up), which asks for one code and returns a new access token for the same
