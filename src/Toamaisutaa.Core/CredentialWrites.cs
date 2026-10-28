@@ -152,7 +152,9 @@ internal static class CredentialWrites
             return "Too many wrong passwords. Try again later.";
         }
 
-        if (hasher.Verify(currentPassword, credential.PasswordHash) != PasswordVerificationResult.Failed)
+        // Counted, but not hashed: no password that long can have been set.
+        if (currentPassword.Length <= options.MaximumPasswordLength
+            && hasher.Verify(currentPassword, credential.PasswordHash) != PasswordVerificationResult.Failed)
         {
             // Refund only this reservation: a correct current password is not a sign-in and must not
             // clear what anyone else has guessed.

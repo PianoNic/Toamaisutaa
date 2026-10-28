@@ -37,6 +37,7 @@ public static class ToamaisutaaPasskeyEndpointExtensions
         var localLogin = endpoints.ServiceProvider.GetRequiredService<IOptions<ToamaisutaaLocalLoginOptions>>().Value;
 
         var group = endpoints.MapGroup(localLogin.EndpointPrefix + options.EndpointPrefix).WithTags("Passkeys");
+        group.WithMetadata(RequestBodyLimit.For(endpoints.ServiceProvider));
 
         // Four of the six resolve the caller, so they can meet a token whose stamp has moved.
         group.AddEndpointFilter<StaleSecurityStampFilter>();

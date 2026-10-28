@@ -31,6 +31,18 @@ internal sealed class PasswordSignInService(
         var password = request.Password;
 
         var now = timeProvider.GetUtcNow();
+
+        // Before the lookup, so the answer is the same whether the account exists. No password this
+        // long can have been set, and hashing it in full is the cost an attacker is after.
+        if (password.Length > options.Value.MaximumPasswordLength)
+        {
+            VerifyDummy(password[..options.Value.MaximumPasswordLength]);
+            logger.LogInformation("Sign-in refused: the password is longer than LocalLogin:MaximumPasswordLength, so it was not checked.");
+
+            await events.PublishAsync(new SignInFailed { OccurredAt = now, Reason = SignInOutcome.InvalidPassword }, cancellationToken);
+            return Refused(SignInOutcome.InvalidPassword);
+        }
+
         var credential = await credentials.FindByIdentifierAsync(Normalizer.Normalize(request.Identifier), cancellationToken);
 
         if (credential is null)
