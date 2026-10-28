@@ -21,7 +21,8 @@ public class ToamaisutaaUser
     /// on refresh and wherever <c>ICurrentUser</c> resolves a user, so a stale one ends the session.
     /// </summary>
     /// <remarks>
-    /// It is not compared on every bearer request, so a stale token lives until
+    /// On a bearer request it is compared only on admin endpoints, unless
+    /// <c>LocalLogin:CheckSecurityStampOnEveryRequest</c> is on; elsewhere a stale token lives until
     /// <c>AccessTokenLifetime</c> runs out.
     /// </remarks>
     public string SecurityStamp { get; set; } = default!;

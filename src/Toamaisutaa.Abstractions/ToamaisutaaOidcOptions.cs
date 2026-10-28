@@ -26,6 +26,12 @@ public sealed class ToamaisutaaOidcOptions
     /// <see cref="ClientId"/> when left empty.</summary>
     public IList<string> ValidAudiences { get; set; } = new List<string>();
 
+    /// <summary>
+    /// Leeway on a token's expiry and not-before. 30 seconds rather than JwtBearer's five minutes,
+    /// because the leeway is also how long a token outlives its expiry.
+    /// </summary>
+    public TimeSpan ClockSkew { get; set; } = TimeSpan.FromSeconds(30);
+
     /// <summary>Claim type carrying the display name on the resulting identity.</summary>
     public string NameClaim { get; set; } = "name";
 

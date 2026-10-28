@@ -159,9 +159,10 @@ Disabling one already disabled keeps the original `DisabledAt` and revokes again
 stamp and revokes every session and trusted device, so the owner signs in again with what they
 already have.
 
-Both move the stamp, so an access token already in flight is refused wherever the stamp is checked.
-On an endpoint that only checks the token's signature, it keeps working until `AccessTokenLifetime`
-runs out.
+Both move the stamp, so an access token already in flight is refused on admin endpoints, and on
+every endpoint with [`LocalLogin:CheckSecurityStampOnEveryRequest`](/password-login#revoking-sessions-means-local-sessions)
+on. Without it, an endpoint that only checks the token's signature accepts it until
+`AccessTokenLifetime` runs out.
 
 A custom `IUserStore` needs `SetDisabledAtAsync`. The default implementation throws, so a store written
 before this existed keeps compiling and fails only when an account is actually disabled.

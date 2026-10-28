@@ -32,6 +32,17 @@ public sealed class ToamaisutaaLocalLoginOptions
 
     public TimeSpan AccessTokenLifetime { get; set; } = TimeSpan.FromMinutes(15);
 
+    /// <summary>
+    /// Off by default. Compares a local token's <c>toa_stamp</c> with the user row on every request,
+    /// so a password change, a revoked session or a disabled account ends the access token at once
+    /// rather than when <see cref="AccessTokenLifetime"/> runs out. Costs one primary-key read per
+    /// request.
+    /// </summary>
+    /// <remarks>
+    /// Endpoints carrying the admin policy are checked whether this is on or not.
+    /// </remarks>
+    public bool CheckSecurityStampOnEveryRequest { get; set; }
+
     public TimeSpan RefreshTokenLifetime { get; set; } = TimeSpan.FromDays(14);
 
     /// <summary>How long a chain of rotated refresh tokens may live before the person has to sign

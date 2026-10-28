@@ -1,8 +1,10 @@
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using Microsoft.IdentityModel.JsonWebTokens;
 using Microsoft.IdentityModel.Tokens;
 using Toamaisutaa.Abstractions;
 
@@ -48,13 +50,20 @@ internal sealed class ConfigureToamaisutaaJwtBearerOptions(
         options.TokenValidationParameters.ValidIssuer = publicAuthority;
         options.TokenValidationParameters.ValidateAudience = settings.ValidateAudience;
         options.TokenValidationParameters.ValidAudiences = ValidAudiences(settings, localLoginOptions.Value);
+        options.TokenValidationParameters.ClockSkew = settings.ClockSkew;
 
         ConfigureLocallyIssuedTokens(options);
 
         options.Events = new JwtBearerEvents
         {
             OnMessageReceived = ReadQueryToken(settings.QueryToken),
-            OnTokenValidated = context => RefuseIdTokens(context) ? Task.CompletedTask : enricher.EnrichAsync(context),
+            OnTokenValidated = async context =>
+            {
+                if (RefuseIdTokens(context) || !await StampIsCurrentAsync(context))
+                    return;
+
+                await enricher.EnrichAsync(context);
+            },
             OnForbidden = ExplainForbidden(settings, authorizationOptions.Value),
         };
     }
@@ -81,6 +90,68 @@ internal sealed class ConfigureToamaisutaaJwtBearerOptions(
 
         context.Fail("An ID token was presented as a bearer token. Send the access token instead.");
         return true;
+    }
+
+    /// <summary>
+    /// Fails a local token whose stamp has moved since it was issued: a signature and an expiry say
+    /// nothing about a password reset, a revoked session or a disabled account since. Always on admin
+    /// endpoints, everywhere with <c>CheckSecurityStampOnEveryRequest</c>.
+    /// </summary>
+    /// <remarks>
+    /// Here rather than in an authorization requirement, so a stale token is a 401 the client can act
+    /// on, not a 403 that <c>OnForbidden</c> would explain as a missing role.
+    /// </remarks>
+    private async Task<bool> StampIsCurrentAsync(TokenValidatedContext context)
+    {
+        var local = localLoginOptions.Value;
+
+        if (!local.CheckSecurityStampOnEveryRequest && !IsAdminEndpoint(context.HttpContext))
+            return true;
+
+        // An identity provider's token carries no stamp, and only it can revoke what it issued.
+        if (!string.Equals(context.SecurityToken?.Issuer, local.Issuer, StringComparison.Ordinal))
+            return true;
+
+        var presented = context.Principal?.FindFirst(ToamaisutaaDefaults.SecurityStampClaim)?.Value;
+        var users = context.HttpContext.RequestServices.GetService<IUserStore>();
+
+        if (presented is null || users is null)
+            return true;
+
+        var current = Guid.TryParse(context.Principal!.FindFirst(JwtRegisteredClaimNames.Sub)?.Value, out var userId)
+            ? await users.ReadSecurityStampAsync(userId, context.HttpContext.RequestAborted)
+            : null;
+
+        if (string.Equals(presented, current, StringComparison.Ordinal))
+            return true;
+
+        context.HttpContext.RequestServices
+            .GetRequiredService<ILoggerFactory>()
+            .CreateLogger("Toamaisutaa.Auth")
+            .LogInformation(
+                "Token refused for user {UserId}: it was issued before a credential on the account changed.",
+                userId);
+
+        context.Fail("The token was issued before a credential on the account changed. Refresh, or sign in again.");
+        return false;
+    }
+
+    /// <summary>
+    /// Read off the endpoint, which routing has chosen by the time authentication runs. Every endpoint
+    /// counts when the admin role is required globally.
+    /// </summary>
+    private bool IsAdminEndpoint(HttpContext context)
+    {
+        var authorization = authorizationOptions.Value;
+
+        if (string.IsNullOrWhiteSpace(authorization.AdminRole))
+            return false;
+
+        if (authorization.RequireAdminRoleGlobally)
+            return true;
+
+        return context.GetEndpoint()?.Metadata.GetOrderedMetadata<IAuthorizeData>()
+            .Any(data => string.Equals(data.Policy, authorization.AdminPolicyName, StringComparison.Ordinal)) == true;
     }
 
     internal static IReadOnlyList<string> ValidAudiences(ToamaisutaaOidcOptions settings, ToamaisutaaLocalLoginOptions local)
