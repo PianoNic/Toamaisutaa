@@ -155,7 +155,6 @@ public static class ToamaisutaaPasswordEndpointExtensions
                     + "redeemed at /auth/email/verify. A wrong `currentPassword` counts toward the account lockout.")
                 .Produces(StatusCodes.Status204NoContent)
                 .Produces<ValidationErrorResponse>(StatusCodes.Status400BadRequest)
-                .Produces<ValidationErrorResponse>(StatusCodes.Status409Conflict)
                 .Produces<ErrorResponse>(StatusCodes.Status401Unauthorized)
 
                 // With a body, unlike the limiter's 429 elsewhere: the per-account cooldown says why.
@@ -576,9 +575,8 @@ public static class ToamaisutaaPasswordEndpointExtensions
 
         cooldown.Release("email-change", account);
 
-        return result.Conflict
-            ? Results.Json(new ValidationErrorResponse { Errors = result.Errors }, statusCode: StatusCodes.Status409Conflict)
-            : Results.BadRequest(new ValidationErrorResponse { Errors = result.Errors });
+        // No 409: an address another account holds answers as a sent link does, so it reveals nothing.
+        return Results.BadRequest(new ValidationErrorResponse { Errors = result.Errors });
     }
 
     private static async Task<IResult> VerifyEmailAsync(
