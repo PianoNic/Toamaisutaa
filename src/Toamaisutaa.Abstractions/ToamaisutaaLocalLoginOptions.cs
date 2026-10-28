@@ -212,6 +212,11 @@ public sealed class ToamaisutaaSigningKeyOptions
 /// Per-IP limits on the unauthenticated endpoints. Lockout is per account, and every unknown-user
 /// attempt still costs a full key derivation, so without this they are a cheap denial of service.
 /// </summary>
+/// <remarks>
+/// A signed-in caller on an endpoint that requires it spends a budget of its own, keyed on its
+/// subject rather than its address. Budgets live in each process's memory, so several instances
+/// behind one balancer each grant the full limit.
+/// </remarks>
 public sealed class ToamaisutaaRateLimitOptions
 {
     public bool Enabled { get; set; } = true;
@@ -239,4 +244,18 @@ public sealed class ToamaisutaaRateLimitOptions
     /// Without it, every IPv4 client behind the gateway shares one budget.
     /// </remarks>
     public IList<string> Nat64Prefixes { get; set; } = [];
+
+    /// <summary>
+    /// Networks many people share one address from - a school's or an office's public address - in
+    /// CIDR form, such as <c>203.0.113.7/32</c>. A caller in one spends the network's budget of
+    /// <see cref="SharedNetworkPermitLimit"/> instead of its address's.
+    /// </summary>
+    /// <remarks>
+    /// Account lockout is per source as well, so a shared network that one person floods with wrong
+    /// passwords is locked out of that account. Its owner still gets in with a trusted device.
+    /// </remarks>
+    public IList<string> SharedNetworks { get; set; } = [];
+
+    /// <summary>What each of <see cref="SharedNetworks"/> may spend per <see cref="Window"/>.</summary>
+    public int SharedNetworkPermitLimit { get; set; } = 300;
 }

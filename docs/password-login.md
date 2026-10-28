@@ -301,6 +301,35 @@ builder.Services.Configure<ForwardedHeadersOptions>(options =>
 app.UseForwardedHeaders();
 ```
 
+### Many people behind one address
+
+A school or an office sends everyone out through one public address, and one person there sending
+junk logins would otherwise spend the budget for all of them. Two things keep that contained:
+
+- **A signed-in caller spends a budget of its own**, keyed on its subject, on every endpoint that
+  requires the sign-in - the session list, two-factor management, passkeys. A token sent to an
+  anonymous endpoint such as `/auth/login` buys nothing, or one throwaway account would be a fresh
+  budget for guessing.
+- **`LocalLogin:RateLimit:SharedNetworks`** names the networks you know are shared, in CIDR form.
+  Each spends `SharedNetworkPermitLimit` (300 per window by default) instead of its address's ten.
+
+```json
+{
+  "LocalLogin": {
+    "RateLimit": {
+      "SharedNetworks": [ "203.0.113.7/32" ],
+      "SharedNetworkPermitLimit": 300
+    }
+  }
+}
+```
+
+There is no separate limit per user name: wrong passwords against one account are already capped by
+[lockout's account-wide ceiling](#lockout-locks-out-the-guesser-not-the-owner).
+
+The budgets live in each process's memory. Several instances behind one balancer each grant the full
+limit, so put a shared limiter in front - at the gateway or the balancer - if that matters.
+
 ### Registration reveals whether an account exists
 
 A taken user name answers 409. Hiding that needs an email round trip, and email delivery is
@@ -448,8 +477,10 @@ hands you - rather than expecting to construct one.
 | `LocalLogin:EndpointPrefix` | `/auth` | |
 | `LocalLogin:SessionEndpointPrefix` | `/sessions` | Appended to `EndpointPrefix`. See [sessions](/sessions) |
 | `LocalLogin:IpAddressStorage` | `None` | What a session row keeps of the caller's address. See [sessions](/sessions#addresses-are-off-by-default) |
-| `LocalLogin:RateLimit:Enabled` | `true` | Per caller address, fixed window. One budget across the anonymous endpoints and the signed-in ones that take a password or code as proof |
+| `LocalLogin:RateLimit:Enabled` | `true` | Per caller address, fixed window, one budget across the anonymous endpoints. A signed-in caller on an endpoint requiring it spends its own |
 | `LocalLogin:RateLimit:PermitLimit` / `Window` | `10` / `00:01:00` | |
 | `LocalLogin:RateLimit:Ipv6SitePermitLimit` | `100` | Shared by every /64 of one IPv6 /48 per window. Raise it if many unrelated users reach you from one carrier's /48 |
+| `LocalLogin:RateLimit:SharedNetworks:0` | | A network many people share one address from, in CIDR form. [Shared addresses](#many-people-behind-one-address) |
+| `LocalLogin:RateLimit:SharedNetworkPermitLimit` | `300` | What each shared network may spend per window |
 | `LocalLogin:RateLimit:Nat64Prefixes:0` | | A network-specific NAT64 prefix in front of you, such as `2001:db8:64::/96`. Its IPv4 clients are keyed on their own address rather than all sharing the gateway's. `64:ff9b::/96` and `64:ff9b:1::/48` are handled without it |
 | `LocalLogin:TokenCleanupInterval` | `06:00:00` | Only used by `AddToamaisutaaTokenCleanup()` |
