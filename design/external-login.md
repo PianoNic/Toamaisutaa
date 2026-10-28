@@ -75,3 +75,21 @@ a provider is usually that somebody else linked it, and nothing records which se
 - No `client_secret_basic` or `private_key_jwt`; `client_secret_post` is accepted by every provider
   named in the issue.
 - A trusted device does not skip the second factor after a provider sign-in, as after a magic link.
+
+## Provider-verified addresses (#421)
+
+Schuly found that an account created by a provider sign-in has no `email` claim, since the claim came
+only from a verified local credential, and it matches administrators by address. `TrustEmailVerified`
+per provider, off by default, because an application granting anything by address grants it to
+whoever the provider lets claim one.
+
+What the provider said is recorded on the link row (`Email`, `EmailVerified`) at link time and on every
+sign-in where it changed; whether to believe it is decided at token issue from the current
+configuration. So the claim is **recomputed** on refresh, as the local verified address already was,
+and turning trust off takes effect at the next refresh without touching data. A verified local address
+wins; among several trusted links the most recently used one does. The store method's default is a
+no-op rather than a throw, because it runs on every provider sign-in and a custom store without it
+should keep signing people in, with its links simply never vouching for an address.
+
+Step-up issued its token from the credential directly and now goes through the same lookup, so a
+step-up does not drop an address a refresh would carry.

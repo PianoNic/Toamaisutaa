@@ -20,6 +20,7 @@ public sealed class ToamaisutaaExternalLoginConfiguration : IEntityTypeConfigura
         builder.Property(login => login.ProviderKey).HasMaxLength(128).IsRequired();
         builder.Property(login => login.Subject).HasMaxLength(256).IsRequired();
         builder.Property(login => login.Issuer).HasMaxLength(512);
+        builder.Property(login => login.Email).HasMaxLength(256);
 
         builder.Property(login => login.CreatedAt).HasConversion(InstantConverters.Instant);
         builder.Property(login => login.LastSignInAt).HasConversion(InstantConverters.NullableInstant);

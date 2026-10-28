@@ -100,12 +100,35 @@ internal sealed class LocalSessionIssuer(
         };
     }
 
-    /// <summary>Resolved rather than injected: a passkey-only deployment registers no password store.</summary>
-    internal async Task<string?> VerifiedEmailAsync(Guid userId, CancellationToken cancellationToken) =>
-        provider.GetService(typeof(IPasswordCredentialStore)) is IPasswordCredentialStore store
-            && await store.FindByUserIdAsync(userId, cancellationToken) is { EmailConfirmedAt: not null } credential
-            ? credential.Email
-            : null;
+    /// <summary>
+    /// A verified local address first; otherwise the one a provider the hoster trusts last vouched for.
+    /// Resolved rather than injected: a passkey-only deployment registers no password store.
+    /// </summary>
+    internal async Task<string?> VerifiedEmailAsync(Guid userId, CancellationToken cancellationToken)
+    {
+        if (provider.GetService(typeof(IPasswordCredentialStore)) is IPasswordCredentialStore store
+            && await store.FindByUserIdAsync(userId, cancellationToken) is { EmailConfirmedAt: not null } credential)
+        {
+            return credential.Email;
+        }
+
+        // Trust is read now rather than when the address was recorded, so turning it off takes effect at
+        // the next refresh.
+        var trusted = (provider.GetService(typeof(IOptions<ToamaisutaaExternalLoginOptions>)) as IOptions<ToamaisutaaExternalLoginOptions>)
+            ?.Value.Providers
+            .Where(entry => entry.Value.TrustEmailVerified)
+            .Select(entry => entry.Key)
+            .ToHashSet(StringComparer.Ordinal);
+
+        if (trusted is not { Count: > 0 } || provider.GetService(typeof(IExternalLoginStore)) is not IExternalLoginStore logins)
+            return null;
+
+        return (await logins.ListAsync(userId, cancellationToken))
+            .Where(login => login.EmailVerified && !string.IsNullOrWhiteSpace(login.Email) && trusted.Contains(login.ProviderKey))
+            .OrderByDescending(login => login.LastSignInAt ?? login.CreatedAt)
+            .Select(login => login.Email)
+            .FirstOrDefault();
+    }
 }
 
 internal sealed record LocalSessionRequest

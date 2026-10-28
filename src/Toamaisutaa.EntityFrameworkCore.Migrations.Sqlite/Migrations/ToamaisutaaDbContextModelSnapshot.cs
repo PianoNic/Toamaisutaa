@@ -62,6 +62,13 @@ namespace Toamaisutaa.EntityFrameworkCore.Migrations.Sqlite.Migrations
                     b.Property<long>("CreatedAt")
                         .HasColumnType("INTEGER");
 
+                    b.Property<string>("Email")
+                        .HasMaxLength(256)
+                        .HasColumnType("TEXT");
+
+                    b.Property<bool>("EmailVerified")
+                        .HasColumnType("INTEGER");
+
                     b.Property<string>("Issuer")
                         .HasMaxLength(512)
                         .HasColumnType("TEXT");

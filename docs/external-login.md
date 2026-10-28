@@ -61,6 +61,7 @@ https://api.example.com/auth/external/{key}/callback
 | `Scopes` | `openid profile email` | Must include `openid` |
 | `AllowSignUp` | `false` | Whether a stranger can create an account by signing in here |
 | `LinkByVerifiedEmail` | `false` | Whether a first sign-in joins the account that already holds its address. See below |
+| `TrustEmailVerified` | `false` | Whether an address this provider verified goes in the token as `email`. See below |
 
 | Setting | Default | |
 |---|---|---|
@@ -149,6 +150,14 @@ and a trusted device does not skip it.
 
 The profile is written once, when an account is created by a first sign-in. Later sign-ins do not
 copy the provider's name or address over an account's own.
+
+`email` is in a token only for a verified address. An account created by a provider sign-in has no
+address verified here, so by default its tokens carry none. Turn on `TrustEmailVerified` for a
+provider and the address it last marked `email_verified` counts, for an account without a verified
+address of its own. It is checked at every sign-in through that provider and read at every token,
+refresh included, so an address the provider stops vouching for, or a provider you stop trusting,
+drops out at the next refresh. The same caution as for linking applies: anything your application
+grants by address, an administrator list included, it grants to whoever that provider lets claim it.
 
 ## Linking and the address problem
 

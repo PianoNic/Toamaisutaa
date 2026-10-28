@@ -22,4 +22,14 @@ public class ToamaisutaaExternalLogin
     public DateTimeOffset CreatedAt { get; set; }
 
     public DateTimeOffset? LastSignInAt { get; set; }
+
+    /// <summary>The address the provider gave at the last sign-in through it, as it gave it.</summary>
+    public string? Email { get; set; }
+
+    /// <summary>
+    /// Whether the provider said it verified <see cref="Email"/>. Recorded whatever the configuration;
+    /// whether to believe it is decided when a token is issued, by that provider's
+    /// <c>TrustEmailVerified</c>.
+    /// </summary>
+    public bool EmailVerified { get; set; }
 }
