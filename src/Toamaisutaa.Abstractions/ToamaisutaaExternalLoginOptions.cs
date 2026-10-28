@@ -97,4 +97,16 @@ public sealed class ToamaisutaaExternalProviderOptions
     /// owner links the provider from a signed-in session instead.
     /// </remarks>
     public bool LinkByVerifiedEmail { get; set; }
+
+    /// <summary>
+    /// Off by default. Whether an address this provider says it verified counts as the account's verified
+    /// address, for an account without a verified address of its own. On, tokens carry it as
+    /// <c>email</c>, the way they do after verifying an address here.
+    /// </summary>
+    /// <remarks>
+    /// The same caution as <see cref="LinkByVerifiedEmail"/>: an application that grants anything by
+    /// address - an administrator list, a domain allow-list - grants it to whoever this provider lets
+    /// claim that address.
+    /// </remarks>
+    public bool TrustEmailVerified { get; set; }
 }

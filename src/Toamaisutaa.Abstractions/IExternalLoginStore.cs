@@ -20,6 +20,14 @@ public interface IExternalLoginStore
 
     Task RecordSignInAsync(Guid externalLoginId, CancellationToken cancellationToken = default);
 
+    /// <summary>Records the address a provider gave at a sign-in, and whether it said it verified it.</summary>
+    /// <remarks>
+    /// The default does nothing, so a store written before addresses were recorded keeps signing people
+    /// in; its links simply never vouch for an address.
+    /// </remarks>
+    Task UpdateEmailAsync(Guid externalLoginId, string? email, bool emailVerified, CancellationToken cancellationToken = default) =>
+        Task.CompletedTask;
+
     /// <summary>Every provider linked to the user, oldest first.</summary>
     /// <remarks>
     /// The default throws, so a store written before linking could be listed keeps compiling and fails

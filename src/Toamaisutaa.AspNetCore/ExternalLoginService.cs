@@ -417,6 +417,10 @@ internal sealed class ExternalLoginService(
         if (login is null)
             return null;
 
+        // Every sign-in, so an address the provider stops vouching for stops being vouched for here.
+        if (!string.Equals(login.Email, profile.Email, StringComparison.Ordinal) || login.EmailVerified != (profile.EmailVerified == true))
+            await logins.UpdateEmailAsync(login.Id, profile.Email, profile.EmailVerified == true, cancellationToken);
+
         if (ShouldStampSignIn(login))
             await logins.RecordSignInAsync(login.Id, cancellationToken);
 

@@ -199,6 +199,8 @@ internal sealed class EntityFrameworkStore<TContext>(TContext context, TimeProvi
             Issuer = profile.Issuer,
             CreatedAt = now,
             LastSignInAt = now,
+            Email = profile.Email,
+            EmailVerified = profile.EmailVerified == true,
         };
 
         context.Set<ToamaisutaaExternalLogin>().Add(login);
@@ -236,6 +238,15 @@ internal sealed class EntityFrameworkStore<TContext>(TContext context, TimeProvi
                 setters => setters.SetProperty(login => login.LastSignInAt, timeProvider.GetUtcNow()),
                 cancellationToken);
     }
+
+    public async Task UpdateEmailAsync(Guid externalLoginId, string? email, bool emailVerified, CancellationToken cancellationToken = default) =>
+        await context.Set<ToamaisutaaExternalLogin>()
+            .Where(login => login.Id == externalLoginId)
+            .ExecuteUpdateAsync(
+                setters => setters
+                    .SetProperty(login => login.Email, email)
+                    .SetProperty(login => login.EmailVerified, emailVerified),
+                cancellationToken);
 
     public async Task<IReadOnlyList<ToamaisutaaExternalLogin>> ListAsync(Guid userId, CancellationToken cancellationToken = default) =>
         await context.Set<ToamaisutaaExternalLogin>()

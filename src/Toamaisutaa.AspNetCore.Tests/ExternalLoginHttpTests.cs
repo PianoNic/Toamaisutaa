@@ -306,6 +306,70 @@ public class ExternalLoginHttpTests
     }
 
     [Test]
+    public async Task By_default_a_provider_s_verified_address_is_not_put_in_the_token()
+    {
+        var idp = new FakeIdentityProvider();
+        await using var app = await StartAsync(idp);
+
+        var body = await SignInAsync(app, idp, new Person("alice-at-idp", "alice@idp.test", EmailVerified: true));
+
+        await Assert.That(Account.DecodeClaims(body.String("access_token")!).Has("email")).IsFalse();
+    }
+
+    [Test]
+    public async Task A_trusted_provider_s_verified_address_is_in_the_token_and_survives_refresh()
+    {
+        var idp = new FakeIdentityProvider();
+        await using var app = await StartAsync(idp, Trusting);
+
+        var body = await SignInAsync(app, idp, new Person("alice-at-idp", "alice@idp.test", EmailVerified: true));
+        var refreshed = await (await app.Client.PostJson("/auth/refresh", new { refreshToken = body.String("refresh_token") })).Json();
+
+        await Assert.That(Account.DecodeClaims(body.String("access_token")!).String("email")).IsEqualTo("alice@idp.test");
+        await Assert.That(Account.DecodeClaims(refreshed.String("access_token")!).String("email")).IsEqualTo("alice@idp.test");
+    }
+
+    [Test]
+    public async Task A_trusted_provider_s_unverified_address_is_not_in_the_token()
+    {
+        var idp = new FakeIdentityProvider();
+        await using var app = await StartAsync(idp, Trusting);
+
+        var body = await SignInAsync(app, idp, new Person("alice-at-idp", "alice@idp.test", EmailVerified: false));
+
+        await Assert.That(Account.DecodeClaims(body.String("access_token")!).Has("email")).IsFalse();
+    }
+
+    [Test]
+    public async Task An_address_the_provider_stops_vouching_for_leaves_the_token()
+    {
+        var idp = new FakeIdentityProvider();
+        await using var app = await StartAsync(idp, Trusting);
+
+        await SignInAsync(app, idp, new Person("alice-at-idp", "alice@idp.test", EmailVerified: true));
+        var later = await SignInAsync(app, idp, new Person("alice-at-idp", "alice@elsewhere.test", EmailVerified: false));
+
+        await Assert.That(Account.DecodeClaims(later.String("access_token")!).Has("email")).IsFalse();
+    }
+
+    [Test]
+    public async Task An_address_verified_here_wins_over_a_provider_s()
+    {
+        var idp = new FakeIdentityProvider();
+        await using var app = await StartAsync(idp, Trusting);
+        var account = await Account.RegisterAsync(app);
+        await account.VerifyEmailAsync();
+        await LinkAsync(app, idp, account, new Person("ada-at-idp", "ada.elsewhere@idp.test", EmailVerified: true), new { returnUrl = ReturnUrl, currentPassword = account.Password });
+
+        var body = await SignInAsync(app, idp, new Person("ada-at-idp", "ada.elsewhere@idp.test", EmailVerified: true));
+
+        await Assert.That(Account.DecodeClaims(body.String("access_token")!).String("email")).IsEqualTo(account.Email);
+    }
+
+    private static void Trusting(Dictionary<string, string?> settings) =>
+        settings[$"ExternalLogin:Providers:{Provider}:TrustEmailVerified"] = "true";
+
+    [Test]
     public async Task With_sign_up_off_a_stranger_is_turned_away()
     {
         var idp = new FakeIdentityProvider();

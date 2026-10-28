@@ -67,6 +67,13 @@ namespace Toamaisutaa.EntityFrameworkCore.Migrations.SqlServer.Migrations
                     b.Property<long>("CreatedAt")
                         .HasColumnType("bigint");
 
+                    b.Property<string>("Email")
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<bool>("EmailVerified")
+                        .HasColumnType("bit");
+
                     b.Property<string>("Issuer")
                         .HasMaxLength(512)
                         .HasColumnType("nvarchar(512)");
