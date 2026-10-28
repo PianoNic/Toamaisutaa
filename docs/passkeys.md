@@ -41,7 +41,7 @@ password - it replaces the password *and* the code after it. That is why a passk
 | `Origins` | none | The full origins a ceremony may come from. Several is normal: the site, staging, and whatever port the client dev server is on |
 | `RequireUserVerification` | `true` | The authenticator must verify the user, not merely notice a touch |
 | `ChallengeLifetime` | 5 minutes | How long a begun ceremony stays completable |
-| `RegistrationProofWindow` | 5 minutes | How recently the caller must have presented a second factor for that to stand in for their current password |
+| `RegistrationProofWindow` | 5 minutes | How recently an account with no password and no TOTP must have presented a second factor to register, and any account to remove one without its password |
 | `TimeoutMilliseconds` | 60000 | What the browser is told to wait. Advisory; the server's deadline is the one above |
 | `MaxCredentialsPerUser` | 10 | 0 for unlimited |
 | `EndpointPrefix` | `/passkeys` | Composed onto `LocalLogin:EndpointPrefix` |
@@ -86,7 +86,7 @@ Both `begin` endpoints answer the same shape:
 const begin = await (await fetch('/auth/passkeys/register/begin', {
   method: 'POST',
   headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
-  body: JSON.stringify({ currentPassword }),
+  body: JSON.stringify({ currentPassword, code }), // code: only for an account with TOTP
 })).json();
 
 const created = await navigator.credentials.create({
@@ -112,19 +112,40 @@ no route that serves one credential, and the id in the body is what the delete t
 changes no credential the account already has, so the token that called it keeps working.
 
 ::: warning A bearer token is not enough to register one
-`/register/begin` wants proof that the caller holds a credential the account already has -
-`currentPassword`, or a session that presented a second factor within `RegistrationProofWindow`.
-Otherwise a stolen access token would buy a permanent way in. `400` with `errors` when the proof is
-missing or wrong; `/register/complete` asks for nothing further.
+`/register/begin` wants proof, in the request itself, of a credential the account already has.
+Otherwise a stolen access token would buy a way in that outlives every sign-out and revocation.
+`400` with `errors` when the proof is missing or wrong; `/register/complete` asks for nothing further.
 
-**An account with no password** - one an identity provider owns, or one whose only credential is
-already a passkey - proves a second factor instead: sign in with a passkey, or complete
-`/auth/2fa/step-up`, then register while `toa_2fa_at` is still inside the window.
+- **An account with a TOTP enrolment** sends `code` - from the authenticator app, or a recovery
+  code - whatever else it sends. A recent step-up is not enough: a token stolen a minute after one
+  carries it too. Wrong codes count toward the lock; a missing one does not.
+- **An account with a password and no TOTP** sends `currentPassword`.
+- **An account with neither** - one an identity provider owns, or one whose only credential is
+  already a passkey - has nothing else to show, so a second factor within `RegistrationProofWindow`
+  stands in: sign in with a passkey, then register while `toa_2fa_at` is still inside the window.
 
-**An account with a confirmed second factor** has to present it too; the password alone is refused.
-Complete `/auth/2fa/step-up`, then register inside the window. Removing a passkey still takes the
-password alone.
+```json
+{ "currentPassword": "...", "code": "123456" }
+```
 :::
+
+Every registration publishes `passkey-registered` to the [audit sink](/audit-events). A passkey is a
+way in that no password protects, so it is worth telling the owner whenever one is added, from the
+address they already have:
+
+```csharp
+internal sealed class TellTheOwnerAboutPasskeys(IUserStore users, YourMailer mailer) : IAuthenticationEventSink
+{
+    public async Task HandleAsync(AuthenticationEvent authenticationEvent, CancellationToken cancellationToken = default)
+    {
+        if (authenticationEvent is PasskeyRegistered { UserId: { } userId } registered
+            && await users.FindByIdAsync(userId, cancellationToken) is { Email: { } email })
+        {
+            await mailer.SendPasskeyAddedAsync(email, registered.Label, registered.OccurredAt, cancellationToken);
+        }
+    }
+}
+```
 
 Every binary field is base64url in both directions; standard base64 and padding are accepted too.
 The two helpers the snippets use:

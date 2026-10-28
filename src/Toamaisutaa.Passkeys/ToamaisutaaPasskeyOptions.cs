@@ -41,7 +41,8 @@ public sealed class ToamaisutaaPasskeyOptions
 
     /// <summary>
     /// How recently the calling session must have presented a live second factor for that to stand
-    /// in for the current password when registering or removing a credential.
+    /// in for the current password when removing a credential, or when registering one on an account
+    /// with neither a password nor a TOTP enrolment. An account with TOTP always sends a code.
     /// </summary>
     /// <remarks>
     /// Read from the <c>toa_2fa_at</c> claim, the same one <c>RequireFreshSecondFactor</c> reads. A

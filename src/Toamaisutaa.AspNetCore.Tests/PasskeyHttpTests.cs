@@ -36,26 +36,66 @@ public class PasskeyHttpTests
         await Assert.That(entries[0].Has("lastUsedAt")).IsFalse();
     }
 
-    /// <summary>A passkey signs in on its own, so on an account with a second factor the password
-    /// alone registered a way in that skipped the code. It now takes a fresh step-up.</summary>
+    /// <summary>
+    /// A token stolen right after a second factor carries a fresh <c>toa_2fa_at</c>; on its own it
+    /// once registered a passkey that outlived every sign-out and revocation. The code has to come in
+    /// the request itself.
+    /// </summary>
     [Test]
-    public async Task On_an_account_with_a_second_factor_registering_a_passkey_takes_that_factor()
+    public async Task On_an_account_with_a_second_factor_registering_a_passkey_takes_a_code_in_the_request()
     {
-        // A one-second window, so the second factor from signing in is stale after a minute while the
-        // tokens stay inside the bearer handler's clock skew, which reads real time.
-        await using var app = await TestApp.StartAsync(configure: settings => settings["Passkeys:RegistrationProofWindow"] = "00:00:01");
+        await using var app = await TestApp.StartAsync();
         var account = await Account.RegisterAsync(app);
         await account.EnrolAsync();
-
-        app.Time.Advance(TimeSpan.FromMinutes(1));
 
         var passwordOnly = await Passkeys.BeginRegistrationAsync(app, account.AccessToken);
         await Assert.That(passwordOnly.StatusCode).IsEqualTo(HttpStatusCode.BadRequest);
 
         var stepped = (await (await account.StepUpAsync()).Json()).String("access_token")!;
 
-        var withSecondFactor = await Passkeys.BeginRegistrationAsync(app, stepped, currentPassword: null);
-        await Assert.That(withSecondFactor.StatusCode).IsEqualTo(HttpStatusCode.OK);
+        var freshTokenAlone = await Passkeys.BeginRegistrationAsync(app, stepped, currentPassword: null);
+        await Assert.That(freshTokenAlone.StatusCode).IsEqualTo(HttpStatusCode.BadRequest);
+
+        app.Time.AdvanceToNextTotpStep();
+
+        var withCode = await Passkeys.BeginRegistrationAsync(app, stepped, currentPassword: null, code: Totp.Code(account.Secret!, app.Time.Now));
+        await Assert.That(withCode.StatusCode).IsEqualTo(HttpStatusCode.OK);
+    }
+
+    /// <summary>A client that forgot the field has guessed nothing, and must not lock the account.</summary>
+    [Test]
+    public async Task A_missing_code_at_registration_is_not_counted_as_a_wrong_one()
+    {
+        await using var app = await TestApp.StartAsync();
+        var account = await Account.RegisterAsync(app);
+        await account.EnrolAsync();
+
+        for (var i = 0; i < 5; i++)
+            await Passkeys.BeginRegistrationAsync(app, account.AccessToken);
+
+        app.Time.AdvanceToNextTotpStep();
+        var right = await Passkeys.BeginRegistrationAsync(app, account.AccessToken, code: Totp.Code(account.Secret!, app.Time.Now));
+
+        await Assert.That(right.StatusCode).IsEqualTo(HttpStatusCode.OK);
+    }
+
+    [Test]
+    public async Task Wrong_codes_at_registration_count_toward_the_lock()
+    {
+        await using var app = await TestApp.StartAsync();
+        var account = await Account.RegisterAsync(app);
+        await account.EnrolAsync();
+
+        for (var i = 0; i < 5; i++)
+        {
+            app.Time.AdvanceToNextTotpStep();
+            await Passkeys.BeginRegistrationAsync(app, account.AccessToken, code: Totp.WrongCode(account.Secret!, app.Time.Now));
+        }
+
+        app.Time.AdvanceToNextTotpStep();
+        var right = await Passkeys.BeginRegistrationAsync(app, account.AccessToken, code: Totp.Code(account.Secret!, app.Time.Now));
+
+        await Assert.That(right.StatusCode).IsEqualTo(HttpStatusCode.BadRequest);
     }
 
     [Test]
@@ -95,15 +135,17 @@ public class PasskeyHttpTests
     }
 
     [Test]
-    public async Task A_fresh_second_factor_registers_a_passkey_without_a_password()
+    public async Task A_code_registers_a_passkey_without_a_password()
     {
         await using var app = await TestApp.StartAsync();
         var account = await Account.RegisterAsync(app);
         using var authenticator = new SoftwareAuthenticator();
 
         await account.EnrolAsync();
+        app.Time.AdvanceToNextTotpStep();
 
-        var registered = await Passkeys.RegisterAsync(app, account.AccessToken, authenticator, currentPassword: null);
+        var registered = await Passkeys.RegisterAsync(
+            app, account.AccessToken, authenticator, currentPassword: null, code: Totp.Code(account.Secret!, app.Time.Now));
 
         await Assert.That(registered.StatusCode).IsEqualTo(HttpStatusCode.Created);
     }
@@ -940,8 +982,9 @@ internal static class Passkeys
     public static Task<HttpResponseMessage> BeginRegistrationAsync(
         TestApp app,
         string accessToken,
-        string? currentPassword = Account.DefaultPassword) =>
-        app.Client.PostJson("/auth/passkeys/register/begin", new { currentPassword }, accessToken);
+        string? currentPassword = Account.DefaultPassword,
+        string? code = null) =>
+        app.Client.PostJson("/auth/passkeys/register/begin", new { currentPassword, code }, accessToken);
 
     public static async Task<HttpResponseMessage> RegisterAsync(
         TestApp app,
@@ -949,9 +992,10 @@ internal static class Passkeys
         SoftwareAuthenticator authenticator,
         string? label = null,
         bool userVerified = true,
-        string? currentPassword = Account.DefaultPassword)
+        string? currentPassword = Account.DefaultPassword,
+        string? code = null)
     {
-        var begin = await BeginRegistrationAsync(app, accessToken, currentPassword);
+        var begin = await BeginRegistrationAsync(app, accessToken, currentPassword, code);
 
         if (begin.StatusCode != HttpStatusCode.OK)
             throw new InvalidOperationException($"Register begin failed: {begin.StatusCode} {await begin.Content.ReadAsStringAsync()}");
