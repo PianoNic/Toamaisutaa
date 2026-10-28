@@ -272,6 +272,10 @@ public class EmailVerificationTests
     }
 
     [Test]
+    public async Task TheShippedDefaultRequiresAVerifiedAddressForAReset() =>
+        await Assert.That(new ToamaisutaaLocalLoginOptions().RequireVerifiedEmailForPasswordReset).IsTrue();
+
+    [Test]
     public async Task AnUnverifiedAddressGetsAResetLinkWhileTheOptionIsOff()
     {
         var harness = PasswordHarness.Create();

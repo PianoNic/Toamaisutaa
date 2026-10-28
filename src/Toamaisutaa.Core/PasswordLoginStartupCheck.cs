@@ -103,9 +103,9 @@ internal sealed class PasswordLoginStartupCheck(
         if (settings.RequireVerifiedEmailForPasswordReset && !IsRegistered(typeof(IEmailVerificationNotifier)))
         {
             problems.Add(
-                $"LocalLogin:RequireVerifiedEmailForPasswordReset is on but no {nameof(IEmailVerificationNotifier)} is "
-                + "registered, so no address can ever be verified and no password can ever be reset. Register one, or "
-                + "turn the option off.");
+                $"LocalLogin:RequireVerifiedEmailForPasswordReset is on (the default) but no {nameof(IEmailVerificationNotifier)} "
+                + "is registered, so no address can ever be verified and no password can ever be reset. Register one, or "
+                + "set LocalLogin:RequireVerifiedEmailForPasswordReset to false.");
         }
 
         if (IsRegistered(typeof(IMagicLinkNotifier)) && !IsRegistered(typeof(IEmailVerificationNotifier)))

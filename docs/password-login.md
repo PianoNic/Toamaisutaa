@@ -473,7 +473,7 @@ hands you - rather than expecting to construct one.
 | `LocalLogin:InvitationTokenLifetime` | `7.00:00:00` | Single use |
 | `LocalLogin:EmailVerificationTokenLifetime` | `1.00:00:00` | Single use |
 | `LocalLogin:MagicLinkTokenLifetime` | `00:15:00` | Single use. See [magic-link sign-in](/magic-link) |
-| `LocalLogin:RequireVerifiedEmailForPasswordReset` | `false` | See [email verification](/email-verification#requiring-a-verified-address-before-a-password-reset) before turning it on |
+| `LocalLogin:RequireVerifiedEmailForPasswordReset` | `true` | See [email verification](/email-verification#a-reset-needs-a-verified-address) before upgrading |
 | `LocalLogin:AllowSelfRegistration` | `false` | When false the endpoint is not mapped at all |
 | `LocalLogin:EndpointPrefix` | `/auth` | |
 | `LocalLogin:SessionEndpointPrefix` | `/sessions` | Appended to `EndpointPrefix`. See [sessions](/sessions) |

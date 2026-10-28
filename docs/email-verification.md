@@ -90,23 +90,29 @@ verifies an address on its own, because nothing in this package sends mail on it
 not move and nobody is signed out. A *password* change, by contrast, revokes the sessions and also
 retires any outstanding verification link.
 
-## Requiring a verified address before a password reset
+## A reset needs a verified address
 
-Off by default:
+On by default. `/auth/password/forgot` issues nothing for a credential whose address was never
+verified, and an administrator-set password is refused for it rather than mailed to it. A mistyped
+address - `anna@gmial.com` - belongs to whoever owns the typo, and a reset link or a password sent
+there is the account.
+
+The response is still 204, so the log line naming `EmailNotVerified`, with the user id and the
+option's name, is the only way to diagnose "no mail arrived".
+
+Accounts an administrator creates are best made with an [invitation](/provisioning-accounts), which
+proves the mailbox the moment it is accepted. Accounts that register themselves verify at
+`/auth/email` while they still know their password.
+
+::: danger Upgrading takes password reset away from every unverified account
+This used to be off. Every credential created before you upgrade has `EmailConfirmedAt` null unless it
+went through `/auth/email` or an invitation, so all of those lose password reset, and the way back is
+`/auth/email`, which needs the password they came here without. Ask them to verify while they can
+still sign in, or keep the old behaviour, knowing what it hands to a typo's owner:
 
 ```json
-{ "LocalLogin": { "RequireVerifiedEmailForPasswordReset": true } }
+{ "LocalLogin": { "RequireVerifiedEmailForPasswordReset": false } }
 ```
-
-With it on, `/auth/password/forgot` issues nothing for a credential whose address was never
-verified. The response is still 204, so the log line naming `EmailNotVerified`, with the user id and
-the option's name, is the only way to diagnose "no mail arrived".
-
-::: danger It takes password reset away from every existing account at once
-Every credential already in the database has `EmailConfirmedAt` null. Switching this on locks all of
-them out of password reset, and the way back is `/auth/email`, which needs the password they came
-here without. Verify the existing accounts first. An administrator cannot set a password for them
-either while this is on: it would be mailed in the clear to the same unproven address.
 :::
 
 Startup refuses the one configuration that has no way out at all: the option on with no
@@ -118,7 +124,7 @@ can ever be reset.
 | Key | Default | Notes |
 |---|---|---|
 | `LocalLogin:EmailVerificationTokenLifetime` | `1.00:00:00` | Single use |
-| `LocalLogin:RequireVerifiedEmailForPasswordReset` | `false` | Read the warning above before turning it on |
+| `LocalLogin:RequireVerifiedEmailForPasswordReset` | `true` | Read the warning above before upgrading |
 | `Email:Smtp:EmailVerificationLinkTemplate` | none | `{token}` is replaced by the raw token. Only the default template reads it |
 
 Expired rows are swept by `AddToamaisutaaTokenCleanup()` along with every other expiring row this
