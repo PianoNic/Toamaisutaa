@@ -467,7 +467,8 @@ hands you - rather than expecting to construct one.
 | `LocalLogin:SignInRefusalFloor` | `00:00:01` | The least time a refused `/auth/login` takes, so an unknown name, a wrong password and a locked account cannot be told apart by the clock |
 | `LocalLogin:FirstPasswordProofWindow` | `00:05:00` | How recent a sign-in must be to give a passwordless account its first password |
 | `LocalLogin:MinimumPasswordLength` | `8` | NIST: a length floor, no composition rules |
-| `LocalLogin:MaximumPasswordLength` | `128` | Not a strength rule - a bound on an anonymous endpoint |
+| `LocalLogin:MaximumPasswordLength` | `128` | Not a strength rule - a bound on an anonymous endpoint. Sign-in refuses a longer password without hashing it, so lowering it cuts off longer passwords set before |
+| `LocalLogin:MaxRequestBodyBytes` | `262144` | The largest body any of the package's endpoints reads. Kestrel answers 413 above it, before reading |
 | `LocalLogin:PasswordResetTokenLifetime` | `01:00:00` | Single use |
 | `LocalLogin:MailRequestCooldown` | `00:01:00` | One reset or magic-link request per address, and one email-change link per account; zero turns it off |
 | `LocalLogin:InvitationTokenLifetime` | `7.00:00:00` | Single use |
@@ -483,5 +484,7 @@ hands you - rather than expecting to construct one.
 | `LocalLogin:RateLimit:Ipv6SitePermitLimit` | `100` | Shared by every /64 of one IPv6 /48 per window. Raise it if many unrelated users reach you from one carrier's /48 |
 | `LocalLogin:RateLimit:SharedNetworks:0` | | A network many people share one address from, in CIDR form. [Shared addresses](#many-people-behind-one-address) |
 | `LocalLogin:RateLimit:SharedNetworkPermitLimit` | `300` | What each shared network may spend per window |
+| `LocalLogin:RateLimit:MaxConcurrentChecks` | twice the processor count, at least 4 | Password and code checks running at once across the whole process, whatever the callers' budgets. Not switched off by `Enabled` |
+| `LocalLogin:RateLimit:MaxQueuedChecks` | `100` | Checks that wait for a slot; past that, 503 |
 | `LocalLogin:RateLimit:Nat64Prefixes:0` | | A network-specific NAT64 prefix in front of you, such as `2001:db8:64::/96`. Its IPv4 clients are keyed on their own address rather than all sharing the gateway's. `64:ff9b::/96` and `64:ff9b:1::/48` are handled without it |
 | `LocalLogin:TokenCleanupInterval` | `06:00:00` | Only used by `AddToamaisutaaTokenCleanup()` |

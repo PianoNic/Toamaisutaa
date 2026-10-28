@@ -20,6 +20,9 @@ internal sealed class PasswordRateLimiter : IDisposable
     private readonly PartitionedRateLimiter<HttpContext> _callers;
     private readonly PartitionedRateLimiter<HttpContext> _sites;
 
+    // One for the whole process: per-caller budgets bound each caller, not how many hashes run at once.
+    private readonly ConcurrencyLimiter _checks;
+
     private int _warnedAboutProxy;
 
     public PasswordRateLimiter(IOptions<ToamaisutaaLocalLoginOptions> options, ILogger<PasswordRateLimiter> logger)
@@ -77,7 +80,20 @@ internal sealed class PasswordRateLimiter : IDisposable
         });
 
         _limiter = PartitionedRateLimiter.CreateChained(_callers, _sites);
+
+        var limits = options.Value.RateLimit;
+
+        _checks = new ConcurrencyLimiter(new ConcurrencyLimiterOptions
+        {
+            PermitLimit = Math.Max(1, limits.MaxConcurrentChecks),
+            QueueLimit = Math.Max(0, limits.MaxQueuedChecks),
+            QueueProcessingOrder = QueueProcessingOrder.OldestFirst,
+        });
     }
+
+    /// <summary>Held for the whole request, since the hash runs somewhere inside it.</summary>
+    public ValueTask<RateLimitLease> AcquireCheckAsync(CancellationToken cancellationToken) =>
+        _checks.AcquireAsync(1, cancellationToken);
 
     private static RateLimitPartition<string> FixedWindow(string key, int permitLimit, TimeSpan window) =>
         RateLimitPartition.GetFixedWindowLimiter(
@@ -218,6 +234,7 @@ internal sealed class PasswordRateLimiter : IDisposable
         _limiter.Dispose();
         _callers.Dispose();
         _sites.Dispose();
+        _checks.Dispose();
     }
 }
 
@@ -227,10 +244,21 @@ internal sealed class PasswordRateLimitFilter(PasswordRateLimiter limiter, Toama
     {
         using var lease = await limiter.AcquireAsync(context.HttpContext);
 
-        if (lease.IsAcquired)
-            return await next(context);
+        if (!lease.IsAcquired)
+        {
+            metrics.RateLimitRejected();
+            return Results.StatusCode(StatusCodes.Status429TooManyRequests);
+        }
 
-        metrics.RateLimitRejected();
-        return Results.StatusCode(StatusCodes.Status429TooManyRequests);
+        using var check = await limiter.AcquireCheckAsync(context.HttpContext.RequestAborted);
+
+        // 503, not 429: this caller is inside its budget, and the server as a whole is busy.
+        if (!check.IsAcquired)
+        {
+            metrics.RateLimitRejected();
+            return Results.StatusCode(StatusCodes.Status503ServiceUnavailable);
+        }
+
+        return await next(context);
     }
 }

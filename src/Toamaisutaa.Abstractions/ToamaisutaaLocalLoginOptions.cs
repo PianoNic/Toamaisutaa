@@ -130,7 +130,17 @@ public sealed class ToamaisutaaLocalLoginOptions
     /// An upper bound, because the endpoint is anonymous and extra length buys no strength - it only
     /// lets an unauthenticated caller make the server hash huge inputs.
     /// </summary>
+    /// <summary>
+    /// Also the longest password sign-in will hash: a longer one is refused unchecked, since no
+    /// password that long can have been set. Lowering it cuts off any longer password set before.
+    /// </summary>
     public int MaximumPasswordLength { get; set; } = 128;
+
+    /// <summary>
+    /// The largest request body any of this package's endpoints reads. The server's own limit is
+    /// 30 MB, and every byte of a password is hashed. Large enough for a passkey's attestation.
+    /// </summary>
+    public long MaxRequestBodyBytes { get; set; } = 256 * 1024;
 
     public TimeSpan PasswordResetTokenLifetime { get; set; } = TimeSpan.FromHours(1);
 
@@ -266,4 +276,14 @@ public sealed class ToamaisutaaRateLimitOptions
 
     /// <summary>What each of <see cref="SharedNetworks"/> may spend per <see cref="Window"/>.</summary>
     public int SharedNetworkPermitLimit { get; set; } = 300;
+
+    /// <summary>
+    /// Password and code checks this process runs at once, across every caller. Each one is a full
+    /// key derivation, so a few dozen addresses inside their own budgets could otherwise saturate the
+    /// processor or, with Argon2, memory. Not switched off by <see cref="Enabled"/>.
+    /// </summary>
+    public int MaxConcurrentChecks { get; set; } = Math.Max(4, Environment.ProcessorCount * 2);
+
+    /// <summary>Checks that wait for a free slot before the rest are answered 503.</summary>
+    public int MaxQueuedChecks { get; set; } = 100;
 }

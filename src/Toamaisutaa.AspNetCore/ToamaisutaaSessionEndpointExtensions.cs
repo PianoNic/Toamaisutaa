@@ -30,6 +30,7 @@ public static class ToamaisutaaSessionEndpointExtensions
         var options = endpoints.ServiceProvider.GetRequiredService<IOptions<ToamaisutaaLocalLoginOptions>>().Value;
 
         var group = endpoints.MapGroup(options.EndpointPrefix + options.SessionEndpointPrefix).WithTags("Sessions");
+        group.WithMetadata(RequestBodyLimit.For(endpoints.ServiceProvider));
 
         // All three resolve the caller, so all three can meet a token whose stamp has moved.
         group.AddEndpointFilter<StaleSecurityStampFilter>();

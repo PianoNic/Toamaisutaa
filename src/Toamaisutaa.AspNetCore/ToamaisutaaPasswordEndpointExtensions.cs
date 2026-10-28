@@ -32,6 +32,7 @@ public static class ToamaisutaaPasswordEndpointExtensions
         var options = endpoints.ServiceProvider.GetRequiredService<IOptions<ToamaisutaaLocalLoginOptions>>().Value;
 
         var group = endpoints.MapGroup(options.EndpointPrefix).WithTags("Authentication");
+        group.WithMetadata(RequestBodyLimit.For(endpoints.ServiceProvider));
 
         // /auth/password resolves the caller, so it can meet a token whose stamp has moved.
         group.AddEndpointFilter<StaleSecurityStampFilter>();

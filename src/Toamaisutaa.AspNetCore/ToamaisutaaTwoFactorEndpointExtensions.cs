@@ -30,6 +30,7 @@ public static class ToamaisutaaTwoFactorEndpointExtensions
         var options = endpoints.ServiceProvider.GetRequiredService<IOptions<ToamaisutaaLocalLoginOptions>>().Value;
 
         var group = endpoints.MapGroup(options.EndpointPrefix + "/2fa").WithTags("Two-factor authentication");
+        group.WithMetadata(RequestBodyLimit.For(endpoints.ServiceProvider));
 
         // Three of these move the stamp themselves, so the calling token is stale on the next request by design.
         group.AddEndpointFilter<StaleSecurityStampFilter>();
