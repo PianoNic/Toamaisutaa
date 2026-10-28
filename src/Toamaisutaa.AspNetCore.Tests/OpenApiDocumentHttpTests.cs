@@ -96,6 +96,19 @@ public class OpenApiDocumentHttpTests
         await Assert.That(Schemes(document).Names()).IsEquivalentTo(new[] { "Bearer" });
     }
 
+    /// <summary>An address another account holds answers 204 like any other, so a 409 here would
+    /// promise generated clients a response that cannot come.</summary>
+    [Test]
+    public async Task The_email_change_declares_no_conflict()
+    {
+        await using var app = await TestApp.StartAsync(includeOpenApi: true);
+
+        var responses = (await Document(app)).GetProperty("paths").GetProperty("/auth/email").GetProperty("post").GetProperty("responses");
+
+        await Assert.That(responses.Names()).DoesNotContain("409");
+        await Assert.That(responses.Names()).Contains("204");
+    }
+
     [Test]
     public async Task The_document_declares_the_statuses_and_bodies_these_endpoints_give()
     {
