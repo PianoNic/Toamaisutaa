@@ -17,6 +17,13 @@ public interface IEmailVerificationEmailTemplate
     /// <see cref="ToamaisutaaUser.Email"/> whenever somebody is moving to a new one.
     /// </remarks>
     EmailVerificationEmailContent Build(ToamaisutaaUser user, string email, string verificationToken);
+
+    /// <summary>
+    /// The same, with what the message has to warn about. The default drops the context; implement it
+    /// so the mail says when the link takes the address from another account.
+    /// </summary>
+    EmailVerificationEmailContent Build(ToamaisutaaUser user, string email, string verificationToken, EmailVerificationContext context) =>
+        Build(user, email, verificationToken);
 }
 
 /// <summary>The subject and body <see cref="SmtpEmailVerificationNotifier"/> sends.

@@ -18,6 +18,32 @@ public class DefaultEmailVerificationEmailTemplateTests
     };
 
     [Test]
+    public async Task WarnsWhenTheLinkTakesTheAddressFromAnotherAccount()
+    {
+        var template = Template("https://app.example.com/verify?token={token}");
+
+        var warned = template.Build(User(), "held@example.com", "raw", new EmailVerificationContext { TakesFromAnotherAccount = true });
+        var ordinary = template.Build(User(), "held@example.com", "raw", new EmailVerificationContext());
+
+        await Assert.That(warned.Subject).IsEqualTo("Someone wants to move your email address to their account");
+        await Assert.That(warned.PlainTextBody).Contains("moves it away from that account");
+        await Assert.That(warned.HtmlBody!).Contains("moves it away from that account");
+        await Assert.That(warned.PlainTextBody).Contains("https://app.example.com/verify?token=raw");
+        await Assert.That(ordinary.Subject).IsEqualTo("Verify your email address");
+    }
+
+    /// <summary>The user name is chosen by whoever asked, and this goes to somebody else's inbox.</summary>
+    [Test]
+    public async Task TheWarningNamesNoAccount()
+    {
+        var warned = Template("https://app.example.com/verify?token={token}")
+            .Build(User(), "held@example.com", "raw", new EmailVerificationContext { TakesFromAnotherAccount = true });
+
+        await Assert.That(warned.PlainTextBody).DoesNotContain("ada");
+        await Assert.That(warned.HtmlBody!).DoesNotContain("ada");
+    }
+
+    [Test]
     public async Task SubstitutesTheTokenIntoTheLink()
     {
         var content = Template("https://app.example.com/verify?token={token}")

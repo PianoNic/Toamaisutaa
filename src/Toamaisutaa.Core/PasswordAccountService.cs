@@ -438,7 +438,18 @@ internal sealed class PasswordAccountService(
             },
             cancellationToken);
 
-        await verificationNotifier.SendAsync(user, trimmed, raw, cancellationToken);
+        // Held but unproven by another account: the mail has to say so, or the mailbox's owner reads a
+        // routine confirmation and clicks it, moving their address to whoever asked.
+        var takesFromAnother = await credentials.FindByIdentifierAsync(normalized, cancellationToken) is { } holder
+            && holder.UserId != userId
+            && holder.NormalizedEmail == normalized;
+
+        await verificationNotifier.SendAsync(
+            user,
+            trimmed,
+            raw,
+            new EmailVerificationContext { TakesFromAnotherAccount = takesFromAnother },
+            cancellationToken);
 
         logger.LogInformation("Email verification token issued for user {UserId} and handed to the notifier.", userId);
 
@@ -1066,6 +1077,9 @@ internal sealed class PasswordAccountService(
         if (holder is null || holder.UserId == claimant || holder.EmailConfirmedAt is not null)
             return;
 
+        // Read now: the update below clears it on this same instance.
+        var releasedEmail = holder.Email ?? normalizedEmail;
+
         await credentials.UpdateAsync(
             holder,
             current =>
@@ -1083,6 +1097,10 @@ internal sealed class PasswordAccountService(
             "Released the unverified email address held by user {HolderId}: user {ClaimantId} proved they own it.",
             holder.UserId,
             claimant);
+
+        await events.PublishAsync(
+            new EmailAddressReleased { OccurredAt = now, UserId = holder.UserId, Email = releasedEmail, ClaimedByUserId = claimant },
+            cancellationToken);
     }
 
     /// <summary>

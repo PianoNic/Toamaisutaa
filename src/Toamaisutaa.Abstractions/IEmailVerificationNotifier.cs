@@ -19,4 +19,28 @@ public interface IEmailVerificationNotifier
     /// proves control of the wrong mailbox.
     /// </remarks>
     Task SendAsync(ToamaisutaaUser user, string email, string verificationToken, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// The same, with what the message has to warn about. Implement it: the default drops the context
+    /// and sends the ordinary message.
+    /// </summary>
+    /// <remarks>
+    /// With <see cref="EmailVerificationContext.TakesFromAnotherAccount"/> the address is currently on
+    /// another account, unproven, and redeeming the link moves it away from there. Somebody reading an
+    /// ordinary "confirm your address" mail for an address they already use would click it, and hand
+    /// it to whoever asked.
+    /// </remarks>
+    Task SendAsync(
+        ToamaisutaaUser user,
+        string email,
+        string verificationToken,
+        EmailVerificationContext context,
+        CancellationToken cancellationToken = default) =>
+        SendAsync(user, email, verificationToken, cancellationToken);
+}
+
+public sealed record EmailVerificationContext
+{
+    /// <summary>The address is held, unverified, by another account, which loses it if the link is used.</summary>
+    public bool TakesFromAnotherAccount { get; init; }
 }

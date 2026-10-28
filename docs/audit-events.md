@@ -54,6 +54,7 @@ cannot promise.
 | `account-locked-out` | The failed attempt that crossed the threshold | `LockedOutUntil`, `SourceOnly`, `Strikes` |
 | `password-changed` | A password was set with proof of the old one, or by an administrator | `SetByAdministrator` |
 | `password-reset` | A password was set by spending a reset token | |
+| `email-address-released` | An account lost an address it held unverified, because another proved the mailbox | `Email`, `ClaimedByUserId` |
 | `email-changed` | A verification link was redeemed, so the address is now the one it named | `PreviousEmail`, `Email` |
 | `two-factor-enrolled` | An enrolment was confirmed with a working code | |
 | `two-factor-disabled` | A confirmed second factor was turned off | |

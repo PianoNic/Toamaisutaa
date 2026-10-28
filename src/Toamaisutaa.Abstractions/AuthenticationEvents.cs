@@ -124,6 +124,20 @@ public sealed record EmailChanged : AuthenticationEvent
     public required string Email { get; init; }
 }
 
+/// <summary>
+/// An account lost an address it held unverified, because another account proved the mailbox. The
+/// moment to tell the account that lost it, since nothing else does.
+/// </summary>
+public sealed record EmailAddressReleased : AuthenticationEvent
+{
+    public override string Kind => "email-address-released";
+
+    public required string Email { get; init; }
+
+    /// <summary>The account that proved the mailbox and now holds the address.</summary>
+    public required Guid ClaimedByUserId { get; init; }
+}
+
 /// <summary>An enrolment was confirmed with a working code. Beginning one publishes nothing: until
 /// it is confirmed, nothing about the account has changed.</summary>
 public sealed record TwoFactorEnrolled : AuthenticationEvent
