@@ -20,7 +20,10 @@ internal static class LockoutPolicy
         DateTimeOffset now) =>
         RegisterFailure(LockoutState.Of(credential), options, now).ApplyTo(credential);
 
-    internal static LockoutState RegisterFailure(LockoutState state, ToamaisutaaLocalLoginOptions options, DateTimeOffset now)
+    internal static LockoutState RegisterFailure(LockoutState state, ToamaisutaaLocalLoginOptions options, DateTimeOffset now) =>
+        RegisterFailure(state, options, now, options.MaxFailedAttempts);
+
+    internal static LockoutState RegisterFailure(LockoutState state, ToamaisutaaLocalLoginOptions options, DateTimeOffset now, int threshold)
     {
         if (!options.LockoutEnabled)
             return state;
@@ -29,7 +32,7 @@ internal static class LockoutPolicy
             ? state with { FirstFailedAttemptAt = now, FailedAttemptCount = 1 }
             : state with { FailedAttemptCount = state.FailedAttemptCount + 1 };
 
-        if (counted.FailedAttemptCount < options.MaxFailedAttempts)
+        if (counted.FailedAttemptCount < threshold)
             return counted;
 
         // Cleared with the lock so the next single failure after it expires does not re-lock.
@@ -50,7 +53,17 @@ internal static class LockoutPolicy
         LockoutState before,
         LockoutState after,
         ToamaisutaaLocalLoginOptions options,
-        DateTimeOffset now)
+        DateTimeOffset now) =>
+        Refund(state, lockedByThisAttempt, before, after, options, now, options.MaxFailedAttempts);
+
+    internal static LockoutState? Refund(
+        LockoutState state,
+        bool lockedByThisAttempt,
+        LockoutState before,
+        LockoutState after,
+        ToamaisutaaLocalLoginOptions options,
+        DateTimeOffset now,
+        int threshold)
     {
         if (lockedByThisAttempt && state.Matches(after))
             return before;
@@ -74,7 +87,7 @@ internal static class LockoutPolicy
             && lockedAt >= windowStart
             && lockedAt - windowStart <= options.LockoutWindow)
         {
-            return new LockoutState(options.MaxFailedAttempts - 1, windowStart, null);
+            return new LockoutState(threshold - 1, windowStart, null);
         }
 
         return null;
@@ -102,6 +115,9 @@ internal readonly record struct LockoutState(int FailedAttemptCount, DateTimeOff
 
     internal static LockoutState Of(ToamaisutaaUserTwoFactor enrolment) =>
         new(enrolment.FailedAttemptCount, enrolment.FirstFailedAttemptAt, enrolment.LockedOutUntil);
+
+    internal static LockoutState Of(ToamaisutaaSignInThrottle? throttle) =>
+        throttle is null ? Clear : new(throttle.FailedAttemptCount, throttle.FirstFailedAttemptAt, throttle.LockedOutUntil);
 
     internal void ApplyTo(ToamaisutaaPasswordCredential credential)
     {

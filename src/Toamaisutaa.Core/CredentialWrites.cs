@@ -310,14 +310,13 @@ internal static class CredentialWrites
             cancellationToken);
 
     /// <summary>
-    /// Refuses when a lock set by other attempts now stands, so one right guess in a parallel wave
-    /// cannot unlock the account the rest of the wave just locked.
+    /// Refuses when a lock set while the password was being checked now stands, so a right password
+    /// cannot clear a count of wrong codes another request just finished.
     /// </summary>
     /// <returns>False when the sign-in has to be refused as locked out.</returns>
     internal static async Task<bool> TryRegisterSuccessAsync(
         this IPasswordCredentialStore store,
         ToamaisutaaPasswordCredential credential,
-        AttemptReservation reservation,
         DateTimeOffset now,
         CancellationToken cancellationToken,
         Rehash? rehash = null)
@@ -328,11 +327,8 @@ internal static class CredentialWrites
             credential,
             current =>
             {
-                var state = LockoutState.Of(current);
-
-                // A lock this attempt's own reservation set is the ordinary last try and may sign in.
-                refused = LockoutPolicy.IsLockedOut(state, now)
-                    && !(reservation.LockedByThisAttempt && state.Matches(reservation.After));
+                // Set by wrong codes or current passwords while this password was being checked.
+                refused = LockoutPolicy.IsLockedOut(LockoutState.Of(current), now);
 
                 if (refused)
                     return;

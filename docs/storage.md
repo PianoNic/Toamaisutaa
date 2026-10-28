@@ -103,7 +103,8 @@ those in place of `AddToamaisutaaEntityFrameworkStores`.
 |---|---|
 | `IUserStore` | The local user row, and the read-or-create on first sight of a subject |
 | `IExternalLoginStore` | One (provider, subject) pair per external identity |
-| `IPasswordCredentialStore` | The local credential, and the lockout counters |
+| `IPasswordCredentialStore` | The local credential, and the wrong-code and current-password counters |
+| `ISignInThrottleStore` | Wrong passwords at sign-in, per account and source |
 | `IRefreshTokenStore` | Refresh tokens, hashed, grouped into families |
 | `IPasswordResetTokenStore` | Single-use reset tokens, hashed |
 | `IInvitationTokenStore` | Single-use invitation tokens, hashed |
@@ -137,6 +138,10 @@ true, which is what makes single use hold when the same link or code arrives twi
 where the stored one is null or lower, and return whether a row changed. That makes one code good
 for one request, and stops a late write moving the step backwards.
 
+`ISignInThrottleStore.UpdateFailedAttemptsAsync` follows the same rule, and inserts the row when the
+expected count is zero and there is none yet. Key the table on (user, source), so two first failures
+from one source collide rather than each inserting a row that counts one.
+
 `ITwoFactorStore.UpdateFailedAttemptsAsync` holds the wrong-code count for an account with no
 password credential. Write it only where the stored count still equals the expected one, and return
 whether a row changed; the flows re-read and retry, so parallel wrong codes each count.
@@ -166,6 +171,7 @@ Three things the EF implementations do that yours must also do, because `Core` r
 | `ToamaisutaaUsers` | The local user: display name, email, avatar, timestamps |
 | `ToamaisutaaExternalLogins` | One (provider, subject) pair per external identity, unique |
 | `ToamaisutaaPasswordCredentials` | The local credential, one per user at most |
+| `ToamaisutaaSignInThrottles` | Wrong passwords at sign-in per (user, source). The source is a hash, never an address |
 | `ToamaisutaaRefreshTokens` | Issued refresh tokens, hashed, grouped into families |
 | `ToamaisutaaPasswordResetTokens` | Single-use reset tokens, hashed |
 | `ToamaisutaaInvitationTokens` | Single-use invitation tokens, hashed |

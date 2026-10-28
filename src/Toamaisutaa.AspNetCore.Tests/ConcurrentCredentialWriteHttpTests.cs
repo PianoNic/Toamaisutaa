@@ -67,7 +67,12 @@ public class ConcurrentCredentialWriteHttpTests
         var account = await Account.RegisterAsync(app);
         var userId = Guid.Parse(account.Claims().String("sub")!);
 
-        await app.Client.PostJson("/auth/login", new { identifier = account.UserName, password = "not the password" });
+        // A wrong current password, which counts on the credential; one at the front door counts on its source.
+        await app.Client.PostJson(
+            "/auth/password",
+            new { currentPassword = "not the password", newPassword = "a whole new passphrase" },
+            account.AccessToken);
+
         app.Time.Advance(TimeSpan.FromHours(1));
 
         await using var first = app.Services.CreateAsyncScope();

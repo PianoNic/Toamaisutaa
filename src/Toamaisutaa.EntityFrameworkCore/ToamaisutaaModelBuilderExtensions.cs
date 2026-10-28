@@ -18,6 +18,7 @@ public static class ToamaisutaaModelBuilderExtensions
         modelBuilder.ApplyConfiguration(new ToamaisutaaUserConfiguration());
         modelBuilder.ApplyConfiguration(new ToamaisutaaExternalLoginConfiguration());
         modelBuilder.ApplyConfiguration(new ToamaisutaaPasswordCredentialConfiguration());
+        modelBuilder.ApplyConfiguration(new ToamaisutaaSignInThrottleConfiguration());
         modelBuilder.ApplyConfiguration(new ToamaisutaaRefreshTokenConfiguration());
         modelBuilder.ApplyConfiguration(new ToamaisutaaPasswordResetTokenConfiguration());
         modelBuilder.ApplyConfiguration(new ToamaisutaaInvitationTokenConfiguration());

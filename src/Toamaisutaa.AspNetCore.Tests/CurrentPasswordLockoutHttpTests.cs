@@ -73,9 +73,12 @@ public class CurrentPasswordLockoutHttpTests
 
         await Assert.That(proved.IsSuccessStatusCode).IsTrue();
 
-        // At the front door, which reads the same count: new recovery codes move the security stamp,
-        // so the access token is no good for the rest of this.
-        await app.Client.PostJson("/auth/login", new { identifier = account.UserName, password = "not the password" });
+        // The last failure is a wrong code, which counts where wrong current passwords do; a wrong
+        // password at the front door counts against its source instead. New recovery codes move the
+        // security stamp, so the access token is no good for the rest of this.
+        var challenge = (await (await account.LoginAsync()).Json()).String("challenge")!;
+        app.Time.AdvanceToNextTotpStep();
+        await app.Client.PostJson("/auth/2fa/verify", new { challenge, code = Totp.WrongCode(account.Secret!, app.Time.Now) });
 
         await Assert.That((await account.LoginAsync()).StatusCode).IsEqualTo(HttpStatusCode.Unauthorized);
     }

@@ -72,6 +72,7 @@ public static class ToamaisutaaPasswordLoginExtensions
 
         // Also registered by the passkey package, because either call may come first.
         services.TryAddScoped<LocalSessionIssuer>();
+        services.TryAddScoped<SignInThrottle>();
 
         services.TryAddScoped<IPasswordSignInService, PasswordSignInService>();
         services.TryAddScoped<IPasswordAccountService, PasswordAccountService>();

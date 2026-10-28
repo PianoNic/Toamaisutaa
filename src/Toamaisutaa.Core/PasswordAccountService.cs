@@ -1151,6 +1151,11 @@ internal sealed class PasswordAccountService(
             },
             cancellationToken);
 
+        // Guesses at the old password say nothing about the new one, and whoever set it proved a
+        // mailbox, a session or an administrator's say-so: a reset is how someone locked out gets back.
+        if (replaced && serviceProvider.GetService<ISignInThrottleStore>() is { } throttles)
+            await throttles.DeleteAllForUserAsync(credential.UserId, cancellationToken);
+
         return replaced;
     }
 

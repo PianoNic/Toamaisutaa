@@ -17,6 +17,7 @@ internal sealed class PasswordSignInService(
     DummyPasswordHash dummy,
     TwoFactorGate twoFactor,
     TrustedDeviceGate trustedDevices,
+    SignInThrottle throttle,
     ToamaisutaaMetrics metrics,
     AuthenticationEventPublisher events,
     IOptions<ToamaisutaaLocalLoginOptions> options,
@@ -58,23 +59,39 @@ internal sealed class PasswordSignInService(
             return await RefuseDisabledAsync(user.Id, "Sign-in", now, cancellationToken);
         }
 
-        // Counted before the hash is checked, so parallel guesses cannot each find the account open.
-        var reservation = await credentials.ReserveAttemptAsync(credential, options.Value, now, cancellationToken);
-        credential = reservation.Credential;
-
-        if (!reservation.Allowed)
+        // Only someone holding the password or a session can set this lock, with wrong codes or
+        // current passwords. Wrong passwords here lock their own source instead, below.
+        if (LockoutPolicy.IsLockedOut(credential, now))
         {
             VerifyDummy(password);
-            logger.LogWarning(
-                "Sign-in refused for user {UserId}: locked out until {LockedOutUntil}.",
-                credential.UserId,
-                credential.LockedOutUntil);
+            return await RefuseLockedOutAsync(user.Id, credential.LockedOutUntil, "the account", now, cancellationToken);
+        }
 
-            await events.PublishAsync(
-                new SignInFailed { OccurredAt = now, UserId = credential.UserId, Reason = SignInOutcome.LockedOut },
+        // A remembered device is counted on its own and spared the ceiling, so its owner still gets in
+        // while strangers have locked out a shared address, or the account as a whole.
+        var device = await trustedDevices.PeekFamilyAsync(user, request.DeviceToken, now, cancellationToken);
+        var source = device is { } family ? SignInThrottle.ForDevice(family) : SignInThrottle.ForAddress(request.IpAddress);
+
+        // Counted before the hash is checked, so parallel guesses cannot each find the source open.
+        var fromSource = await throttle.ReserveAsync(user.Id, source, options.Value.MaxFailedAttempts, now, cancellationToken);
+
+        var acrossSources = fromSource.Allowed && device is null
+            ? await throttle.ReserveAsync(user.Id, ToamaisutaaSignInThrottle.AccountWideSource, options.Value.MaxFailedAttemptsPerAccount, now, cancellationToken)
+            : ThrottleReservation.NotCounted;
+
+        if (!fromSource.Allowed || !acrossSources.Allowed)
+        {
+            // A source refused only by the ceiling did not guess this time.
+            await throttle.RefundAsync(user.Id, fromSource, now, cancellationToken);
+
+            VerifyDummy(password);
+
+            return await RefuseLockedOutAsync(
+                user.Id,
+                (fromSource.Allowed ? acrossSources : fromSource).After.LockedOutUntil,
+                fromSource.Allowed ? "every source" : device is null ? "this address" : "this trusted device",
+                now,
                 cancellationToken);
-
-            return Refused(SignInOutcome.LockedOut);
         }
 
         var startedVerifying = Stopwatch.GetTimestamp();
@@ -83,27 +100,30 @@ internal sealed class PasswordSignInService(
 
         if (verification == PasswordVerificationResult.Failed)
         {
-            // Already counted by the reservation; only the attempt that set the lock reports it.
-            if (reservation.LockedByThisAttempt && credential.LockedOutUntil is { } lockedOutUntil)
-            {
-                metrics.LockedOut();
-
-                await events.PublishAsync(
-                    new AccountLockedOut { OccurredAt = now, UserId = credential.UserId, LockedOutUntil = lockedOutUntil },
-                    cancellationToken);
-            }
+            // Already counted by the reservations; only the attempt that set a lock reports it.
+            await ReportThrottleLockAsync(user.Id, fromSource, sourceOnly: true, now, cancellationToken);
+            await ReportThrottleLockAsync(user.Id, acrossSources, sourceOnly: false, now, cancellationToken);
 
             logger.LogWarning(
-                "Sign-in refused for user {UserId}: wrong password. {FailedAttempts} failed attempt(s) in the current window{Locked}.",
-                credential.UserId,
-                credential.FailedAttemptCount,
-                credential.LockedOutUntil is { } until ? $"; locked out until {until:O}" : string.Empty);
+                "Sign-in refused for user {UserId}: wrong password. {SourceFailures} failed attempt(s) from this source "
+                + "and {AccountFailures} from every source in the current window.",
+                user.Id,
+                fromSource.After.FailedAttemptCount,
+                acrossSources.After.FailedAttemptCount);
 
             await events.PublishAsync(
-                new SignInFailed { OccurredAt = now, UserId = credential.UserId, Reason = SignInOutcome.InvalidPassword },
+                new SignInFailed { OccurredAt = now, UserId = user.Id, Reason = SignInOutcome.InvalidPassword },
                 cancellationToken);
 
             return Refused(SignInOutcome.InvalidPassword);
+        }
+
+        // The source's own typos go with a right password. The ceiling only gives this attempt back,
+        // or guesses spread across addresses would be wiped out by the owner signing in between them.
+        if (!await throttle.TryRefundRightAsync(user.Id, acrossSources, now, cancellationToken)
+            || !await throttle.TryClearAsync(user.Id, fromSource, now, cancellationToken))
+        {
+            return await LockedWhileVerifyingAsync(user.Id, now, cancellationToken);
         }
 
         // Held here rather than set on the tracked credential, where any later SaveChanges would
@@ -126,10 +146,8 @@ internal sealed class PasswordSignInService(
 
             if (!trust.Trusted)
             {
-                // Only this reservation is refunded; clearing the count would let a password holder
-                // guess codes indefinitely by signing in again every few attempts.
-                credential = await credentials.RefundAsync(reservation, now, cancellationToken);
-
+                // The credential's count is left alone: it holds wrong codes, and clearing it would let
+                // a password holder guess codes indefinitely by signing in again every few attempts.
                 if (rehash is { } pending)
                 {
                     await credentials.UpdateAsync(
@@ -156,7 +174,7 @@ internal sealed class PasswordSignInService(
                 return new SignInResult { Outcome = SignInOutcome.TwoFactorRequired, Challenge = challenge };
             }
 
-            if (!await credentials.TryRegisterSuccessAsync(credential, reservation, now, cancellationToken, rehash))
+            if (!await credentials.TryRegisterSuccessAsync(credential, now, cancellationToken, rehash))
                 return await LockedWhileVerifyingAsync(user.Id, now, cancellationToken);
 
             logger.LogInformation("Sign-in succeeded for user {UserId} with a cached second factor.", user.Id);
@@ -182,7 +200,7 @@ internal sealed class PasswordSignInService(
             return cachedResult;
         }
 
-        if (!await credentials.TryRegisterSuccessAsync(credential, reservation, now, cancellationToken, rehash))
+        if (!await credentials.TryRegisterSuccessAsync(credential, now, cancellationToken, rehash))
             return await LockedWhileVerifyingAsync(user.Id, now, cancellationToken);
 
         logger.LogInformation("Sign-in succeeded for user {UserId}.", user.Id);
@@ -863,6 +881,39 @@ internal sealed class PasswordSignInService(
             await credentials.TryRefundAsync(reserved, now, cancellationToken);
         else if (enrolmentReservation is { } enrolmentReserved && userId is { } id)
             await twoFactor.TryRefundEnrolmentAttemptAsync(id, enrolmentReserved, now, cancellationToken);
+    }
+
+    private async Task<SignInResult> RefuseLockedOutAsync(
+        Guid userId,
+        DateTimeOffset? lockedOutUntil,
+        string scope,
+        DateTimeOffset now,
+        CancellationToken cancellationToken)
+    {
+        logger.LogWarning("Sign-in refused for user {UserId}: {Scope} is locked out until {LockedOutUntil}.", userId, scope, lockedOutUntil);
+
+        await events.PublishAsync(
+            new SignInFailed { OccurredAt = now, UserId = userId, Reason = SignInOutcome.LockedOut },
+            cancellationToken);
+
+        return Refused(SignInOutcome.LockedOut);
+    }
+
+    private async Task ReportThrottleLockAsync(
+        Guid userId,
+        ThrottleReservation reservation,
+        bool sourceOnly,
+        DateTimeOffset now,
+        CancellationToken cancellationToken)
+    {
+        if (!reservation.LockedByThisAttempt || reservation.After.LockedOutUntil is not { } lockedOutUntil)
+            return;
+
+        metrics.LockedOut();
+
+        await events.PublishAsync(
+            new AccountLockedOut { OccurredAt = now, UserId = userId, LockedOutUntil = lockedOutUntil, SourceOnly = sourceOnly },
+            cancellationToken);
     }
 
     private async Task<SignInResult> RefuseDisabledAsync(Guid userId, string ceremony, DateTimeOffset now, CancellationToken cancellationToken)

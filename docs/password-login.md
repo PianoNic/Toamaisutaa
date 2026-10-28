@@ -256,13 +256,32 @@ Password hashing, and how to replace it, is its own page: [Password hashing](/pa
 So are the other three swap-this-interface seams - the password rules, what goes in the access
 token, and roles: [Customizing local password login](/customizing-password-login).
 
-### Lockout is a denial-of-service vector, on purpose
+### Lockout locks out the guesser, not the owner
 
-Five failures in fifteen minutes locks an account for fifteen minutes, counted against the account
-rather than the caller. Someone who knows a user name can keep that person locked out. The
-alternative is an unthrottled online guessing oracle, which is worse. Per-IP rate limiting on the
-anonymous endpoints covers the other half, and is enforced by the endpoints themselves rather than
-by middleware you have to remember to add.
+Wrong passwords at sign-in are counted per account **and per source**. Five from one source in
+fifteen minutes lock that source out of that account for fifteen minutes; the owner signing in from
+anywhere else is not affected. A source is an IPv4 address, or an IPv6 /64.
+
+Guessing spread across many sources is stopped by a ceiling: fifty wrong passwords from every source
+together lock the account for everyone. Both numbers are settings, `MaxFailedAttempts` and
+`MaxFailedAttemptsPerAccount`.
+
+**A trusted device is its own source.** A caller presenting a valid [device token](/trusted-devices)
+is counted against that device rather than its address, and is not held to the ceiling. That is what
+keeps an owner signing in when somebody on the same address - a school or an office behind one
+public IP - has locked it, or when the ceiling has been reached. A stolen device token gets the same
+five guesses as any one address, not unlimited ones.
+
+A right password clears its own source's count, and gives back only its own attempt on the
+ceiling, so the owner signing in does not wipe out guesses made from elsewhere. Setting a new
+password - a reset, a change, or an administrator's - clears all of them.
+
+Wrong second-factor codes and wrong current passwords are different: they need the password or a
+session already, so they are counted against the account itself, and five of those lock it for
+everyone. See [two-factor lockout](/two-factor#wrong-codes-count-toward-lockout).
+
+Per-IP rate limiting on the anonymous endpoints covers the rest, and is enforced by the endpoints
+themselves rather than by middleware you have to remember to add.
 
 ### Behind a proxy, configure forwarded headers
 
@@ -330,8 +349,8 @@ usually reacting to exactly that.
 ### Expired tokens accumulate unless you sweep them
 
 `AddToamaisutaaTokenCleanup()` runs a periodic delete over every expiring row this package writes -
-refresh tokens, reset tokens, invitation tokens, email verification tokens, magic-link tokens, and the two-factor
-challenge and trusted-device rows when those are configured. Without it, plan to call `DeleteExpiredAsync` on each of those
+refresh tokens, reset tokens, invitation tokens, email verification tokens, magic-link tokens, spent sign-in
+throttle rows, and the two-factor challenge and trusted-device rows when those are configured. Without it, plan to call `DeleteExpiredAsync` on each of those
 stores from your own scheduler.
 
 Refresh rows are the exception to "once expired". A rotated row is what reuse detection works from,
@@ -412,7 +431,8 @@ hands you - rather than expecting to construct one.
 | `LocalLogin:SaltSizeBytes` / `HashSizeBytes` | `16` / `32` | Startup floor; `HashSizeBytes` has a ceiling of `1024` |
 | `LocalLogin:Pepper` / `PepperVersion` / `RetiredPeppers` | none / `1` / empty | See [password hashing](/password-hashing#a-pepper-is-available-and-off-by-default) |
 | `LocalLogin:LockoutEnabled` | `true` | |
-| `LocalLogin:MaxFailedAttempts` | `5` | |
+| `LocalLogin:MaxFailedAttempts` | `5` | Wrong passwords per source at sign-in; wrong codes and current passwords per account |
+| `LocalLogin:MaxFailedAttemptsPerAccount` | `50` | Wrong passwords from every source together before the account locks for everyone |
 | `LocalLogin:LockoutWindow` / `LockoutDuration` | `00:15:00` | |
 | `LocalLogin:SignInRefusalFloor` | `00:00:01` | The least time a refused `/auth/login` takes, so an unknown name, a wrong password and a locked account cannot be told apart by the clock |
 | `LocalLogin:FirstPasswordProofWindow` | `00:05:00` | How recent a sign-in must be to give a passwordless account its first password |
