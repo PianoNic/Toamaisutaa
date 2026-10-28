@@ -28,13 +28,18 @@ public interface ITwoFactorService
     Task<TwoFactorEnrolmentCompleted> ConfirmEnrolmentAsync(Guid userId, string code, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Requires a current TOTP code or a recovery code. An authenticated session is not enough: a
-    /// stolen access token must not be able to switch off the second factor.
+    /// Requires a current TOTP code or a recovery code, and the current password too - or, for an
+    /// account with no password, a sign-in within <c>TwoFactor:EnrolmentProofWindow</c>. A stolen
+    /// access token plus one phished code must not be able to switch off the second factor.
     /// </summary>
-    Task<TwoFactorResult> DisableAsync(Guid userId, string proof, CancellationToken cancellationToken = default);
+    Task<TwoFactorResult> DisableAsync(Guid userId, string proof, TwoFactorEnrolmentProof credential, CancellationToken cancellationToken = default);
 
     /// <summary>Invalidates every previous code. Same proof requirement as disabling.</summary>
-    Task<TwoFactorEnrolmentCompleted> RegenerateRecoveryCodesAsync(Guid userId, string proof, CancellationToken cancellationToken = default);
+    Task<TwoFactorEnrolmentCompleted> RegenerateRecoveryCodesAsync(
+        Guid userId,
+        string proof,
+        TwoFactorEnrolmentProof credential,
+        CancellationToken cancellationToken = default);
 }
 
 public sealed record TwoFactorStatus(bool Enabled, bool EnrolmentPending, int RecoveryCodesRemaining);

@@ -159,6 +159,9 @@ internal sealed class TestApp : IAsyncDisposable
         builder.Services.AddToamaisutaaTwoFactor(builder.Configuration);
         builder.Services.AddToamaisutaaTrustedDevices(builder.Configuration);
         builder.Services.AddToamaisutaaPasskeys(builder.Configuration);
+
+        // Passkeys refuse to start without the sweep, since anonymous assertion challenges pile up.
+        builder.Services.AddToamaisutaaTokenCleanup();
         builder.Services.AddSingleton<IPasswordResetNotifier, SilentResetNotifier>();
 
         // The package ships no roles table, so this stands in for the one an application supplies.

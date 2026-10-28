@@ -254,6 +254,12 @@ internal sealed class PasswordHarness
 
     internal ToamaisutaaTrustedDeviceOptions TrustedDeviceOptions { get; }
 
+    /// <summary>
+    /// The second proof disabling two-factor or regenerating codes takes: the harness's default
+    /// password for an account that has one, and a sign-in just now for one that does not.
+    /// </summary>
+    internal TwoFactorEnrolmentProof ManagementProof => new() { CurrentPassword = "correct horse battery", AuthenticatedAt = Clock.GetUtcNow() };
+
     internal Task<SignInResult> SignInAsync(
         string identifier,
         string password,

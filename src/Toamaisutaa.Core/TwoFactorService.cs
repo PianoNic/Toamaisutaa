@@ -60,7 +60,7 @@ internal sealed class TwoFactorService(
 
         try
         {
-            var wrapped = protector.Protect(secret);
+            var wrapped = protector.Protect(secret, SecretBinding.For(userId));
 
             // Written onto the row already read: the store may be tracking it, and a second instance
             // with the same key throws. Its wrong-code count carries over, so restarting cannot wipe it.
@@ -157,9 +157,13 @@ internal sealed class TwoFactorService(
         return new TwoFactorEnrolmentCompleted { RecoveryCodes = codes };
     }
 
-    public async Task<TwoFactorResult> DisableAsync(Guid userId, string proof, CancellationToken cancellationToken = default)
+    public async Task<TwoFactorResult> DisableAsync(Guid userId, string proof, TwoFactorEnrolmentProof credential, CancellationToken cancellationToken = default)
     {
         var now = timeProvider.GetUtcNow();
+
+        if (await CheckManagementCredentialAsync(userId, credential, "Disabling two-factor", now, cancellationToken) is { } notProven)
+            return TwoFactorResult.Failure(notProven);
+
         var (verification, refusal) = await VerifyProofAsync(userId, proof, now, cancellationToken);
 
         if (refusal is not null)
@@ -178,9 +182,17 @@ internal sealed class TwoFactorService(
         return new TwoFactorResult { Succeeded = true };
     }
 
-    public async Task<TwoFactorEnrolmentCompleted> RegenerateRecoveryCodesAsync(Guid userId, string proof, CancellationToken cancellationToken = default)
+    public async Task<TwoFactorEnrolmentCompleted> RegenerateRecoveryCodesAsync(
+        Guid userId,
+        string proof,
+        TwoFactorEnrolmentProof credential,
+        CancellationToken cancellationToken = default)
     {
         var now = timeProvider.GetUtcNow();
+
+        if (await CheckManagementCredentialAsync(userId, credential, "Regenerating recovery codes", now, cancellationToken) is { } notProven)
+            throw new TwoFactorEnrolmentException(notProven);
+
         var (verification, refusal) = await VerifyProofAsync(userId, proof, now, cancellationToken);
 
         if (refusal is not null)
@@ -195,6 +207,51 @@ internal sealed class TwoFactorService(
         logger.LogInformation("Regenerated recovery codes for user {UserId}; every previous code is now dead.", userId);
 
         return new TwoFactorEnrolmentCompleted { RecoveryCodes = codes };
+    }
+
+    /// <summary>
+    /// The second thing besides a code: the password, counted like any wrong one, for an account that
+    /// has one; otherwise a recent sign-in, since there is nothing else to ask for.
+    /// </summary>
+    /// <returns>Null when proven, otherwise what to tell the caller.</returns>
+    private async Task<string?> CheckManagementCredentialAsync(
+        Guid userId,
+        TwoFactorEnrolmentProof credential,
+        string action,
+        DateTimeOffset now,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(credential);
+
+        var passwords = provider.GetService<IPasswordCredentialStore>();
+        var stored = passwords is null ? null : await passwords.FindByUserIdAsync(userId, cancellationToken);
+
+        if (stored is null)
+        {
+            if (credential.AuthenticatedAt is { } at && at <= now && now - at <= options.Value.EnrolmentProofWindow)
+                return null;
+
+            logger.LogWarning("{Action} refused for user {UserId}: the account has no password, and no recent sign-in.", action, userId);
+            return $"{action} needs a recent sign-in. Sign in again, then do it while that sign-in is fresh.";
+        }
+
+        if (string.IsNullOrEmpty(credential.CurrentPassword) || provider.GetService<IPasswordHasher>() is not { } hasher)
+        {
+            logger.LogWarning("{Action} refused for user {UserId}: no current password was given.", action, userId);
+            return $"{action} needs your current password as well as a code. Send currentPassword.";
+        }
+
+        return await passwords!.CheckCurrentPasswordAsync(
+            stored,
+            credential.CurrentPassword,
+            hasher,
+            events,
+            provider.GetService<ToamaisutaaMetrics>(),
+            provider.GetRequiredService<IOptions<ToamaisutaaLocalLoginOptions>>().Value,
+            logger,
+            action,
+            now,
+            cancellationToken);
     }
 
     /// <summary>

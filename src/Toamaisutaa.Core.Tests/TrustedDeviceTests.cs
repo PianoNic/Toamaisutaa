@@ -197,7 +197,7 @@ public class TrustedDeviceTests
         var (user, secret, deviceToken) = await TrustedAsync(harness);
 
         harness.Clock.Now = harness.Clock.Now.AddSeconds(30);
-        await harness.TwoFactor.DisableAsync(user.Id, harness.CurrentCode(secret));
+        await harness.TwoFactor.DisableAsync(user.Id, harness.CurrentCode(secret), harness.ManagementProof);
 
         // Nothing to challenge now, but the row must not survive as a live trust.
         await harness.SignInAsync("pianonic", Password, deviceToken);
@@ -211,7 +211,7 @@ public class TrustedDeviceTests
         var (user, secret, deviceToken) = await TrustedAsync(harness);
 
         harness.Clock.Now = harness.Clock.Now.AddSeconds(30);
-        await harness.TwoFactor.RegenerateRecoveryCodesAsync(user.Id, harness.CurrentCode(secret));
+        await harness.TwoFactor.RegenerateRecoveryCodesAsync(user.Id, harness.CurrentCode(secret), harness.ManagementProof);
 
         var result = await harness.SignInAsync("pianonic", Password, deviceToken);
 

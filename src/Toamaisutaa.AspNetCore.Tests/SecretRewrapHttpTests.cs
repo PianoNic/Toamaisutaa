@@ -44,7 +44,7 @@ public class SecretRewrapHttpTests
             .UserTwoFactors.AsNoTracking().SingleAsync();
 
         // Rewrapped, so the path under test actually ran.
-        await Assert.That(stored.EncryptionKeyVersion).IsEqualTo("2");
+        await Assert.That(stored.EncryptionKeyVersion).IsEqualTo("2:u");
         await Assert.That(stored.LastUsedStep).IsEqualTo(laterStep.Recorded);
     }
 
@@ -98,8 +98,10 @@ public class SecretRewrapHttpTests
         var old = new AesGcmSecretProtector(Options.Create(new ToamaisutaaTwoFactorOptions { EncryptionKey = OldKey, EncryptionKeyVersion = "1" }));
 
         var enrolment = await db.UserTwoFactors.SingleAsync();
-        var wrapped = old.Protect(current.Unprotect(new ProtectedSecret(
-            enrolment.SecretCiphertext, enrolment.SecretNonce, enrolment.SecretTag, enrolment.EncryptionKeyVersion)));
+        // Written the way rows were before they were bound to their user: old key, no binding.
+        var wrapped = old.Protect(current.Unprotect(
+            new ProtectedSecret(enrolment.SecretCiphertext, enrolment.SecretNonce, enrolment.SecretTag, enrolment.EncryptionKeyVersion),
+            enrolment.UserId.ToByteArray()));
 
         enrolment.SecretCiphertext = wrapped.Ciphertext;
         enrolment.SecretNonce = wrapped.Nonce;

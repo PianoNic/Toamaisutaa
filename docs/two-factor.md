@@ -77,8 +77,17 @@ Render `uri` as a QR code; show `secret` for anyone typing it in by hand.
 { "recoveryCodes": ["GT7AX-P26E5", "LTN7X-CHS77", "..."] }
 ```
 
-**`POST /auth/2fa/disable`** takes `{ "proof": "123456" }` and answers 204 or 400.
+**`POST /auth/2fa/disable`** takes a code and the current password, and answers 204 or 400:
+
+```json
+{ "proof": "123456", "currentPassword": "correct horse battery staple" }
+```
+
 **`POST /auth/2fa/recovery-codes`** takes the same and returns the same shape as `confirm`.
+
+Both want the password as well as the code, so a stolen access token plus one phished code cannot
+switch the second factor off. An account with no password instead needs a sign-in within
+`TwoFactor:EnrolmentProofWindow`, read off the caller's token.
 
 **`POST /auth/2fa/verify`** finishes the sign-in. `rememberDevice` and `deviceLabel` are optional and
 only meaningful with [trusted devices](/trusted-devices).
@@ -289,6 +298,13 @@ builder.Services.AddToamaisutaaTwoFactor(builder.Configuration);
 on the same terms the default does: decrypt anything you have a key for, re-encrypt under the current
 one as rows are touched.
 
+The default also binds each secret to its user, passing the user's id as AES-GCM associated data, so a
+ciphertext copied into another user's row by somebody with write access to the table no longer
+decrypts there; that code is refused and the log says the stored secret does not decrypt as that
+user's. A bound row's `KeyVersion` ends in `:u`. Rows written before binding still decrypt, and are
+rewritten bound the next time they are used. A protector of your own gets the user's id through the
+`Protect` and `Unprotect` overloads taking `associatedData`; their defaults ignore it.
+
 `ITotpProvider` and `IRecoveryCodeProvider` are seams too - generating and checking the codes, and
 generating the recovery codes. Replace `IRecoveryCodeProvider` if you want a different code format
 from the `XXXXX-XXXXX` default.
@@ -306,10 +322,23 @@ rather than guessing. Keep the retired keys until you are certain no row still r
 |---|---|
 | `Optional` | Users may enrol. Nothing is required. The default |
 | `RequiredForLocalLogin` | An enrolled user must complete the challenge |
-| `RequiredForAll` | Tokens for users who have not enrolled carry `toa_2fa_required` |
+| `RequiredForAll` | Tokens for users who have not enrolled carry `toa_2fa_required`, and reach nothing but the endpoints to enrol |
 
 Enrolment alone decides whether a sign-in is challenged - somebody who turned it on gets it in every
 mode. What the setting governs is who gets pushed into enrolling.
+
+Under `RequiredForAll` a token carrying `toa_2fa_required` is refused everywhere except `GET /auth/2fa`,
+`/auth/2fa/begin` and `/auth/2fa/confirm`, and listing and registering passkeys, with a 403 that says
+why:
+
+```json
+{ "error": "two_factor_enrolment_required", "error_description": "TwoFactor:Enforcement is RequiredForAll and this account has no second factor. ..." }
+```
+
+Anonymous endpoints are unaffected, so refresh and sign-out keep working.
+
+Lockout is the only per-account limit on guessing a six-digit code, so startup refuses two-factor
+with `LocalLogin:LockoutEnabled` off.
 
 Locally issued tokens carry `amr` (RFC 8176, the standard claim for exactly this):
 

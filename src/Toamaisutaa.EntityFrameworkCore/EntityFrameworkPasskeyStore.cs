@@ -33,7 +33,9 @@ internal sealed class EntityFrameworkPasskeyStore<TContext>(TContext context)
             .Where(credential => credential.Id == credentialId)
             .ExecuteUpdateAsync(
                 setters => setters
-                    .SetProperty(credential => credential.SignCount, signCount)
+                    // Forward only: two assertions verified at once against the same stored counter can
+                    // land in either order, and a counter moved back hides the next clone.
+                    .SetProperty(credential => credential.SignCount, credential => signCount > credential.SignCount ? signCount : credential.SignCount)
                     .SetProperty(credential => credential.IsBackedUp, isBackedUp)
                     .SetProperty(credential => credential.LastUsedAt, usedAt),
                 cancellationToken);

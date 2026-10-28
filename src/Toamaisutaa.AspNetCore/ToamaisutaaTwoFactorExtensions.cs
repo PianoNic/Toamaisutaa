@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Authorization.Policy;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
@@ -100,10 +101,29 @@ public static class ToamaisutaaTwoFactorExtensions
         services.TryAddEnumerable(
             ServiceDescriptor.Singleton<IConfigureOptions<AuthorizationOptions>, ConfigureToamaisutaaTwoFactorPolicy>());
 
+        // Wraps whatever result handler is registered by now, as the admin one does, so both run.
+        if (!services.Any(descriptor => descriptor.ServiceType == typeof(TwoFactorEnrolmentResultHandler)))
+        {
+            var existing = services.LastOrDefault(descriptor => descriptor.ServiceType == typeof(IAuthorizationMiddlewareResultHandler));
+
+            services.AddSingleton<TwoFactorEnrolmentResultHandler>(provider => new TwoFactorEnrolmentResultHandler(
+                provider.GetRequiredService<IOptions<ToamaisutaaTwoFactorOptions>>(),
+                existing switch
+                {
+                    { ImplementationInstance: IAuthorizationMiddlewareResultHandler instance } => instance,
+                    { ImplementationFactory: { } factory } => (IAuthorizationMiddlewareResultHandler)factory(provider),
+                    { ImplementationType: { } type } => (IAuthorizationMiddlewareResultHandler)ActivatorUtilities.CreateInstance(provider, type),
+                    _ => new AuthorizationMiddlewareResultHandler(),
+                }));
+
+            services.AddSingleton<IAuthorizationMiddlewareResultHandler>(provider => provider.GetRequiredService<TwoFactorEnrolmentResultHandler>());
+        }
+
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IHostedService, TwoFactorStartupCheck>(provider =>
             new TwoFactorStartupCheck(
                 services,
-                provider.GetRequiredService<IOptions<ToamaisutaaTwoFactorOptions>>())));
+                provider.GetRequiredService<IOptions<ToamaisutaaTwoFactorOptions>>(),
+                provider.GetService<IOptions<ToamaisutaaLocalLoginOptions>>())));
 
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IHostedService, PublishedSecretsStartupCheck>());
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IHostedService, Toamaisutaa.OpenIdConnect.PublishedSecretsLoopbackCheck>());

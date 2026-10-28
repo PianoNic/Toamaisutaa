@@ -11,10 +11,10 @@ public sealed record ConfirmTwoFactorRequest(string Code);
 /// <summary><see cref="Proof"/> is a current TOTP code or an unspent recovery code. An
 /// authenticated session is not enough on its own: a stolen access token must not be able to switch
 /// the second factor off.</summary>
-public sealed record DisableTwoFactorRequest(string Proof);
+public sealed record DisableTwoFactorRequest(string Proof, string? CurrentPassword = null);
 
 /// <summary>Same proof requirement as disabling, and it invalidates every previous code.</summary>
-public sealed record RegenerateRecoveryCodesRequest(string Proof);
+public sealed record RegenerateRecoveryCodesRequest(string Proof, string? CurrentPassword = null);
 
 /// <summary>
 /// Finishes a sign-in that stopped for a second factor. <see cref="Code"/> takes either a TOTP code

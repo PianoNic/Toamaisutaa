@@ -7,7 +7,8 @@ namespace Toamaisutaa.Core;
 
 internal sealed class TwoFactorStartupCheck(
     IServiceCollection services,
-    IOptions<ToamaisutaaTwoFactorOptions> options) : IHostedService
+    IOptions<ToamaisutaaTwoFactorOptions> options,
+    IOptions<ToamaisutaaLocalLoginOptions>? localLogin = null) : IHostedService
 {
     private const int RequiredEncryptionKeyBytes = 32;
 
@@ -21,6 +22,14 @@ internal sealed class TwoFactorStartupCheck(
         CheckEncryptionKeys(settings, problems);
         CheckTotpParameters(settings, problems);
         CheckRecoveryCodes(settings, problems);
+
+        // Lockout is the only per-account limit on guessing a six-digit code; the rate limit is per address.
+        if (localLogin?.Value.LockoutEnabled == false)
+        {
+            problems.Add(
+                "LocalLogin:LockoutEnabled is false, so nothing limits how many codes one account can be guessed with "
+                + "except the per-address rate limit. Turn lockout on, or do not register two-factor authentication.");
+        }
 
         if (problems.Count > 0)
             throw StartupProblems.Refusal("Toamaisutaa two-factor authentication is registered but not usable:", problems);

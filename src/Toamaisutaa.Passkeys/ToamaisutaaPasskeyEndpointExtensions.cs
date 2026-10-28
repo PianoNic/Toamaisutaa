@@ -43,6 +43,7 @@ public static class ToamaisutaaPasskeyEndpointExtensions
         group.AddEndpointFilter<StaleSecurityStampFilter>();
 
         group.MapGet("/", ListAsync)
+            .WithMetadata(AllowsPendingTwoFactorEnrolment.Instance)
             .RequireAuthorization()
             .WithName($"{endpointNamePrefix}ToamaisutaaPasskeys")
             .WithSummary("Lists the passkeys this user has registered.")
@@ -72,6 +73,7 @@ public static class ToamaisutaaPasskeyEndpointExtensions
             .Produces(StatusCodes.Status429TooManyRequests);
 
         group.MapPost("/register/begin", BeginRegistrationAsync)
+            .WithMetadata(AllowsPendingTwoFactorEnrolment.Instance)
             .RequireAuthorization()
             .AddEndpointFilter<PasswordRateLimitFilter>()
             .WithName($"{endpointNamePrefix}ToamaisutaaPasskeyRegisterBegin")
@@ -90,6 +92,7 @@ public static class ToamaisutaaPasskeyEndpointExtensions
             .Produces(StatusCodes.Status429TooManyRequests);
 
         group.MapPost("/register/complete", CompleteRegistrationAsync)
+            .WithMetadata(AllowsPendingTwoFactorEnrolment.Instance)
             .RequireAuthorization()
             .WithName($"{endpointNamePrefix}ToamaisutaaPasskeyRegisterComplete")
             .WithSummary("Verifies what the authenticator produced and stores the credential.")
