@@ -97,7 +97,13 @@ public class MailRequestQueueHttpTests
             });
         }
 
-        // Long enough for every reader to abandon its job many times over.
+        // Each job holds a thread-pool thread, and under a full suite the pool grows slowly, so wait for
+        // the cap to be reached rather than for a fixed time.
+        for (var i = 0; i < 300 && Volatile.Read(ref started) < MailRequestQueue.MaxInFlight; i++)
+            await Task.Delay(100);
+
+        // Then long enough for every reader to abandon its job many times over, which is when a queue
+        // without the cap would start more.
         await Task.Delay(TimeSpan.FromSeconds(2));
         var reached = Volatile.Read(ref started);
 
