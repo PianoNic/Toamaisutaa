@@ -55,6 +55,19 @@ public interface IUserStore
     Task SetEmailAsync(Guid userId, string email, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Sets or clears <see cref="ToamaisutaaUser.DisabledAt"/>. Only that column: the caller moves the
+    /// stamp separately.
+    /// </summary>
+    /// <remarks>
+    /// The default throws, so a store written before accounts could be disabled keeps compiling and
+    /// fails only where an administrator actually disables one.
+    /// </remarks>
+    Task SetDisabledAtAsync(Guid userId, DateTimeOffset? disabledAt, CancellationToken cancellationToken = default) =>
+        throw new NotSupportedException(
+            $"{GetType().Name} does not implement {nameof(IUserStore)}.{nameof(SetDisabledAtAsync)}, so accounts cannot be "
+            + "disabled. Implement it to write ToamaisutaaUser.DisabledAt.");
+
+    /// <summary>
     /// Removes a user and everything that hangs off it. Used to undo a registration that lost a race
     /// on the credential's unique index.
     /// </summary>

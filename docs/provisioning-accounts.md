@@ -53,12 +53,13 @@ checked at startup the same way the rest of `LocalLogin` is.
 | `Timeout` | `00:00:30` | |
 | `SkipCertificateVerification` | `false` | Self-signed relay on a private network only |
 
-## The three admin endpoints need an admin role
+## The admin endpoints need an admin role
 
-`POST /auth/users`, `POST /auth/users/{userId}/password` and `POST /auth/invitations` take the
-account they act on from the route or the body rather than from the token, so being signed in is
-not enough to reach them. All three carry the `Toamaisutaa.Admin` policy, and that policy exists
-only when `Oidc:AdminRole` names a role:
+`POST /auth/users`, `POST /auth/users/{userId}/password`, `POST /auth/invitations` and the
+[disable, enable and revoke endpoints](#disabling-an-account) take the account they act on from the
+route or the body rather than from the token, so being signed in is not enough to reach them. All of
+them carry the `Toamaisutaa.Admin` policy, and that policy exists only when `Oidc:AdminRole` names a
+role:
 
 ```json
 {
@@ -125,6 +126,45 @@ What the caller gets is a **502** rather than a 204, with the package's usual er
 Read it as "done, and nobody has the new password". If the password was generated, it is gone: set
 one again once delivery works. `AccountResult.NotificationFailed` is the same signal for a caller
 using the service directly.
+
+## Disabling an account
+
+Resetting the password of someone who is leaving does not remove them: the new password is mailed to
+their own address. Disable the account instead.
+
+| Endpoint | Service method | Does |
+|---|---|---|
+| `POST /auth/users/{userId}/disable` | `AdminDisableAccountAsync` | Refuses every way in and ends every session |
+| `POST /auth/users/{userId}/enable` | `AdminEnableAccountAsync` | Lets the account sign in again |
+| `POST /auth/users/{userId}/sessions/revoke` | `AdminRevokeSessionsAsync` | Ends every session, leaves the credentials alone |
+
+None of them sends mail, and none needs a notifier registered: they are mapped whenever an admin role
+is configured. Each answers 204, or 404 for an id that names no account.
+
+**Disabling** sets `ToamaisutaaUser.DisabledAt`, moves the security stamp, and revokes every refresh
+family, trusted device and outstanding reset, magic-link, verification and invitation link. From then
+on the password, a magic link, a passkey, a second-factor challenge, a refresh and a password reset
+are all refused, and nothing is mailed when one is asked for. The caller is told only that sign-in
+failed. `ICurrentUser.GetOrProvisionAsync` throws `AccountDisabledException`, which the package's own
+endpoints answer with a 403:
+
+```json
+{ "error": "account_disabled", "error_description": "This account is disabled." }
+```
+
+The password, passkeys and second factor are kept, so enabling gives the account back as it was.
+Disabling one already disabled keeps the original `DisabledAt` and revokes again.
+
+**Revoking sessions** is for an account you suspect, rather than one you are removing. It moves the
+stamp and revokes every session and trusted device, so the owner signs in again with what they
+already have.
+
+Both move the stamp, so an access token already in flight is refused wherever the stamp is checked.
+On an endpoint that only checks the token's signature, it keeps working until `AccessTokenLifetime`
+runs out.
+
+A custom `IUserStore` needs `SetDisabledAtAsync`. The default implementation throws, so a store written
+before this existed keeps compiling and fails only when an account is actually disabled.
 
 ## Completing a reserved invitation
 

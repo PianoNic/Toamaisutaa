@@ -254,6 +254,43 @@ public static class ToamaisutaaPasswordEndpointExtensions
                 .Produces<ErrorResponse>(StatusCodes.Status502BadGateway);
         }
 
+        // No notifier needed: nothing is mailed, which is the point when the mailbox is the departing user's.
+        if (adminPolicy is not null)
+        {
+            group.MapPost("/users/{userId:guid}/disable", DisableUserAsync)
+                .RequireAuthorization(adminPolicy)
+                .WithName($"{endpointNamePrefix}ToamaisutaaDisableUser")
+                .WithSummary("Disables an account and ends every session it holds.")
+                .WithDescription(
+                    "Every way in refuses the account until it is enabled again: password, magic link, passkey, "
+                    + "refresh and password reset. Its sessions, trusted devices and mailed links are revoked and "
+                    + "nothing is sent to it. The password, passkeys and second factor are kept. Requires the admin "
+                    + "role `Oidc:AdminRole` names.")
+                .Produces(StatusCodes.Status204NoContent)
+                .Produces(StatusCodes.Status403Forbidden)
+                .Produces(StatusCodes.Status404NotFound);
+
+            group.MapPost("/users/{userId:guid}/enable", EnableUserAsync)
+                .RequireAuthorization(adminPolicy)
+                .WithName($"{endpointNamePrefix}ToamaisutaaEnableUser")
+                .WithSummary("Lets a disabled account sign in again.")
+                .WithDescription("Requires the admin role `Oidc:AdminRole` names.")
+                .Produces(StatusCodes.Status204NoContent)
+                .Produces(StatusCodes.Status403Forbidden)
+                .Produces(StatusCodes.Status404NotFound);
+
+            group.MapPost("/users/{userId:guid}/sessions/revoke", RevokeUserSessionsAsync)
+                .RequireAuthorization(adminPolicy)
+                .WithName($"{endpointNamePrefix}ToamaisutaaRevokeUserSessions")
+                .WithSummary("Ends every session and trusted device an account holds, and sends nothing.")
+                .WithDescription(
+                    "Leaves every credential as it is, so the owner can sign in again straight away. Requires the "
+                    + "admin role `Oidc:AdminRole` names.")
+                .Produces(StatusCodes.Status204NoContent)
+                .Produces(StatusCodes.Status403Forbidden)
+                .Produces(StatusCodes.Status404NotFound);
+        }
+
         if (hasInvitationNotifier)
         {
             if (adminPolicy is not null)
@@ -658,6 +695,15 @@ public static class ToamaisutaaPasswordEndpointExtensions
             ? Results.NoContent()
             : Results.BadRequest(new ValidationErrorResponse { Errors = result.Errors });
     }
+
+    private static async Task<IResult> DisableUserAsync(Guid userId, IPasswordAccountService accounts, CancellationToken cancellationToken) =>
+        await accounts.AdminDisableAccountAsync(userId, cancellationToken) ? Results.NoContent() : Results.NotFound();
+
+    private static async Task<IResult> EnableUserAsync(Guid userId, IPasswordAccountService accounts, CancellationToken cancellationToken) =>
+        await accounts.AdminEnableAccountAsync(userId, cancellationToken) ? Results.NoContent() : Results.NotFound();
+
+    private static async Task<IResult> RevokeUserSessionsAsync(Guid userId, IPasswordAccountService accounts, CancellationToken cancellationToken) =>
+        await accounts.AdminRevokeSessionsAsync(userId, cancellationToken) ? Results.NoContent() : Results.NotFound();
 
     private static async Task<IResult> RevokeInvitationAsync(
         RevokeInvitationRequest request,

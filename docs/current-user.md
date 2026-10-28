@@ -139,3 +139,7 @@ builder.Services.AddProblemDetails();
 var app = builder.Build();
 app.UseExceptionHandler();
 ```
+
+It also throws `AccountDisabledException` for an account an administrator has
+[disabled](/provisioning-accounts#disabling-an-account), whatever issued the token. Refreshing will
+not help there, so answer it with a 403 rather than a 401, or a client that refreshes on 401 loops.

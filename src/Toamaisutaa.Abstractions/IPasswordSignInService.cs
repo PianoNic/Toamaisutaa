@@ -257,6 +257,9 @@ public enum SignInOutcome
     /// A WebAuthn assertion did not verify, for any reason. The ceremony's log line carries which.
     /// </summary>
     InvalidPasskey,
+
+    /// <summary>An administrator disabled the account. The caller is told only that sign-in failed.</summary>
+    AccountDisabled,
 }
 
 /// <summary>How the second factor was satisfied. Written to <c>toa_2fa_source</c>.</summary>

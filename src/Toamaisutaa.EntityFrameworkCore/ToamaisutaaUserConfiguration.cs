@@ -26,6 +26,7 @@ public sealed class ToamaisutaaUserConfiguration : IEntityTypeConfiguration<Toam
 
         builder.Property(user => user.CreatedAt).HasConversion(InstantConverters.Instant);
         builder.Property(user => user.UpdatedAt).HasConversion(InstantConverters.Instant);
+        builder.Property(user => user.DisabledAt).HasConversion(InstantConverters.NullableInstant);
 
         // Deliberately not unique: one person at two identity providers is two rows sharing an
         // address. Local login's unique email lives on ToamaisutaaPasswordCredentials.

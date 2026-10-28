@@ -50,6 +50,14 @@ internal sealed class PasswordSignInService(
         var user = await users.FindByIdAsync(credential.UserId, cancellationToken)
             ?? throw new InvalidOperationException($"Credential for user {credential.UserId} has no user row.");
 
+        // Ahead of the reservation, so a disabled account collects no failures; the caller hears the
+        // same refusal as a wrong password either way.
+        if (user.DisabledAt is not null)
+        {
+            VerifyDummy(password);
+            return await RefuseDisabledAsync(user.Id, "Sign-in", now, cancellationToken);
+        }
+
         // Counted before the hash is checked, so parallel guesses cannot each find the account open.
         var reservation = await credentials.ReserveAttemptAsync(credential, options.Value, now, cancellationToken);
         credential = reservation.Credential;
@@ -257,6 +265,9 @@ internal sealed class PasswordSignInService(
         var user = await users.FindByIdAsync(redemption.UserId!.Value, cancellationToken)
             ?? throw new InvalidOperationException($"Challenge points at user {redemption.UserId}, which does not exist.");
 
+        if (user.DisabledAt is not null)
+            return await RefuseDisabledAsync(user.Id, "Two-factor sign-in", now, cancellationToken);
+
         // A reset can land after the challenge was checked. Read fresh: the user above may be the copy
         // this request read before the code was verified, which still carries the old stamp.
         if (redemption.SecurityStamp is not null
@@ -333,6 +344,9 @@ internal sealed class PasswordSignInService(
 
         var user = await users.FindByIdAsync(stored.UserId, cancellationToken)
             ?? throw new InvalidOperationException($"Magic-link token {stored.Id} points at user {stored.UserId}, which does not exist.");
+
+        if (user.DisabledAt is not null)
+            return await RefuseDisabledAsync(user.Id, "Magic-link sign-in", now, cancellationToken);
 
         // Spent before the challenge, so no live credential stays in a mailbox, and only by whoever
         // wins the conditional write, since the check above is a separate step.
@@ -646,6 +660,15 @@ internal sealed class PasswordSignInService(
         var user = await users.FindByIdAsync(stored.UserId, cancellationToken)
             ?? throw new InvalidOperationException($"Refresh token {stored.Id} points at user {stored.UserId}, which does not exist.");
 
+        // Disabling revokes every family, so this is the backstop for a family minted alongside it.
+        if (user.DisabledAt is not null)
+        {
+            logger.LogWarning("Refresh refused for user {UserId}: the account is disabled.", stored.UserId);
+
+            await RevokeFamilyAsync(stored, "account-disabled", now, cancellationToken);
+            return Failed(SignInOutcome.AccountDisabled);
+        }
+
         // Credential changes revoke families outright, so a stale stamp on a live family means those
         // writes disagree, which is exactly when to refuse.
         if (!string.Equals(stored.SecurityStamp, user.SecurityStamp, StringComparison.Ordinal))
@@ -840,6 +863,17 @@ internal sealed class PasswordSignInService(
             await credentials.TryRefundAsync(reserved, now, cancellationToken);
         else if (enrolmentReservation is { } enrolmentReserved && userId is { } id)
             await twoFactor.TryRefundEnrolmentAttemptAsync(id, enrolmentReserved, now, cancellationToken);
+    }
+
+    private async Task<SignInResult> RefuseDisabledAsync(Guid userId, string ceremony, DateTimeOffset now, CancellationToken cancellationToken)
+    {
+        logger.LogWarning("{Ceremony} refused for user {UserId}: the account is disabled.", ceremony, userId);
+
+        await events.PublishAsync(
+            new SignInFailed { OccurredAt = now, UserId = userId, Reason = SignInOutcome.AccountDisabled },
+            cancellationToken);
+
+        return Refused(SignInOutcome.AccountDisabled);
     }
 
     private async Task<SignInResult> LockedWhileVerifyingAsync(Guid userId, DateTimeOffset now, CancellationToken cancellationToken)

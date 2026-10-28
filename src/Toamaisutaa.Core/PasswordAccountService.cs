@@ -315,6 +315,69 @@ internal sealed class PasswordAccountService(
         return new AccountResult { Succeeded = true, UserId = userId };
     }
 
+    public async Task<bool> AdminDisableAccountAsync(Guid userId, CancellationToken cancellationToken = default)
+    {
+        var user = await users.FindByIdAsync(userId, cancellationToken);
+        if (user is null)
+            return false;
+
+        var now = timeProvider.GetUtcNow();
+
+        // Kept on a repeat, so the row still says when access was first cut. The flag goes first: a
+        // sign-in that reads the user after this refuses, and one that read it before is holding the
+        // stamp about to move.
+        if (user.DisabledAt is null)
+            await users.SetDisabledAtAsync(userId, now, cancellationToken);
+
+        await users.UpdateSecurityStampAsync(userId, SecureTokens.Create(), cancellationToken);
+        await RevokeAllSessionsAsync(userId, "account-disabled", now, cancellationToken);
+        await trustedDevices.RevokeAllAsync(userId, "account-disabled", now, cancellationToken);
+        await RetireOutstandingLinksAsync(userId, now, cancellationToken);
+        await invitationTokens.InvalidateAllForUserAsync(userId, now, cancellationToken);
+
+        await events.PublishAsync(new AccountDisabled { OccurredAt = now, UserId = userId }, cancellationToken);
+
+        logger.LogInformation("Disabled user {UserId}; all local sessions, trusted devices and mailed links revoked.", userId);
+
+        return true;
+    }
+
+    public async Task<bool> AdminEnableAccountAsync(Guid userId, CancellationToken cancellationToken = default)
+    {
+        var user = await users.FindByIdAsync(userId, cancellationToken);
+        if (user is null)
+            return false;
+
+        if (user.DisabledAt is null)
+            return true;
+
+        var now = timeProvider.GetUtcNow();
+
+        await users.SetDisabledAtAsync(userId, null, cancellationToken);
+        await events.PublishAsync(new AccountEnabled { OccurredAt = now, UserId = userId }, cancellationToken);
+
+        logger.LogInformation("Enabled user {UserId}.", userId);
+
+        return true;
+    }
+
+    public async Task<bool> AdminRevokeSessionsAsync(Guid userId, CancellationToken cancellationToken = default)
+    {
+        if (await users.FindByIdAsync(userId, cancellationToken) is null)
+            return false;
+
+        var now = timeProvider.GetUtcNow();
+
+        // The stamp as well as the rows, so ICurrentUser refuses the access tokens still in flight.
+        await users.UpdateSecurityStampAsync(userId, SecureTokens.Create(), cancellationToken);
+        await RevokeAllSessionsAsync(userId, "revoked-by-administrator", now, cancellationToken);
+        await trustedDevices.RevokeAllAsync(userId, "revoked-by-administrator", now, cancellationToken);
+
+        logger.LogInformation("Administrator revoked every session and trusted device for user {UserId}.", userId);
+
+        return true;
+    }
+
     public async Task<AccountResult> RequestEmailChangeAsync(
         Guid userId,
         string newEmail,
@@ -487,6 +550,12 @@ internal sealed class PasswordAccountService(
         var user = await users.FindByIdAsync(credential.UserId, cancellationToken);
         if (user is null)
             return MagicLinkRequestOutcome.UnknownEmail;
+
+        if (user.DisabledAt is not null)
+        {
+            logger.LogInformation("Magic link requested for user {UserId}, whose account is disabled. No email sent.", user.Id);
+            return MagicLinkRequestOutcome.AccountDisabled;
+        }
 
         // Not optional, unlike for reset: this link is exchanged for a session, so an unproven
         // address is an account handed over.
@@ -704,6 +773,12 @@ internal sealed class PasswordAccountService(
         if (user is null)
             return AccountResult.Failure("That invitation link is no longer valid.");
 
+        if (user.DisabledAt is not null)
+        {
+            logger.LogWarning("Invitation completion refused for user {UserId}: the account is disabled.", user.Id);
+            return AccountResult.Failure("That invitation link is no longer valid.");
+        }
+
         var trimmedUserName = userName.Trim();
 
         // Off the token: the profile email can be rewritten by an identity provider's sync.
@@ -788,6 +863,12 @@ internal sealed class PasswordAccountService(
         if (user is null)
             return PasswordResetRequestOutcome.UnknownEmail;
 
+        if (user.DisabledAt is not null)
+        {
+            logger.LogInformation("Password reset requested for user {UserId}, whose account is disabled. No email sent.", user.Id);
+            return PasswordResetRequestOutcome.AccountDisabled;
+        }
+
         if (options.Value.RequireVerifiedEmailForPasswordReset && credential.EmailConfirmedAt is null)
         {
             // From outside this looks like a bug, so the log line names the option responsible.
@@ -855,6 +936,13 @@ internal sealed class PasswordAccountService(
         var credential = await credentials.FindByUserIdAsync(stored.UserId, cancellationToken);
         if (credential is null)
             return AccountResult.Failure("That reset link is no longer valid. Request a new one.");
+
+        // Disabling retires every link, so this catches only one mailed alongside it.
+        if ((await users.FindByIdAsync(stored.UserId, cancellationToken))?.DisabledAt is not null)
+        {
+            logger.LogWarning("Password reset refused for user {UserId}: the account is disabled.", stored.UserId);
+            return AccountResult.Failure("That reset link is no longer valid. Request a new one.");
+        }
 
         // Spent before the password moves, and only by whoever wins the write, so concurrent
         // requests cannot each set a password.

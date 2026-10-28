@@ -57,6 +57,27 @@ public interface IPasswordAccountService
     Task<AccountResult> AdminSetPasswordAsync(Guid userId, string? password, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Disables <paramref name="userId"/>: sets <see cref="ToamaisutaaUser.DisabledAt"/>, moves the
+    /// stamp, and revokes every session, trusted device and outstanding mailed link. Sends no mail.
+    /// False when there is no such account.
+    /// </summary>
+    /// <remarks>
+    /// Passkeys, the password and any second factor are kept, so <see cref="AdminEnableAccountAsync"/>
+    /// gives the account back exactly as it was. Disabling an account already disabled keeps its
+    /// original <see cref="ToamaisutaaUser.DisabledAt"/> and revokes again.
+    /// </remarks>
+    Task<bool> AdminDisableAccountAsync(Guid userId, CancellationToken cancellationToken = default);
+
+    /// <summary>Clears <see cref="ToamaisutaaUser.DisabledAt"/>. False when there is no such account.</summary>
+    Task<bool> AdminEnableAccountAsync(Guid userId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Moves the stamp and revokes every session and trusted device <paramref name="userId"/> holds,
+    /// without touching any credential and without sending mail. False when there is no such account.
+    /// </summary>
+    Task<bool> AdminRevokeSessionsAsync(Guid userId, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Issues a verification token for <paramref name="newEmail"/> and hands it to
     /// <see cref="IEmailVerificationNotifier"/>. Nothing on the account moves until the token comes
     /// back to <see cref="VerifyEmailAsync"/>.
@@ -129,6 +150,9 @@ public enum PasswordResetRequestOutcome
     /// nobody has proven this address.
     /// </summary>
     EmailNotVerified,
+
+    /// <summary>An administrator disabled the account, so nothing was sent.</summary>
+    AccountDisabled,
 }
 
 /// <summary>For the log, not for the caller. Every one of these answers 204.</summary>
@@ -148,6 +172,9 @@ public enum MagicLinkRequestOutcome
 
     /// <summary>The token was issued and stored, but <see cref="IMagicLinkNotifier"/> threw.</summary>
     NotificationFailed,
+
+    /// <summary>An administrator disabled the account, so nothing was sent.</summary>
+    AccountDisabled,
 }
 
 public sealed record AccountResult

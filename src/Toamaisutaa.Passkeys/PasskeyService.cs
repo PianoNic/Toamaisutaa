@@ -332,6 +332,12 @@ internal sealed class PasskeyService(
             return await RefusedAsync(SignInOutcome.InvalidPasskey, credential.UserId, now, cancellationToken);
         }
 
+        if (user.DisabledAt is not null)
+        {
+            logger.LogWarning("Passkey sign-in refused for user {UserId}: the account is disabled.", user.Id);
+            return await RefusedAsync(SignInOutcome.AccountDisabled, user.Id, now, cancellationToken);
+        }
+
         // After the stamp is read: every revocation deletes passkeys before it moves the stamp, so a
         // credential still here means the stamp read is one the revocation has yet to kill.
         if (await credentials.FindByCredentialIdAsync(credentialId, cancellationToken) is null)
