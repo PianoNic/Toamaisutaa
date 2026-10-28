@@ -301,7 +301,8 @@ internal sealed class PasswordHarness
         IPasswordValidator? validator = null)
     {
         // Far below the production floor, which is a startup check rather than a property of the hasher.
-        var options = new ToamaisutaaLocalLoginOptions { Pbkdf2Iterations = 1_000 };
+        // Most tests reset an address they never verified; the shipped default refusing that has its own tests.
+        var options = new ToamaisutaaLocalLoginOptions { Pbkdf2Iterations = 1_000, RequireVerifiedEmailForPasswordReset = false };
         configure?.Invoke(options);
 
         var twoFactor = new ToamaisutaaTwoFactorOptions

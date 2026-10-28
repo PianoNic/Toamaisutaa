@@ -108,6 +108,9 @@ internal sealed class TestApp : IAsyncDisposable
             ["LocalLogin:RateLimit:Enabled"] = "false",
             // Tests ask for links to the same address back to back. The cooldown has its own test.
             ["LocalLogin:MailRequestCooldown"] = "00:00:00",
+            // Most tests reset an address they never verified, which is not what they are about. The
+            // shipped default, which refuses that, has its own tests.
+            ["LocalLogin:RequireVerifiedEmailForPasswordReset"] = "false",
             // A second per refused sign-in would make the suite crawl. The floor has its own test.
             ["LocalLogin:SignInRefusalFloor"] = "00:00:00",
             // Tokens are stamped from Time, which TOTP tests move ahead of the system clock the bearer

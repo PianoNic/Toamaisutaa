@@ -165,8 +165,53 @@ public class EmailVerificationHttpTests
         await Assert.That(sentResets.Count).IsEqualTo(1);
     }
 
+    /// <summary>A mistyped address belongs to whoever owns the typo, so by default nothing is mailed to it.</summary>
     [Test]
-    public async Task An_unverified_address_still_gets_its_reset_link_by_default()
+    public async Task By_default_an_unverified_address_gets_no_reset_link()
+    {
+        var sentResets = new List<string>();
+
+        await using var app = await TestApp.StartAsync(
+            configure: settings => settings.Remove("LocalLogin:RequireVerifiedEmailForPasswordReset"),
+            configureServices: services => services.AddSingleton<IPasswordResetNotifier>(new CapturingResetNotifier(sentResets)));
+
+        var account = await Account.RegisterAsync(app);
+
+        var response = await app.Client.PostJson("/auth/password/forgot", new { email = $"{account.UserName}@example.com" });
+
+        await Assert.That(response.StatusCode).IsEqualTo(HttpStatusCode.NoContent);
+        await Assert.That(sentResets).IsEmpty();
+    }
+
+    [Test]
+    public async Task By_default_an_administrator_password_is_not_mailed_to_an_unverified_address()
+    {
+        await using var app = await TestApp.StartAsync(configure: settings => settings.Remove("LocalLogin:RequireVerifiedEmailForPasswordReset"));
+        var admin = await Account.RegisterAsync(app, TestApp.AdminUserName);
+        var target = await Account.RegisterAsync(app, "typo");
+
+        var set = await app.Client.PostJson($"/auth/users/{target.Claims().String("sub")}/password", new { password = (string?)null }, admin.AccessToken);
+
+        await Assert.That(set.StatusCode).IsEqualTo(HttpStatusCode.BadRequest);
+        await Assert.That(app.IssuedPasswords).IsEmpty();
+    }
+
+    [Test]
+    public async Task By_default_startup_refuses_without_a_way_to_verify_an_address()
+    {
+        var started = async () =>
+        {
+            await using var app = await TestApp.StartAsync(
+                includeEmailVerificationNotifier: false,
+                configure: settings => settings.Remove("LocalLogin:RequireVerifiedEmailForPasswordReset"));
+        };
+
+        var thrown = await Assert.That(started).Throws<InvalidOperationException>();
+        await Assert.That(thrown!.Message).Contains("RequireVerifiedEmailForPasswordReset");
+    }
+
+    [Test]
+    public async Task An_unverified_address_gets_its_reset_link_with_the_check_turned_off()
     {
         var sentResets = new List<string>();
 

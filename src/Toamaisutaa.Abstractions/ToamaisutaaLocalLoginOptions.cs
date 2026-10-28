@@ -156,16 +156,17 @@ public sealed class ToamaisutaaLocalLoginOptions
     public TimeSpan MagicLinkTokenLifetime { get; set; } = TimeSpan.FromMinutes(15);
 
     /// <summary>
-    /// Off by default. When on, <c>/auth/password/forgot</c> issues nothing for a credential whose
-    /// address was never verified, and an administrator-set password is refused for it rather than
-    /// mailed to it.
+    /// On by default. <c>/auth/password/forgot</c> issues nothing for a credential whose address was
+    /// never verified, and an administrator-set password is refused for it rather than mailed to it:
+    /// a mistyped address belongs to whoever owns the typo, and a reset link there is the account.
     /// </summary>
     /// <remarks>
-    /// Every existing account with a null <see cref="ToamaisutaaPasswordCredential.EmailConfirmedAt"/>
-    /// loses password reset (and administrator-set passwords) the moment this is switched on, so
-    /// verify existing accounts first.
+    /// Every account with a null <see cref="ToamaisutaaPasswordCredential.EmailConfirmedAt"/> has no
+    /// password reset until it verifies its address. Accounts an administrator creates are best made
+    /// with an invitation, which proves the mailbox; turn this off only to keep resetting addresses
+    /// nobody has proven, knowing what that hands to a typo's owner.
     /// </remarks>
-    public bool RequireVerifiedEmailForPasswordReset { get; set; }
+    public bool RequireVerifiedEmailForPasswordReset { get; set; } = true;
 
     /// <summary>How often the opt-in cleanup service deletes expired refresh, reset, invitation,
     /// email-verification and magic-link rows, plus expired two-factor challenge, trusted-device

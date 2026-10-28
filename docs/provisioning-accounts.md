@@ -79,6 +79,14 @@ identity provider carrying the role will get through.
 
 ## Admin-provisioned accounts
 
+::: tip Prefer an invitation
+An account created here stores its address unverified, and with the default
+`LocalLogin:RequireVerifiedEmailForPasswordReset` it then has no password reset, and no generated
+password can be mailed to it, until its owner verifies at `/auth/email`. An
+[invitation](#completing-a-reserved-invitation) proves the mailbox the moment it is accepted, and a
+mistyped address only means the invitation never arrives.
+:::
+
 `AdminCreateAccountAsync` and `AdminSetPasswordAsync` - `POST /auth/users` and
 `POST /auth/users/{userId}/password` - let an administrator create or overwrite someone else's
 credentials. Neither ever returns a password, typed or generated: the raw value is handed to
