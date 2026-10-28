@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Sockets;
 using System.Threading.RateLimiting;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -46,14 +47,13 @@ internal sealed class PasswordRateLimiter : IDisposable
                     remote);
             }
 
-            return RateLimitPartition.GetFixedWindowLimiter(
-                PartitionKey(remote, settings.Nat64Prefixes),
-                _ => new FixedWindowRateLimiterOptions
-                {
-                    PermitLimit = settings.PermitLimit,
-                    Window = settings.Window,
-                    QueueLimit = 0,
-                });
+            if (SignedInKey(context) is { } subject)
+                return FixedWindow(subject, settings.PermitLimit, settings.Window);
+
+            if (SharedNetwork(remote, settings.SharedNetworks) is { } shared)
+                return FixedWindow(shared, settings.SharedNetworkPermitLimit, settings.Window);
+
+            return FixedWindow(PartitionKey(remote, settings.Nat64Prefixes), settings.PermitLimit, settings.Window);
         });
 
         // Chained, so a caller spends from its own budget and its /48's at once.
@@ -61,7 +61,10 @@ internal sealed class PasswordRateLimiter : IDisposable
         {
             var settings = options.Value.RateLimit;
 
-            return settings.Enabled && SiteKey(context.Connection.RemoteIpAddress, settings.Nat64Prefixes) is { } site
+            return settings.Enabled
+                && SignedInKey(context) is null
+                && SharedNetwork(context.Connection.RemoteIpAddress, settings.SharedNetworks) is null
+                && SiteKey(context.Connection.RemoteIpAddress, settings.Nat64Prefixes) is { } site
                 ? RateLimitPartition.GetFixedWindowLimiter(
                     site,
                     _ => new FixedWindowRateLimiterOptions
@@ -74,6 +77,41 @@ internal sealed class PasswordRateLimiter : IDisposable
         });
 
         _limiter = PartitionedRateLimiter.CreateChained(_callers, _sites);
+    }
+
+    private static RateLimitPartition<string> FixedWindow(string key, int permitLimit, TimeSpan window) =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            key,
+            _ => new FixedWindowRateLimiterOptions { PermitLimit = permitLimit, Window = window, QueueLimit = 0 });
+
+    /// <summary>
+    /// A signed-in caller's own budget, so everyone behind one school address is not refused their
+    /// session list because a stranger there sent junk logins. Only where the endpoint requires the
+    /// sign-in: on an anonymous one, any token at all would buy a fresh budget.
+    /// </summary>
+    internal static string? SignedInKey(HttpContext context) =>
+        context.User.Identity?.IsAuthenticated == true
+        && context.GetEndpoint()?.Metadata.GetMetadata<IAllowAnonymous>() is null
+        && context.User.FindFirst("sub")?.Value is { Length: > 0 } subject
+            ? "sub:" + subject
+            : null;
+
+    internal static string? SharedNetwork(IPAddress? address, IEnumerable<string> sharedNetworks)
+    {
+        if (address is null)
+            return null;
+
+        if (address.IsIPv4MappedToIPv6)
+            address = address.MapToIPv4();
+
+        // Skipping an unparsable entry is safe only because the startup check refuses it.
+        foreach (var value in sharedNetworks)
+        {
+            if (IPNetwork.TryParse(value, out var network) && network.Contains(address))
+                return "shared:" + network;
+        }
+
+        return null;
     }
 
     /// <summary>The /48 of a native IPv6 caller; null for IPv4 and NAT64, which are keyed on one address.</summary>

@@ -27,6 +27,7 @@ internal sealed class PasswordLoginStartupCheck(
         CheckHashingParameters(settings, problems);
         CheckLengths(settings, problems);
         CheckNat64Prefixes(settings, problems);
+        CheckSharedNetworks(settings, problems);
 
         if (problems.Count > 0)
             throw StartupProblems.Refusal("Toamaisutaa password login is registered but not usable:", problems);
@@ -48,6 +49,15 @@ internal sealed class PasswordLoginStartupCheck(
                 problems.Add(
                     $"LocalLogin:RateLimit:Nat64Prefixes has '{value}', which is not an IPv6 prefix of length 32, 40, 48, 56, 64 or 96.");
             }
+        }
+    }
+
+    private static void CheckSharedNetworks(ToamaisutaaLocalLoginOptions settings, List<string> problems)
+    {
+        foreach (var value in settings.RateLimit.SharedNetworks)
+        {
+            if (!System.Net.IPNetwork.TryParse(value, out _))
+                problems.Add($"LocalLogin:RateLimit:SharedNetworks has '{value}', which is not a network in CIDR form such as 203.0.113.7/32.");
         }
     }
 
