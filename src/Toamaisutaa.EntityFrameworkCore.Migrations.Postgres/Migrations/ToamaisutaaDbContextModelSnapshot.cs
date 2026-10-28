@@ -295,6 +295,11 @@ namespace Toamaisutaa.EntityFrameworkCore.Migrations.Postgres.Migrations
                         .IsConcurrencyToken()
                         .HasColumnType("bigint");
 
+                    b.Property<int>("LockoutStrikes")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0);
+
                     b.Property<string>("NormalizedEmail")
                         .IsConcurrencyToken()
                         .HasMaxLength(256)
@@ -677,6 +682,11 @@ namespace Toamaisutaa.EntityFrameworkCore.Migrations.Postgres.Migrations
 
                     b.Property<long?>("LockedOutUntil")
                         .HasColumnType("bigint");
+
+                    b.Property<int>("LockoutStrikes")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0);
 
                     b.Property<byte[]>("SecretCiphertext")
                         .IsRequired()

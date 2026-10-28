@@ -51,7 +51,7 @@ cannot promise.
 |---|---|---|
 | `sign-in-succeeded` | A token pair was issued | `SessionId`, `TwoFactorSource` |
 | `sign-in-failed` | A sign-in issued nothing | `Reason` |
-| `account-locked-out` | The failed attempt that crossed the threshold | `LockedOutUntil`, `SourceOnly` |
+| `account-locked-out` | The failed attempt that crossed the threshold | `LockedOutUntil`, `SourceOnly`, `Strikes` |
 | `password-changed` | A password was set with proof of the old one, or by an administrator | `SetByAdministrator` |
 | `password-reset` | A password was set by spending a reset token | |
 | `email-changed` | A verification link was redeemed, so the address is now the one it named | `PreviousEmail`, `Email` |

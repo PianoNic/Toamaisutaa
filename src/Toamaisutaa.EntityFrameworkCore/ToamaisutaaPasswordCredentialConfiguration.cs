@@ -26,6 +26,7 @@ public sealed class ToamaisutaaPasswordCredentialConfiguration : IEntityTypeConf
         builder.Property(credential => credential.EmailConfirmedAt).HasConversion(InstantConverters.NullableInstant);
         builder.Property(credential => credential.FirstFailedAttemptAt).HasConversion(InstantConverters.NullableInstant);
         builder.Property(credential => credential.LockedOutUntil).HasConversion(InstantConverters.NullableInstant);
+        builder.Property(credential => credential.LockoutStrikes).HasDefaultValue(0);
 
         // Every column two requests can race on, so a stale write fails rather than restoring an old
         // hash or undercounting parallel wrong passwords.

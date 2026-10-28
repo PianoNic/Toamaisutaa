@@ -53,6 +53,27 @@ internal sealed class FakeTwoFactorStore : ITwoFactorStore, IRecoveryCodeStore, 
         int failedAttemptCount,
         DateTimeOffset? firstFailedAttemptAt,
         DateTimeOffset? lockedOutUntil,
+        CancellationToken cancellationToken = default) =>
+        UpdateFailedAttemptsAsync(
+            userId,
+            expectedFailedAttemptCount,
+            expectedFirstFailedAttemptAt,
+            expectedLockedOutUntil,
+            failedAttemptCount,
+            firstFailedAttemptAt,
+            lockedOutUntil,
+            lockoutStrikes: 0,
+            cancellationToken);
+
+    public Task<bool> UpdateFailedAttemptsAsync(
+        Guid userId,
+        int expectedFailedAttemptCount,
+        DateTimeOffset? expectedFirstFailedAttemptAt,
+        DateTimeOffset? expectedLockedOutUntil,
+        int failedAttemptCount,
+        DateTimeOffset? firstFailedAttemptAt,
+        DateTimeOffset? lockedOutUntil,
+        int lockoutStrikes,
         CancellationToken cancellationToken = default)
     {
         var enrolment = Enrolments.FirstOrDefault(entry => entry.UserId == userId);
@@ -68,6 +89,7 @@ internal sealed class FakeTwoFactorStore : ITwoFactorStore, IRecoveryCodeStore, 
         enrolment.FailedAttemptCount = failedAttemptCount;
         enrolment.FirstFailedAttemptAt = firstFailedAttemptAt;
         enrolment.LockedOutUntil = lockedOutUntil;
+        enrolment.LockoutStrikes = lockoutStrikes;
         return Task.FromResult(true);
     }
 

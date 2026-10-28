@@ -100,7 +100,14 @@ public sealed class ToamaisutaaLocalLoginOptions
     /// <summary>Failures further apart than this do not accumulate.</summary>
     public TimeSpan LockoutWindow { get; set; } = TimeSpan.FromMinutes(15);
 
+    /// <summary>
+    /// The first lock on an account. A wrong second-factor code or current password that locks it
+    /// again before a sign-in completes doubles the last one, up to <see cref="LockoutMaxDuration"/>.
+    /// </summary>
     public TimeSpan LockoutDuration { get; set; } = TimeSpan.FromMinutes(15);
+
+    /// <summary>The longest a repeated lock grows to.</summary>
+    public TimeSpan LockoutMaxDuration { get; set; } = TimeSpan.FromDays(1);
 
     /// <summary>
     /// The least time a refused <c>/auth/login</c> takes, so unknown users, wrong passwords and locked

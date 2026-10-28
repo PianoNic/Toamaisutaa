@@ -20,10 +20,16 @@ internal static class LockoutPolicy
         DateTimeOffset now) =>
         RegisterFailure(LockoutState.Of(credential), options, now).ApplyTo(credential);
 
+    /// <summary>On the account: escalates, since only someone holding the password or a session gets here.</summary>
     internal static LockoutState RegisterFailure(LockoutState state, ToamaisutaaLocalLoginOptions options, DateTimeOffset now) =>
-        RegisterFailure(state, options, now, options.MaxFailedAttempts);
+        RegisterFailure(state, options, now, options.MaxFailedAttempts, escalate: true);
 
-    internal static LockoutState RegisterFailure(LockoutState state, ToamaisutaaLocalLoginOptions options, DateTimeOffset now, int threshold)
+    internal static LockoutState RegisterFailure(
+        LockoutState state,
+        ToamaisutaaLocalLoginOptions options,
+        DateTimeOffset now,
+        int threshold,
+        bool escalate = false)
     {
         if (!options.LockoutEnabled)
             return state;
@@ -36,7 +42,20 @@ internal static class LockoutPolicy
             return counted;
 
         // Cleared with the lock so the next single failure after it expires does not re-lock.
-        return new LockoutState(0, null, now + options.LockoutDuration);
+        var strikes = escalate ? counted.Strikes + 1 : 0;
+        return new LockoutState(0, null, now + Duration(options, strikes), strikes);
+    }
+
+    /// <summary>Doubles per strike after the first, never past the cap.</summary>
+    internal static TimeSpan Duration(ToamaisutaaLocalLoginOptions options, int strikes)
+    {
+        var cap = options.LockoutMaxDuration > options.LockoutDuration ? options.LockoutMaxDuration : options.LockoutDuration;
+        var duration = options.LockoutDuration;
+
+        for (var strike = 1; strike < strikes && duration < cap; strike++)
+            duration += duration;
+
+        return duration < cap ? duration : cap;
     }
 
     internal static void RegisterSuccess(ToamaisutaaPasswordCredential credential) =>
@@ -83,18 +102,22 @@ internal static class LockoutPolicy
         if (!lockedByThisAttempt
             && after.FirstFailedAttemptAt is { } windowStart
             && state.LockedOutUntil is { } until
-            && until - options.LockoutDuration is var lockedAt
+            && until - Duration(options, state.Strikes) is var lockedAt
             && lockedAt >= windowStart
             && lockedAt - windowStart <= options.LockoutWindow)
         {
-            return new LockoutState(threshold - 1, windowStart, null);
+            return new LockoutState(threshold - 1, windowStart, null, Math.Max(0, state.Strikes - 1));
         }
 
         return null;
     }
 }
 
-internal readonly record struct LockoutState(int FailedAttemptCount, DateTimeOffset? FirstFailedAttemptAt, DateTimeOffset? LockedOutUntil)
+internal readonly record struct LockoutState(
+    int FailedAttemptCount,
+    DateTimeOffset? FirstFailedAttemptAt,
+    DateTimeOffset? LockedOutUntil,
+    int Strikes = 0)
 {
     internal static LockoutState Clear => new(0, null, null);
 
@@ -105,16 +128,17 @@ internal readonly record struct LockoutState(int FailedAttemptCount, DateTimeOff
     internal bool Matches(LockoutState other) =>
         FailedAttemptCount == other.FailedAttemptCount
         && SameInstant(FirstFailedAttemptAt, other.FirstFailedAttemptAt)
-        && SameInstant(LockedOutUntil, other.LockedOutUntil);
+        && SameInstant(LockedOutUntil, other.LockedOutUntil)
+        && Strikes == other.Strikes;
 
     internal static bool SameInstant(DateTimeOffset? left, DateTimeOffset? right) =>
         left?.ToUnixTimeMilliseconds() == right?.ToUnixTimeMilliseconds();
 
     internal static LockoutState Of(ToamaisutaaPasswordCredential credential) =>
-        new(credential.FailedAttemptCount, credential.FirstFailedAttemptAt, credential.LockedOutUntil);
+        new(credential.FailedAttemptCount, credential.FirstFailedAttemptAt, credential.LockedOutUntil, credential.LockoutStrikes);
 
     internal static LockoutState Of(ToamaisutaaUserTwoFactor enrolment) =>
-        new(enrolment.FailedAttemptCount, enrolment.FirstFailedAttemptAt, enrolment.LockedOutUntil);
+        new(enrolment.FailedAttemptCount, enrolment.FirstFailedAttemptAt, enrolment.LockedOutUntil, enrolment.LockoutStrikes);
 
     internal static LockoutState Of(ToamaisutaaSignInThrottle? throttle) =>
         throttle is null ? Clear : new(throttle.FailedAttemptCount, throttle.FirstFailedAttemptAt, throttle.LockedOutUntil);
@@ -124,5 +148,6 @@ internal readonly record struct LockoutState(int FailedAttemptCount, DateTimeOff
         credential.FailedAttemptCount = FailedAttemptCount;
         credential.FirstFailedAttemptAt = FirstFailedAttemptAt;
         credential.LockedOutUntil = LockedOutUntil;
+        credential.LockoutStrikes = Strikes;
     }
 }

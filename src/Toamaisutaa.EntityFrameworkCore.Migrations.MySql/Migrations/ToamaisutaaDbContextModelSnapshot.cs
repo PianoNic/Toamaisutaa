@@ -293,6 +293,11 @@ namespace Toamaisutaa.EntityFrameworkCore.Migrations.MySql.Migrations
                         .IsConcurrencyToken()
                         .HasColumnType("bigint");
 
+                    b.Property<int>("LockoutStrikes")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int")
+                        .HasDefaultValue(0);
+
                     b.Property<string>("NormalizedEmail")
                         .IsConcurrencyToken()
                         .HasMaxLength(256)
@@ -675,6 +680,11 @@ namespace Toamaisutaa.EntityFrameworkCore.Migrations.MySql.Migrations
 
                     b.Property<long?>("LockedOutUntil")
                         .HasColumnType("bigint");
+
+                    b.Property<int>("LockoutStrikes")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int")
+                        .HasDefaultValue(0);
 
                     b.Property<byte[]>("SecretCiphertext")
                         .IsRequired()

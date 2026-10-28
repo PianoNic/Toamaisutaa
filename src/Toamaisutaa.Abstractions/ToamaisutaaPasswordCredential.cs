@@ -41,6 +41,12 @@ public class ToamaisutaaPasswordCredential
 
     public DateTimeOffset? LockedOutUntil { get; set; }
 
+    /// <summary>
+    /// Locks set since the last completed sign-in. Each one lasts twice as long as the one before, so
+    /// whoever holds the password cannot keep guessing codes at a steady rate.
+    /// </summary>
+    public int LockoutStrikes { get; set; }
+
     public DateTimeOffset CreatedAt { get; set; }
 
     public DateTimeOffset UpdatedAt { get; set; }

@@ -290,6 +290,11 @@ namespace Toamaisutaa.EntityFrameworkCore.Migrations.Sqlite.Migrations
                         .IsConcurrencyToken()
                         .HasColumnType("INTEGER");
 
+                    b.Property<int>("LockoutStrikes")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER")
+                        .HasDefaultValue(0);
+
                     b.Property<string>("NormalizedEmail")
                         .IsConcurrencyToken()
                         .HasMaxLength(256)
@@ -672,6 +677,11 @@ namespace Toamaisutaa.EntityFrameworkCore.Migrations.Sqlite.Migrations
 
                     b.Property<long?>("LockedOutUntil")
                         .HasColumnType("INTEGER");
+
+                    b.Property<int>("LockoutStrikes")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER")
+                        .HasDefaultValue(0);
 
                     b.Property<byte[]>("SecretCiphertext")
                         .IsRequired()

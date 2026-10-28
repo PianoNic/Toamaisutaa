@@ -120,6 +120,34 @@ public interface ITwoFactorStore
         DateTimeOffset? firstFailedAttemptAt,
         DateTimeOffset? lockedOutUntil,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// The same write, also setting <see cref="ToamaisutaaUserTwoFactor.LockoutStrikes"/>, which moves
+    /// only together with the lock and so needs no condition of its own.
+    /// </summary>
+    /// <remarks>
+    /// The default drops the strikes, so a store written before them keeps working with every lock as
+    /// long as the first. Implement it to make repeated locks escalate.
+    /// </remarks>
+    Task<bool> UpdateFailedAttemptsAsync(
+        Guid userId,
+        int expectedFailedAttemptCount,
+        DateTimeOffset? expectedFirstFailedAttemptAt,
+        DateTimeOffset? expectedLockedOutUntil,
+        int failedAttemptCount,
+        DateTimeOffset? firstFailedAttemptAt,
+        DateTimeOffset? lockedOutUntil,
+        int lockoutStrikes,
+        CancellationToken cancellationToken = default) =>
+        UpdateFailedAttemptsAsync(
+            userId,
+            expectedFailedAttemptCount,
+            expectedFirstFailedAttemptAt,
+            expectedLockedOutUntil,
+            failedAttemptCount,
+            firstFailedAttemptAt,
+            lockedOutUntil,
+            cancellationToken);
 }
 
 public interface IRecoveryCodeStore

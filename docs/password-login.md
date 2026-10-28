@@ -463,6 +463,7 @@ hands you - rather than expecting to construct one.
 | `LocalLogin:MaxFailedAttempts` | `5` | Wrong passwords per source at sign-in; wrong codes and current passwords per account |
 | `LocalLogin:MaxFailedAttemptsPerAccount` | `50` | Wrong passwords from every source together before the account locks for everyone |
 | `LocalLogin:LockoutWindow` / `LockoutDuration` | `00:15:00` | |
+| `LocalLogin:LockoutMaxDuration` | `1.00:00:00` | What a repeated lock from wrong codes or current passwords doubles up to. [Repeated locks](/two-factor#repeated-locks-grow) |
 | `LocalLogin:SignInRefusalFloor` | `00:00:01` | The least time a refused `/auth/login` takes, so an unknown name, a wrong password and a locked account cannot be told apart by the clock |
 | `LocalLogin:FirstPasswordProofWindow` | `00:05:00` | How recent a sign-in must be to give a passwordless account its first password |
 | `LocalLogin:MinimumPasswordLength` | `8` | NIST: a length floor, no composition rules |
