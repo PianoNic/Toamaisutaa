@@ -62,6 +62,22 @@ public interface IPasskeyService
         CancellationToken cancellationToken = default);
 
     /// <summary>Newest first, so the one just registered is at the top.</summary>
+    /// <summary>
+    /// Starts answering a sign-in's second-factor challenge with a passkey. Null when the challenge is
+    /// not a live sign-in challenge, or its account has no passkey.
+    /// </summary>
+    /// <remarks>
+    /// Unlike <see cref="BeginAssertionAsync"/> the options name the account's credentials: whoever
+    /// holds the challenge already proved the first factor, so there is nothing left to hide.
+    /// </remarks>
+    Task<PasskeyCeremonyStarted?> BeginSecondFactorAsync(string signInChallenge, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Verifies the assertion as the challenge's own account's, spends the challenge, and signs in
+    /// with <c>toa_2fa_source</c> <c>passkey</c>.
+    /// </summary>
+    Task<PasskeySignInResult> CompleteSecondFactorAsync(PasskeySecondFactorRequest request, CancellationToken cancellationToken = default);
+
     Task<IReadOnlyList<PasskeySummary>> ListAsync(Guid userId, CancellationToken cancellationToken = default);
 
     /// <summary>False when the credential does not exist or belongs to someone else - the same

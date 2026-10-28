@@ -39,7 +39,8 @@ public class SignInResponseTests
         var body = await response.Json();
 
         await Assert.That(response.StatusCode).IsEqualTo(HttpStatusCode.OK);
-        await Assert.That(body.Names()).IsEquivalentTo(new[] { "two_factor_required", "challenge", "expires_in" });
+        await Assert.That(body.Names()).IsEquivalentTo(new[] { "two_factor_required", "challenge", "expires_in", "second_factors" });
+        await Assert.That(body.Strings("second_factors")).IsEquivalentTo(new[] { "otp" });
         await Assert.That(body.Has("access_token")).IsFalse();
         await Assert.That(body.String("challenge")).IsNotNull();
     }

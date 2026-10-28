@@ -15,17 +15,39 @@ internal sealed class TwoFactorGate(
     ILogger<TwoFactorGate> logger)
 {
     /// <summary>
-    /// Enrolment alone decides it: <see cref="TwoFactorEnforcement"/> governs who must enrol, never
-    /// whether an enrolled user is challenged.
+    /// A confirmed TOTP enrolment or a registered passkey: either is a second factor the user has,
+    /// and a user who registered a passkey reasonably believes a password alone no longer signs in.
+    /// <see cref="TwoFactorEnforcement"/> governs who must enrol, never whether an enrolled user is challenged.
     /// </summary>
-    internal async Task<bool> RequiresChallengeAsync(Guid userId, CancellationToken cancellationToken)
-    {
-        var enrolments = provider.GetService<ITwoFactorStore>();
-        if (enrolments is null)
-            return false;
+    internal async Task<bool> RequiresChallengeAsync(Guid userId, CancellationToken cancellationToken) =>
+        (await SecondFactorsAsync(userId, cancellationToken)).Count > 0;
 
-        var enrolment = await enrolments.FindAsync(userId, cancellationToken);
-        return enrolment is { ConfirmedAt: not null };
+    /// <summary>
+    /// For the ceremonies only a code can answer: step-up, and a passkey that proved possession alone.
+    /// </summary>
+    internal async Task<bool> HasTotpAsync(Guid userId, CancellationToken cancellationToken) =>
+        provider.GetService<ITwoFactorStore>() is { } enrolments
+        && await enrolments.FindAsync(userId, cancellationToken) is { ConfirmedAt: not null };
+
+    /// <summary>
+    /// A passkey counts only where a challenge can be stored for it to answer; without the challenge
+    /// store there is no second step to send the user to.
+    /// </summary>
+    internal async Task<IReadOnlyList<string>> SecondFactorsAsync(Guid userId, CancellationToken cancellationToken)
+    {
+        var factors = new List<string>(2);
+
+        if (await HasTotpAsync(userId, cancellationToken))
+            factors.Add(TwoFactorSource.Otp);
+
+        if (provider.GetService<ITwoFactorChallengeStore>() is not null
+            && provider.GetService<IPasskeyCredentialStore>() is { } passkeys
+            && (await passkeys.ListAsync(userId, cancellationToken)).Count > 0)
+        {
+            factors.Add(TwoFactorSource.Passkey);
+        }
+
+        return factors;
     }
 
     internal async Task<bool> MustEnrolAsync(Guid userId, CancellationToken cancellationToken)
@@ -72,7 +94,70 @@ internal sealed class TwoFactorGate(
             },
             cancellationToken);
 
-        return new TwoFactorChallenge(raw, (int)lifetime.TotalSeconds);
+        return new TwoFactorChallenge(raw, (int)lifetime.TotalSeconds)
+        {
+            SecondFactors = await SecondFactorsAsync(userId, cancellationToken),
+        };
+    }
+
+    /// <summary>The user a live sign-in challenge was issued to, without spending it.</summary>
+    internal async Task<Guid?> FindLiveSignInChallengeAsync(string challengeToken, DateTimeOffset now, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(challengeToken))
+            return null;
+
+        var stored = await Required<ITwoFactorChallengeStore>().FindByHashAsync(SecureTokens.HashToken(challengeToken), cancellationToken);
+
+        return stored is { Purpose: TwoFactorChallengePurpose.SignIn, ConsumedAt: null } && stored.ExpiresAt > now
+            ? stored.UserId
+            : null;
+    }
+
+    /// <summary>
+    /// Spends a sign-in challenge for a passkey that has already been verified as
+    /// <paramref name="userId"/>'s, which is the whole of the second factor; there is no code.
+    /// </summary>
+    internal async Task<ChallengeRedemption> RedeemWithPasskeyAsync(
+        string challengeToken,
+        Guid userId,
+        DateTimeOffset now,
+        CancellationToken cancellationToken)
+    {
+        var challenges = Required<ITwoFactorChallengeStore>();
+        var stored = await challenges.FindByHashAsync(SecureTokens.HashToken(challengeToken), cancellationToken);
+
+        // Another account's challenge is the same answer as none, or a passkey of mine could finish
+        // somebody else's half-done sign-in.
+        if (stored is null || stored.Purpose != TwoFactorChallengePurpose.SignIn || stored.UserId != userId)
+            return ChallengeRedemption.Failed(SignInOutcome.InvalidChallenge, stored?.UserId);
+
+        if (stored.ConsumedAt is not null)
+            return ChallengeRedemption.Failed(SignInOutcome.ChallengeAlreadyUsed, userId);
+
+        if (stored.ExpiresAt <= now)
+            return ChallengeRedemption.Failed(SignInOutcome.ChallengeExpired, userId);
+
+        if (stored.SecurityStamp is not null
+            && !string.Equals(await Required<IUserStore>().ReadSecurityStampAsync(userId, cancellationToken), stored.SecurityStamp, StringComparison.Ordinal))
+        {
+            logger.LogWarning(
+                "Two-factor challenge for user {UserId} refused: it was issued before the account's credentials changed.",
+                userId);
+
+            await challenges.MarkConsumedAsync(stored.Id, now, cancellationToken);
+            return ChallengeRedemption.Failed(SignInOutcome.InvalidChallenge, userId);
+        }
+
+        if (!await challenges.MarkConsumedAsync(stored.Id, now, cancellationToken))
+            return ChallengeRedemption.Failed(SignInOutcome.ChallengeAlreadyUsed, userId);
+
+        return new ChallengeRedemption
+        {
+            Outcome = SignInOutcome.Succeeded,
+            UserId = userId,
+            AuthenticationMethods = stored.AuthenticationMethods,
+            SecurityStamp = stored.SecurityStamp,
+        };
     }
 
     /// <summary>

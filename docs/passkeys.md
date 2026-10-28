@@ -61,6 +61,8 @@ unless you are certain you will never serve from another one.
 | `POST` | `/auth/passkeys/register/complete` | Signed in |
 | `POST` | `/auth/passkeys/assertion/begin` | Anyone |
 | `POST` | `/auth/passkeys/assertion/complete` | Anyone |
+| `POST` | `/auth/passkeys/second-factor/begin` | Anyone holding a sign-in challenge |
+| `POST` | `/auth/passkeys/second-factor/complete` | Anyone holding a sign-in challenge |
 | `GET` | `/auth/passkeys` | Signed in |
 | `DELETE` | `/auth/passkeys/{id}` | Signed in |
 
@@ -176,6 +178,40 @@ assertion says who it belongs to, so your sign-in page needs no field before the
 Credentials are therefore always registered as discoverable, and an authenticator that cannot store
 one is refused at registration.
 :::
+
+## A passkey is a second factor
+
+An account with a passkey registered is not signed in by a password alone, or a magic link alone.
+Somebody who registered a passkey reasonably believes their account now needs it, and a phished
+password or a read mailbox would otherwise still be a whole session.
+
+So `/auth/login` and `/auth/magic-link/verify` answer such an account with a challenge, exactly as
+for a TOTP enrolment, and `second_factors` says what can answer it:
+
+```json
+{ "two_factor_required": true, "challenge": "No1CXq9-...", "expires_in": 300, "second_factors": ["passkey"] }
+```
+
+An account with both lists `["otp", "passkey"]` and may use either. To answer with a passkey:
+
+```ts
+const begin = await post("/auth/passkeys/second-factor/begin", { signInChallenge });
+const credential = await navigator.credentials.get({
+  publicKey: PublicKeyCredential.parseRequestOptionsFromJSON(begin.options),
+});
+
+const tokens = await post("/auth/passkeys/second-factor/complete", {
+  signInChallenge,
+  assertion: { challenge: begin.challenge, ...assertionFields(credential) },
+});
+```
+
+The options name only that account's passkeys - whoever holds the challenge already proved the
+first factor, so there is nothing to hide - and only one of them is accepted. The token carries the
+first factor's `amr` plus `hwk` and `mfa`, and `toa_2fa_source` is `passkey`.
+
+**Step-up still needs a code.** It has no passkey ceremony, so an account whose only second factor is
+a passkey is told it has nothing to step up with.
 
 ## What the token claims
 

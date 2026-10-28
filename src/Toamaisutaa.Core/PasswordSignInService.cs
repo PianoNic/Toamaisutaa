@@ -564,7 +564,8 @@ internal sealed class PasswordSignInService(
             return StepUpGuard.Failed(SignInOutcome.SessionEnded);
         }
 
-        if (!await twoFactor.RequiresChallengeAsync(userId, cancellationToken))
+        // A code only: step-up has no passkey ceremony.
+        if (!await twoFactor.HasTotpAsync(userId, cancellationToken))
             return StepUpGuard.Failed(SignInOutcome.TwoFactorNotEnrolled);
 
         // Fails closed: with no credential there is nothing to count lockout against, and the code

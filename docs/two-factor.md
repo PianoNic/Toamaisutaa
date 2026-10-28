@@ -168,7 +168,8 @@ against, but it can tell that the row was rewritten, and says so.
 
 For an enrolled user, `/auth/login` answers 200 with a challenge and no tokens - see
 [the two sign-in shapes](/password-login#bodies). Present that with a code to `/auth/2fa/verify` and
-you get the usual token pair back. The code field takes a TOTP code or a recovery code - one field,
+you get the usual token pair back. Its `second_factors` lists `otp` for a TOTP enrolment and `passkey`
+for a registered passkey, which [answers it differently](/passkeys#a-passkey-is-a-second-factor). The code field takes a TOTP code or a recovery code - one field,
 because the person typing it should not have to tell you which kind they are holding.
 
 ### The challenge is not a token

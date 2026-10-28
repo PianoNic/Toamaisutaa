@@ -266,59 +266,10 @@ internal sealed class PasskeyService(
             return await RefusedAsync(SignInOutcome.InvalidPasskey, userId: null, now, cancellationToken);
         }
 
-        VerifyAssertionResult verified;
-        byte[] rawAuthenticatorData;
-
-        try
-        {
-            rawAuthenticatorData = PasskeyEncoding.Decode(request.AuthenticatorData);
-
-            verified = await fido2.MakeAssertionAsync(
-                new MakeAssertionParams
-                {
-                    AssertionResponse = new AuthenticatorAssertionRawResponse
-                    {
-                        Id = request.Id,
-                        RawId = credentialId,
-                        Type = PublicKeyCredentialType.PublicKey,
-                        Response = new AuthenticatorAssertionRawResponse.AssertionResponse
-                        {
-                            AuthenticatorData = rawAuthenticatorData,
-                            ClientDataJson = PasskeyEncoding.Decode(request.ClientDataJson),
-                            Signature = PasskeyEncoding.Decode(request.Signature),
-                            UserHandle = request.UserHandle is null ? null : PasskeyEncoding.Decode(request.UserHandle),
-                        },
-                    },
-                    OriginalOptions = AssertionOptions.FromJson(stored.Options),
-                    StoredPublicKey = credential.PublicKey,
-
-                    // A counter that fails to advance past this betrays a cloned authenticator.
-                    StoredSignatureCounter = (uint)credential.SignCount,
-
-                    IsUserHandleOwnerOfCredentialIdCallback = (parameters, _) =>
-                        Task.FromResult(OwnsCredential(parameters.UserHandle, credential)),
-                },
-                cancellationToken);
-        }
-        catch (Fido2VerificationException exception)
-        {
-            logger.LogWarning(
-                "Passkey sign-in refused for user {UserId}: {Code}.",
-                credential.UserId,
-                exception.Code);
-
+        if (await VerifyAssertionAsync(stored, request, credential, credentialId, "Passkey sign-in", cancellationToken) is not { } checkedAssertion)
             return await RefusedAsync(SignInOutcome.InvalidPasskey, credential.UserId, now, cancellationToken);
-        }
-        catch (FormatException)
-        {
-            return await RefusedAsync(SignInOutcome.InvalidPasskey, credential.UserId, now, cancellationToken);
-        }
-        catch (CborContentException)
-        {
-            // The library throws this for an extension flag with no CBOR behind it; without the catch
-            // an anonymous endpoint answers 500 to a malformed field.
-            return await RefusedAsync(SignInOutcome.InvalidPasskey, credential.UserId, now, cancellationToken);
-        }
+
+        var (verified, rawAuthenticatorData) = checkedAssertion;
 
         var user = await users.FindByIdAsync(credential.UserId, cancellationToken);
 
@@ -354,9 +305,10 @@ internal sealed class PasskeyService(
         // can throw CBOR errors. Byte 32 is the flags byte and 0x04 is UV, both fixed by the specification.
         var userVerified = (rawAuthenticatorData[32] & (byte)AuthenticatorFlags.UV) != 0;
 
-        // An assertion without user verification is possession alone, so an enrolled account still
-        // gets a second-factor challenge; otherwise a borrowed security key would beat its policy.
-        if (!userVerified && await twoFactor.RequiresChallengeAsync(user.Id, cancellationToken))
+        // An assertion without user verification is possession alone, so an account with a TOTP
+        // enrolment still gets a code challenge; otherwise a borrowed security key would beat its
+        // policy. A code only, because answering with a passkey would be possession twice.
+        if (!userVerified && await twoFactor.HasTotpAsync(user.Id, cancellationToken))
         {
             var challenge = await twoFactor.IssueChallengeAsync(
                 user.Id,
@@ -408,6 +360,182 @@ internal sealed class PasskeyService(
         metrics.SignInCompleted(SignInOutcome.Succeeded, methods);
 
         return new PasskeySignInResult { Outcome = SignInOutcome.Succeeded, Tokens = issued.Tokens };
+    }
+
+    public async Task<PasskeyCeremonyStarted?> BeginSecondFactorAsync(string signInChallenge, CancellationToken cancellationToken = default)
+    {
+        var now = timeProvider.GetUtcNow();
+
+        if (await twoFactor.FindLiveSignInChallengeAsync(signInChallenge, now, cancellationToken) is not { } userId)
+            return null;
+
+        var owned = await credentials.ListAsync(userId, cancellationToken);
+
+        if (owned.Count == 0)
+            return null;
+
+        var assertion = fido2.GetAssertionOptions(new GetAssertionOptionsParams
+        {
+            AllowedCredentials = [.. owned.Select(credential => new PublicKeyCredentialDescriptor(credential.CredentialId))],
+            UserVerification = options.Value.RequireUserVerification
+                ? UserVerificationRequirement.Required
+                : UserVerificationRequirement.Preferred,
+        });
+
+        return await StoreChallengeAsync(userId, assertion.ToJson(), PasskeyCeremony.SecondFactor, cancellationToken);
+    }
+
+    public async Task<PasskeySignInResult> CompleteSecondFactorAsync(PasskeySecondFactorRequest request, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentNullException.ThrowIfNull(request.Assertion);
+
+        var now = timeProvider.GetUtcNow();
+        var assertion = request.Assertion;
+        var stored = await RedeemAsync(assertion.Challenge, PasskeyCeremony.SecondFactor, now, cancellationToken);
+
+        if (stored?.UserId is not { } userId)
+            return await RefusedAsync(SignInOutcome.InvalidChallenge, userId: null, now, cancellationToken);
+
+        byte[] credentialId;
+
+        try
+        {
+            credentialId = PasskeyEncoding.Decode(assertion.Id);
+        }
+        catch (FormatException)
+        {
+            return await RefusedAsync(SignInOutcome.InvalidPasskey, userId, now, cancellationToken);
+        }
+
+        // Only this account's own passkey answers its challenge.
+        if (await credentials.FindByCredentialIdAsync(credentialId, cancellationToken) is not { } credential || credential.UserId != userId)
+        {
+            logger.LogWarning("Passkey second factor refused for user {UserId}: the passkey presented is not one of the account's.", userId);
+            return await RefusedAsync(SignInOutcome.InvalidPasskey, userId, now, cancellationToken);
+        }
+
+        if (await VerifyAssertionAsync(stored, assertion, credential, credentialId, "Passkey second factor", cancellationToken) is not { } checkedAssertion)
+            return await RefusedAsync(SignInOutcome.InvalidPasskey, userId, now, cancellationToken);
+
+        var redemption = await twoFactor.RedeemWithPasskeyAsync(request.SignInChallenge, userId, now, cancellationToken);
+
+        if (redemption.Outcome != SignInOutcome.Succeeded)
+        {
+            logger.LogWarning("Passkey second factor refused for user {UserId}: the sign-in challenge is {Outcome}.", userId, redemption.Outcome);
+            return await RefusedAsync(redemption.Outcome, userId, now, cancellationToken);
+        }
+
+        var user = await users.FindByIdAsync(userId, cancellationToken);
+
+        if (user is null || user.DisabledAt is not null)
+        {
+            logger.LogWarning("Passkey second factor refused for user {UserId}: the account is gone or disabled.", userId);
+            return await RefusedAsync(SignInOutcome.AccountDisabled, userId, now, cancellationToken);
+        }
+
+        await credentials.RecordUseAsync(credential.Id, checkedAssertion.Verified.SignCount, checkedAssertion.Verified.IsBackedUp, now, cancellationToken);
+        metrics.TwoFactorVerified(TwoFactorSource.Passkey, succeeded: true);
+
+        // A finished sign-in clears the wrong-code count, exactly as a right code does.
+        if (provider.GetService<IPasswordCredentialStore>() is { } passwords
+            && await passwords.FindByUserIdAsync(userId, cancellationToken) is { } password)
+        {
+            await passwords.RegisterSuccessAsync(password, now, cancellationToken);
+        }
+
+        // The first factor comes off the challenge: a password, or a mailbox.
+        List<string> methods =
+        [
+            .. string.IsNullOrEmpty(redemption.AuthenticationMethods) ? ["pwd"] : redemption.AuthenticationMethods.Split(' ', StringSplitOptions.RemoveEmptyEntries),
+            ToamaisutaaDefaults.HardwareKeyMethod,
+            ToamaisutaaDefaults.MultiFactorMethod,
+        ];
+
+        var issued = await sessions.IssueAsync(
+            new LocalSessionRequest
+            {
+                User = user,
+                Methods = methods,
+                TwoFactorSource = TwoFactorSource.Passkey,
+                SecondFactorAt = now,
+                NewSignIn = true,
+                Client = ClientMetadata.Describe(assertion.UserAgent, assertion.IpAddress, localLogin.Value.IpAddressStorage),
+                Now = now,
+            },
+            cancellationToken);
+
+        logger.LogInformation("Sign-in completed for user {UserId} with passkey {PasskeyId} as the second factor.", userId, credential.Id);
+        metrics.SignInCompleted(SignInOutcome.Succeeded, methods);
+
+        return new PasskeySignInResult { Outcome = SignInOutcome.Succeeded, Tokens = issued.Tokens };
+    }
+
+    /// <summary>
+    /// The one place an assertion is checked against a stored credential, so sign-in and a passkey
+    /// second factor cannot drift into different rules. Null when it does not verify.
+    /// </summary>
+    private async Task<(VerifyAssertionResult Verified, byte[] AuthenticatorData)?> VerifyAssertionAsync(
+        ToamaisutaaPasskeyChallenge stored,
+        PasskeyAssertionRequest request,
+        ToamaisutaaPasskeyCredential credential,
+        byte[] credentialId,
+        string ceremony,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var rawAuthenticatorData = PasskeyEncoding.Decode(request.AuthenticatorData);
+
+            var verified = await fido2.MakeAssertionAsync(
+                new MakeAssertionParams
+                {
+                    AssertionResponse = new AuthenticatorAssertionRawResponse
+                    {
+                        Id = request.Id,
+                        RawId = credentialId,
+                        Type = PublicKeyCredentialType.PublicKey,
+                        Response = new AuthenticatorAssertionRawResponse.AssertionResponse
+                        {
+                            AuthenticatorData = rawAuthenticatorData,
+                            ClientDataJson = PasskeyEncoding.Decode(request.ClientDataJson),
+                            Signature = PasskeyEncoding.Decode(request.Signature),
+                            UserHandle = request.UserHandle is null ? null : PasskeyEncoding.Decode(request.UserHandle),
+                        },
+                    },
+                    OriginalOptions = AssertionOptions.FromJson(stored.Options),
+                    StoredPublicKey = credential.PublicKey,
+
+                    // A counter that fails to advance past this betrays a cloned authenticator.
+                    StoredSignatureCounter = (uint)credential.SignCount,
+
+                    IsUserHandleOwnerOfCredentialIdCallback = (parameters, _) =>
+                        Task.FromResult(OwnsCredential(parameters.UserHandle, credential)),
+                },
+                cancellationToken);
+
+            return (verified, rawAuthenticatorData);
+        }
+        catch (Fido2VerificationException exception)
+        {
+            logger.LogWarning("{Ceremony} refused for user {UserId}: {Code}.", ceremony, credential.UserId, exception.Code);
+            return null;
+        }
+        catch (FormatException)
+        {
+            return null;
+        }
+        catch (CborContentException)
+        {
+            // The library throws this for an extension flag with no CBOR behind it; without the catch
+            // an anonymous endpoint answers 500 to a malformed field.
+            return null;
+        }
+        catch (ArgumentException)
+        {
+            // And this for a signature that is not well-formed DER, which is also just a bad field.
+            return null;
+        }
     }
 
     public async Task<IReadOnlyList<PasskeySummary>> ListAsync(Guid userId, CancellationToken cancellationToken = default) =>
