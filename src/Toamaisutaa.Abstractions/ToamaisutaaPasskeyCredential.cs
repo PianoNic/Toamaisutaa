@@ -104,4 +104,7 @@ public enum PasskeyCeremony
 
     /// <summary>Signing in with a credential that already exists. Redeemed anonymously.</summary>
     Assertion,
+
+    /// <summary>Answering a sign-in's second-factor challenge with one of that account's own passkeys.</summary>
+    SecondFactor,
 }

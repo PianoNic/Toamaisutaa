@@ -65,6 +65,26 @@ public sealed record PasskeyRegistrationRequest
 }
 
 /// <summary>What <c>navigator.credentials.get()</c> produced, flattened to base64url strings.</summary>
+public sealed record PasskeySecondFactorBeginRequest
+{
+    [JsonPropertyName("signInChallenge")]
+    public required string SignInChallenge { get; init; }
+}
+
+/// <summary>
+/// A passkey answering the second-factor challenge a password or magic-link sign-in returned.
+/// </summary>
+public sealed record PasskeySecondFactorRequest
+{
+    /// <summary>The <c>challenge</c> from <c>/auth/login</c> or <c>/auth/magic-link/verify</c>.</summary>
+    [JsonPropertyName("signInChallenge")]
+    public required string SignInChallenge { get; init; }
+
+    /// <summary>The assertion, its <c>challenge</c> being the one <c>/second-factor/begin</c> returned.</summary>
+    [JsonPropertyName("assertion")]
+    public required PasskeyAssertionRequest Assertion { get; init; }
+}
+
 public sealed record PasskeyAssertionRequest
 {
     /// <summary>The opaque challenge from the begin step.</summary>

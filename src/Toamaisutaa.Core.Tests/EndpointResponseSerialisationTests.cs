@@ -80,7 +80,7 @@ public class EndpointResponseSerialisationTests
 
         await Assert.That(json).IsEqualTo(
             """
-            {"two_factor_required":true,"challenge":"No1CXq9","expires_in":300}
+            {"two_factor_required":true,"challenge":"No1CXq9","expires_in":300,"second_factors":["otp"]}
             """);
     }
 

@@ -84,7 +84,7 @@ Or **200 with a challenge and no tokens**, for a user who has enrolled in
 signing in.
 
 ```json
-{ "two_factor_required": true, "challenge": "No1CXq9-...", "expires_in": 300 }
+{ "two_factor_required": true, "challenge": "No1CXq9-...", "expires_in": 300, "second_factors": ["otp"] }
 ```
 
 ::: danger Branch on `two_factor_required`

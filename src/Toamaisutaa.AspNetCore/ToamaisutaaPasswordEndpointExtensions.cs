@@ -387,6 +387,7 @@ public static class ToamaisutaaPasswordEndpointExtensions
             {
                 Challenge = challenge.Token,
                 ExpiresIn = challenge.ExpiresIn,
+                SecondFactors = challenge.SecondFactors,
             });
         }
 
@@ -641,6 +642,7 @@ public static class ToamaisutaaPasswordEndpointExtensions
             {
                 Challenge = challenge.Token,
                 ExpiresIn = challenge.ExpiresIn,
+                SecondFactors = challenge.SecondFactors,
             });
         }
 

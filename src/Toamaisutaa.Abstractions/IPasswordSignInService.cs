@@ -188,7 +188,15 @@ public sealed record TrustedDeviceToken(string Token, int ExpiresIn);
 /// <remarks>
 /// Opaque random bytes rather than a JWT, so it can never be presented as a bearer token.
 /// </remarks>
-public sealed record TwoFactorChallenge(string Token, int ExpiresIn);
+public sealed record TwoFactorChallenge(string Token, int ExpiresIn)
+{
+    /// <summary>
+    /// What the account can answer it with: <see cref="TwoFactorSource.Otp"/> (a TOTP or recovery
+    /// code at <c>/auth/2fa/verify</c>), <see cref="TwoFactorSource.Passkey"/> (at
+    /// <c>/auth/passkeys/second-factor</c>), or both.
+    /// </summary>
+    public IReadOnlyList<string> SecondFactors { get; init; } = [TwoFactorSource.Otp];
+}
 
 /// <summary>
 /// Why a sign-in ended the way it did. This is for your logs: the endpoints collapse every failure

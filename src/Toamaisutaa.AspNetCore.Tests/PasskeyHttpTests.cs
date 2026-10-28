@@ -328,6 +328,25 @@ public class PasskeyHttpTests
         await Assert.That(response.StatusCode).IsEqualTo(HttpStatusCode.Unauthorized);
     }
 
+    /// <summary>Not DER at all, which the library throws on rather than reporting as a bad signature.</summary>
+    [Test]
+    public async Task A_malformed_signature_is_refused_rather_than_escaping()
+    {
+        await using var app = await TestApp.StartAsync();
+        var account = await Account.RegisterAsync(app);
+        using var authenticator = new SoftwareAuthenticator();
+
+        await Passkeys.RegisterAsync(app, account.AccessToken, authenticator);
+
+        var begin = await (await app.Client.PostJson("/auth/passkeys/assertion/begin", new { })).Json();
+        var assertion = Passkeys.Fields(authenticator.Get(begin, TestApp.Origin));
+        assertion["signature"] = SoftwareAuthenticator.Encode(new byte[70]);
+
+        var response = await app.Client.PostJson("/auth/passkeys/assertion/complete", assertion);
+
+        await Assert.That(response.StatusCode).IsEqualTo(HttpStatusCode.Unauthorized);
+    }
+
     [Test]
     public async Task A_sign_count_that_does_not_advance_is_refused()
     {

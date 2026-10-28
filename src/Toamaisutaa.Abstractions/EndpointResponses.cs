@@ -67,6 +67,13 @@ public sealed record TwoFactorChallengeResponse
     /// <summary>Seconds until the challenge expires.</summary>
     [JsonPropertyName("expires_in")]
     public required int ExpiresIn { get; init; }
+
+    /// <summary>
+    /// <c>otp</c> to answer at <c>/auth/2fa/verify</c>, <c>passkey</c> to answer at
+    /// <c>/auth/passkeys/second-factor</c>; an account with both may use either.
+    /// </summary>
+    [JsonPropertyName("second_factors")]
+    public IReadOnlyList<string> SecondFactors { get; init; } = ["otp"];
 }
 
 /// <summary>

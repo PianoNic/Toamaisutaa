@@ -131,7 +131,64 @@ public static class ToamaisutaaPasskeyEndpointExtensions
             .Produces<ErrorResponse>(StatusCodes.Status401Unauthorized)
             .Produces(StatusCodes.Status429TooManyRequests);
 
+        group.MapPost("/second-factor/begin", BeginSecondFactorAsync)
+            .AllowAnonymous()
+            .AddEndpointFilter<PasswordRateLimitFilter>()
+            .WithName($"{endpointNamePrefix}ToamaisutaaPasskeySecondFactorBegin")
+            .WithSummary("Starts answering a sign-in's second-factor challenge with a passkey.")
+            .WithDescription(
+                "Send `{ \"signInChallenge\": \"...\" }`, the `challenge` a sign-in answered with when its "
+                + "`second_factors` includes `passkey`. `options` goes to `navigator.credentials.get()` and names "
+                + "only that account's passkeys.")
+            .Produces<PasskeyChallengeResponse>()
+            .Produces<ErrorResponse>(StatusCodes.Status401Unauthorized)
+            .Produces(StatusCodes.Status429TooManyRequests);
+
+        group.MapPost("/second-factor/complete", CompleteSecondFactorAsync)
+            .AllowAnonymous()
+            .AddEndpointFilter<PasswordRateLimitFilter>()
+            .WithName($"{endpointNamePrefix}ToamaisutaaPasskeySecondFactorComplete")
+            .WithSummary("Finishes a sign-in with a passkey as its second factor.")
+            .WithDescription(
+                "Send `{ \"signInChallenge\": \"...\", \"assertion\": { ... } }`, the assertion shaped as for "
+                + "`/assertion/complete`. Returns the same body `/auth/login` does, with `hwk` and `mfa` added to "
+                + "`amr` and `toa_2fa_source` set to `passkey`.")
+            .Produces<TokenResponse>()
+            .Produces<ErrorResponse>(StatusCodes.Status401Unauthorized)
+            .Produces(StatusCodes.Status429TooManyRequests);
+
         return group;
+    }
+
+    private static async Task<IResult> BeginSecondFactorAsync(PasskeySecondFactorBeginRequest request, IPasskeyService passkeys, CancellationToken cancellationToken) =>
+        request is not null && !string.IsNullOrWhiteSpace(request.SignInChallenge)
+            && await passkeys.BeginSecondFactorAsync(request.SignInChallenge, cancellationToken) is { } started
+            ? Ceremony(started)
+            : Unauthorized();
+
+    private static async Task<IResult> CompleteSecondFactorAsync(
+        PasskeySecondFactorRequest request,
+        HttpContext context,
+        IPasskeyService passkeys,
+        CancellationToken cancellationToken)
+    {
+        if (request?.Assertion is null || string.IsNullOrWhiteSpace(request.SignInChallenge) || string.IsNullOrWhiteSpace(request.Assertion.Id))
+            return Unauthorized();
+
+        var result = await passkeys.CompleteSecondFactorAsync(
+            request with
+            {
+                Assertion = request.Assertion with
+                {
+                    UserAgent = context.Request.Headers.UserAgent.ToString(),
+                    IpAddress = context.Connection.RemoteIpAddress?.ToString(),
+                },
+            },
+            cancellationToken);
+
+        return result.Succeeded
+            ? ToamaisutaaPasswordEndpointExtensions.Tokens(result.Tokens!, recoveryCodesRunningLow: false, trustedDevice: null, StatusCodes.Status200OK)
+            : Unauthorized();
     }
 
     private static async Task<IResult> ListAsync(
@@ -255,6 +312,7 @@ public static class ToamaisutaaPasskeyEndpointExtensions
             {
                 Challenge = challenge.Token,
                 ExpiresIn = challenge.ExpiresIn,
+                SecondFactors = challenge.SecondFactors,
             });
         }
 
