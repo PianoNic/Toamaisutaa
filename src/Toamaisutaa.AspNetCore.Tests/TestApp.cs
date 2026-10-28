@@ -160,6 +160,9 @@ internal sealed class TestApp : IAsyncDisposable
         builder.Services.AddToamaisutaaTrustedDevices(builder.Configuration);
         builder.Services.AddToamaisutaaPasskeys(builder.Configuration);
 
+        // Configured with no providers it maps nothing, which is what most tests want.
+        builder.Services.AddToamaisutaaExternalLogin(builder.Configuration);
+
         // Passkeys refuse to start without the sweep, since anonymous assertion challenges pile up.
         builder.Services.AddToamaisutaaTokenCleanup();
         builder.Services.AddSingleton<IPasswordResetNotifier, SilentResetNotifier>();
@@ -228,6 +231,7 @@ internal sealed class TestApp : IAsyncDisposable
         app.MapToamaisutaaTrustedDeviceEndpoints();
         app.MapToamaisutaaSessionEndpoints();
         app.MapToamaisutaaPasskeyEndpoints();
+        app.MapToamaisutaaExternalLoginEndpoints();
 
         app.MapGet("/test/me", async (ICurrentUser currentUser, CancellationToken cancellationToken) =>
         {

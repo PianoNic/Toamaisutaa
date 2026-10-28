@@ -30,6 +30,7 @@ public static class ToamaisutaaModelBuilderExtensions
         modelBuilder.ApplyConfiguration(new ToamaisutaaTrustedDeviceConfiguration());
         modelBuilder.ApplyConfiguration(new ToamaisutaaPasskeyCredentialConfiguration());
         modelBuilder.ApplyConfiguration(new ToamaisutaaPasskeyChallengeConfiguration());
+        modelBuilder.ApplyConfiguration(new ToamaisutaaExternalLoginRequestConfiguration());
 
         return modelBuilder;
     }

@@ -230,3 +230,41 @@ public sealed record JsonWebKeyResponse
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? Y { get; init; }
 }
+
+/// <summary>One entry of <c>GET /auth/providers</c>: enough to draw a sign-in button.</summary>
+public sealed record ExternalProviderResponse
+{
+    /// <summary>What the routes take: <c>/auth/external/{key}/start</c>.</summary>
+    [JsonPropertyName("key")]
+    public required string Key { get; init; }
+
+    [JsonPropertyName("display_name")]
+    public required string DisplayName { get; init; }
+
+    [JsonPropertyName("icon_url")]
+    public string? IconUrl { get; init; }
+}
+
+/// <summary>One provider linked to the caller's account.</summary>
+public sealed record ExternalLoginResponse
+{
+    [JsonPropertyName("provider")]
+    public required string Provider { get; init; }
+
+    /// <summary>Null for a provider that is no longer configured, which can still be unlinked.</summary>
+    [JsonPropertyName("display_name")]
+    public string? DisplayName { get; init; }
+
+    [JsonPropertyName("created_at")]
+    public required DateTimeOffset CreatedAt { get; init; }
+
+    [JsonPropertyName("last_sign_in_at")]
+    public DateTimeOffset? LastSignInAt { get; init; }
+}
+
+/// <summary>What starting a link returns: where to send the browser.</summary>
+public sealed record ExternalLinkResponse
+{
+    [JsonPropertyName("authorization_url")]
+    public required string AuthorizationUrl { get; init; }
+}

@@ -74,6 +74,9 @@ cannot promise.
 | `password-reset-requested` | A reset link was issued (an unknown or unverified address issues nothing, and publishes nothing) | |
 | `magic-link-requested` | A sign-in link was issued | |
 | `email-change-requested` | A verification link for a new address was issued | `Email` |
+| `external-login-authenticated` | A provider vouched for the account; the `sign-in-succeeded` with `fed` follows the exchange | `ProviderKey` |
+| `external-login-linked` | A provider was linked, by the owner or by a verified address | `ProviderKey` |
+| `external-login-unlinked` | The owner removed a linked provider | `ProviderKey` |
 | `account-disabled` | An administrator disabled the account | |
 | `account-enabled` | An administrator enabled it again | |
 

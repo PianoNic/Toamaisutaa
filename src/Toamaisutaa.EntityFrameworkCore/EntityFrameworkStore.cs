@@ -237,6 +237,28 @@ internal sealed class EntityFrameworkStore<TContext>(TContext context, TimeProvi
                 cancellationToken);
     }
 
+    public async Task<IReadOnlyList<ToamaisutaaExternalLogin>> ListAsync(Guid userId, CancellationToken cancellationToken = default) =>
+        await context.Set<ToamaisutaaExternalLogin>()
+            .AsNoTracking()
+            .Where(login => login.UserId == userId)
+            .OrderBy(login => login.CreatedAt)
+            .ToListAsync(cancellationToken);
+
+    public async Task<bool> DeleteAsync(Guid userId, string providerKey, CancellationToken cancellationToken = default)
+    {
+        // Matched ordinally after the read, for the same reason FindAsync is: the default collations on
+        // SQL Server and MySQL would let "Google" remove "google".
+        var ids = (await ListAsync(userId, cancellationToken))
+            .Where(login => string.Equals(login.ProviderKey, providerKey, StringComparison.Ordinal))
+            .Select(login => login.Id)
+            .ToList();
+
+        return ids.Count > 0
+            && await context.Set<ToamaisutaaExternalLogin>()
+                .Where(login => ids.Contains(login.Id))
+                .ExecuteDeleteAsync(cancellationToken) > 0;
+    }
+
     /// <summary>Only deletes a user this request created, so a pre-existing user is never touched.</summary>
     private async Task DiscardOrphanedUserAsync(Guid userId, CancellationToken cancellationToken)
     {

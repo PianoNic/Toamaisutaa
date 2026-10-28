@@ -55,6 +55,8 @@ public class ToamaisutaaDbContext : DbContext
 
     public DbSet<ToamaisutaaPasskeyChallenge> PasskeyChallenges => Set<ToamaisutaaPasskeyChallenge>();
 
+    public DbSet<ToamaisutaaExternalLoginRequest> ExternalLoginRequests => Set<ToamaisutaaExternalLoginRequest>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);

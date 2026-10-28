@@ -145,6 +145,34 @@ public sealed record AccountDisabled : AuthenticationEvent
     public override string Kind => "account-disabled";
 }
 
+/// <summary>
+/// Another identity provider vouched for the account at the end of a sign-in there. The sign-in itself
+/// is the <see cref="SignInSucceeded"/> that follows, with <c>fed</c> in its methods, once the client
+/// has exchanged its code and answered any second-factor challenge.
+/// </summary>
+public sealed record ExternalLoginAuthenticated : AuthenticationEvent
+{
+    public override string Kind => "external-login-authenticated";
+
+    public required string ProviderKey { get; init; }
+}
+
+/// <summary>A provider was linked to the account, by its owner or by a verified address on first sign-in.</summary>
+public sealed record ExternalLoginLinked : AuthenticationEvent
+{
+    public override string Kind => "external-login-linked";
+
+    public required string ProviderKey { get; init; }
+}
+
+/// <summary>The account's owner removed a linked provider.</summary>
+public sealed record ExternalLoginUnlinked : AuthenticationEvent
+{
+    public override string Kind => "external-login-unlinked";
+
+    public required string ProviderKey { get; init; }
+}
+
 /// <summary>An administrator enabled an account that was disabled.</summary>
 public sealed record AccountEnabled : AuthenticationEvent
 {

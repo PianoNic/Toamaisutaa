@@ -109,4 +109,15 @@ public static class ToamaisutaaDefaults
     /// its own tokens with a different meaning.
     /// </remarks>
     public const string SessionIdClaim = "toa_sid";
+
+    /// <summary>
+    /// The RFC 8176 <c>amr</c> value for a sign-in another identity provider vouched for. Nothing about
+    /// how that provider authenticated the user is carried over, its own <c>amr</c> included.
+    /// </summary>
+    public const string FederatedMethod = "fed";
+
+    public const string ExternalLoginConfigurationSection = "ExternalLogin";
+
+    /// <summary>The named <c>HttpClient</c> that fetches providers' discovery documents and redeems their codes.</summary>
+    public const string ExternalLoginHttpClientName = "toamaisutaa-external-login";
 }
