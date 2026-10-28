@@ -79,7 +79,23 @@ public sealed class ToamaisutaaLocalLoginOptions
 
     public bool LockoutEnabled { get; set; } = true;
 
+    /// <summary>
+    /// Wrong passwords at sign-in from one source - an address, or a trusted device - before that
+    /// source is locked out of the account. Also wrong second-factor codes and current passwords
+    /// before the account itself is locked, since those need the password or a session already.
+    /// </summary>
     public int MaxFailedAttempts { get; set; } = 5;
+
+    /// <summary>
+    /// Wrong passwords at sign-in from every source together before the account is locked out for
+    /// everyone. Well above <see cref="MaxFailedAttempts"/>, so one source cannot lock out the owner,
+    /// and low enough to stop guessing spread across many.
+    /// </summary>
+    /// <remarks>
+    /// A caller presenting a valid trusted-device token is counted on that device alone and is not
+    /// held to this, so the owner of a remembered device still signs in while the ceiling is reached.
+    /// </remarks>
+    public int MaxFailedAttemptsPerAccount { get; set; } = 50;
 
     /// <summary>Failures further apart than this do not accumulate.</summary>
     public TimeSpan LockoutWindow { get; set; } = TimeSpan.FromMinutes(15);

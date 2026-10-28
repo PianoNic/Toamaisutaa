@@ -105,6 +105,8 @@ internal sealed class PasswordHarness
         Gate = gate;
 
         Devices = new FakeTrustedDeviceStore();
+        Throttles = new FakeSignInThrottleStore();
+        provider.Add<ISignInThrottleStore>(Throttles);
 
         if (withTrustedDevices)
             provider.Add<ITrustedDeviceStore>(Devices);
@@ -144,6 +146,7 @@ internal sealed class PasswordHarness
             new DummyPasswordHash(Hasher),
             gate,
             deviceGate,
+            new SignInThrottle(Throttles, wrapped),
             Metrics,
             publisher,
             wrapped,
@@ -238,6 +241,8 @@ internal sealed class PasswordHarness
     internal TwoFactorService TwoFactor { get; }
 
     internal FakeTrustedDeviceStore Devices { get; }
+
+    internal FakeSignInThrottleStore Throttles { get; }
 
     internal FakePasskeyStore Passkeys { get; }
 

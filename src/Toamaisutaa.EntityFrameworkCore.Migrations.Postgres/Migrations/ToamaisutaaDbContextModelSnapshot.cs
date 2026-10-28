@@ -466,6 +466,29 @@ namespace Toamaisutaa.EntityFrameworkCore.Migrations.Postgres.Migrations
                     b.ToTable("ToamaisutaaRefreshTokens", (string)null);
                 });
 
+            modelBuilder.Entity("Toamaisutaa.Abstractions.ToamaisutaaSignInThrottle", b =>
+                {
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Source")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<int>("FailedAttemptCount")
+                        .HasColumnType("integer");
+
+                    b.Property<long?>("FirstFailedAttemptAt")
+                        .HasColumnType("bigint");
+
+                    b.Property<long?>("LockedOutUntil")
+                        .HasColumnType("bigint");
+
+                    b.HasKey("UserId", "Source");
+
+                    b.ToTable("ToamaisutaaSignInThrottles", (string)null);
+                });
+
             modelBuilder.Entity("Toamaisutaa.Abstractions.ToamaisutaaTrustedDevice", b =>
                 {
                     b.Property<Guid>("Id")
@@ -759,6 +782,15 @@ namespace Toamaisutaa.EntityFrameworkCore.Migrations.Postgres.Migrations
                 });
 
             modelBuilder.Entity("Toamaisutaa.Abstractions.ToamaisutaaRefreshToken", b =>
+                {
+                    b.HasOne("Toamaisutaa.Abstractions.ToamaisutaaUser", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Toamaisutaa.Abstractions.ToamaisutaaSignInThrottle", b =>
                 {
                     b.HasOne("Toamaisutaa.Abstractions.ToamaisutaaUser", null)
                         .WithMany()

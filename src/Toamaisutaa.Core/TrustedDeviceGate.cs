@@ -15,6 +15,30 @@ internal sealed class TrustedDeviceGate(
     IOptions<ToamaisutaaTrustedDeviceOptions> options,
     ILogger<TrustedDeviceGate> logger)
 {
+    /// <summary>
+    /// The family a device token belongs to, if it would be honoured now. Spends and rotates nothing:
+    /// only a right password may do that, and this is read before the password is checked.
+    /// </summary>
+    internal async Task<Guid?> PeekFamilyAsync(
+        ToamaisutaaUser user,
+        string? deviceToken,
+        DateTimeOffset now,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(deviceToken) || provider.GetService<ITrustedDeviceStore>() is not { } devices)
+            return null;
+
+        var stored = await devices.FindByHashAsync(SecureTokens.HashToken(deviceToken), cancellationToken);
+
+        return stored is { RotatedAt: null, RevokedAt: null }
+            && stored.UserId == user.Id
+            && stored.ExpiresAt > now
+            && stored.FamilyStartedAt + options.Value.Lifetime > now
+            && string.Equals(stored.SecurityStamp, user.SecurityStamp, StringComparison.Ordinal)
+                ? stored.FamilyId
+                : null;
+    }
+
     internal async Task<DeviceTrustResult> TryRedeemAsync(
         ToamaisutaaUser user,
         string? deviceToken,

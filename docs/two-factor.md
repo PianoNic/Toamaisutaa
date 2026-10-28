@@ -58,7 +58,7 @@ Send the current password:
 
 An account with no password - one an identity provider owns, or a passkey-only one - sends no body
 and instead needs a sign-in within `TwoFactor:EnrolmentProofWindow` (five minutes by default), read
-off the token's `auth_time` or `toa_2fa_at`. A wrong password counts toward the account lockout.
+off the token's `auth_time` or `toa_2fa_at`. A wrong password counts toward the account's lockout.
 Many providers leave `auth_time` out of access tokens - see
 [the warning on first passwords](/password-login#bodies), which applies here too.
 
@@ -180,8 +180,9 @@ transit: it is worth exactly one sign-in to whoever holds it.
 
 ### Wrong codes count toward lockout
 
-A wrong code at `/auth/2fa/verify` counts against the account exactly as a wrong password does, and
-a locked account is refused there even with the right code. The right password does not clear the
+A wrong code at `/auth/2fa/verify` counts against the account itself, together with wrong current
+passwords, and a locked account is refused there even with the right code. Unlike a wrong password at
+sign-in it is not counted per source: only somebody who already has the password can make one. The right password does not clear the
 count on its own: only a finished sign-in does. Otherwise somebody holding the password could sign
 in again every four guesses and never reach the limit.
 

@@ -31,6 +31,8 @@ public class ToamaisutaaDbContext : DbContext
 
     public DbSet<ToamaisutaaPasswordCredential> PasswordCredentials => Set<ToamaisutaaPasswordCredential>();
 
+    public DbSet<ToamaisutaaSignInThrottle> SignInThrottles => Set<ToamaisutaaSignInThrottle>();
+
     public DbSet<ToamaisutaaRefreshToken> RefreshTokens => Set<ToamaisutaaRefreshToken>();
 
     public DbSet<ToamaisutaaPasswordResetToken> PasswordResetTokens => Set<ToamaisutaaPasswordResetToken>();

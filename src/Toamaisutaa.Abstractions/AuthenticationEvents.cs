@@ -60,6 +60,12 @@ public sealed record AccountLockedOut : AuthenticationEvent
     public override string Kind => "account-locked-out";
 
     public required DateTimeOffset LockedOutUntil { get; init; }
+
+    /// <summary>
+    /// True when only the source the wrong passwords came from is locked out, and the owner can still
+    /// sign in from anywhere else.
+    /// </summary>
+    public bool SourceOnly { get; init; }
 }
 
 /// <summary>A password was set through a path that proved something first: the current password, or

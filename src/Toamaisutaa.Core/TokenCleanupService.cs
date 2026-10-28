@@ -70,8 +70,11 @@ internal sealed class TokenCleanupService(
         var passkeyChallenges = scope.ServiceProvider.GetService<IPasskeyChallengeStore>();
         var removedPasskeyChallenges = passkeyChallenges is null ? 0 : await passkeyChallenges.DeleteExpiredAsync(now, cancellationToken);
 
+        var throttles = scope.ServiceProvider.GetService<ISignInThrottleStore>();
+        var removedThrottles = throttles is null ? 0 : await throttles.DeleteExpiredAsync(now, now - options.Value.LockoutWindow, cancellationToken);
+
         var removed = removedRefresh + removedReset + removedChallenges + removedDevices + removedInvitations
-            + removedVerifications + removedMagicLinks + removedPasskeyChallenges;
+            + removedVerifications + removedMagicLinks + removedPasskeyChallenges + removedThrottles;
 
         if (removed > 0)
         {
@@ -79,7 +82,8 @@ internal sealed class TokenCleanupService(
                 "Removed {RefreshTokens} expired refresh token(s), {ResetTokens} expired reset token(s), {Challenges} "
                 + "expired two-factor challenge(s), {Devices} expired trusted device row(s), {Invitations} expired "
                 + "invitation token(s), {Verifications} expired email verification token(s), {MagicLinks} expired "
-                + "magic-link token(s) and {PasskeyChallenges} expired passkey challenge(s).",
+                + "magic-link token(s), {PasskeyChallenges} expired passkey challenge(s) and {Throttles} spent sign-in "
+                + "throttle row(s).",
                 removedRefresh,
                 removedReset,
                 removedChallenges,
@@ -87,7 +91,8 @@ internal sealed class TokenCleanupService(
                 removedInvitations,
                 removedVerifications,
                 removedMagicLinks,
-                removedPasskeyChallenges);
+                removedPasskeyChallenges,
+                removedThrottles);
         }
     }
 }

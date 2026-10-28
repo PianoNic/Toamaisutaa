@@ -76,6 +76,7 @@ internal sealed class PasswordLoginStartupCheck(
                      typeof(IInvitationTokenStore),
                      typeof(IEmailVerificationTokenStore),
                      typeof(IMagicLinkTokenStore),
+                     typeof(ISignInThrottleStore),
                  })
         {
             if (!IsRegistered(storeType))
