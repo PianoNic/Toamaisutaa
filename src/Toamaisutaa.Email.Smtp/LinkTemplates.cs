@@ -31,6 +31,15 @@ internal static class LinkTemplates
         if (!template.Contains("{token}", StringComparison.Ordinal))
             return $"Email:Smtp:{optionName} does not contain \"{{token}}\", so every {mail} link would point at the same place.";
 
+        // The token is a credential, and over http it crosses the network in the clear. Loopback is
+        // allowed for a developer's own machine.
+        if (!Uri.TryCreate(template.Replace("{token}", "token", StringComparison.Ordinal), UriKind.Absolute, out var link)
+            || (link.Scheme != Uri.UriSchemeHttps && !(link.Scheme == Uri.UriSchemeHttp && link.IsLoopback)))
+        {
+            return $"Email:Smtp:{optionName} is not an absolute https:// address, so the token in every {mail} link could "
+                + "cross the network in the clear. Use https:// (http:// is accepted for localhost only).";
+        }
+
         return null;
     }
 }

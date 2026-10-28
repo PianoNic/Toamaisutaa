@@ -45,7 +45,7 @@ checked at startup the same way the rest of `LocalLogin` is.
 | `User` / `Password` | | Leave both out for a relay that takes no login |
 | `Security` | `Auto` | `Auto` uses TLS on 465 and required STARTTLS elsewhere. Also `StartTls`, `SslOnConnect`, `None` (local relay only) |
 | `From` / `FromDisplayName` | | `From` is required |
-| `PasswordResetLinkTemplate` | | Required. Your reset page, with `{token}` where the token goes |
+| `PasswordResetLinkTemplate` | | Required. Your reset page, with `{token}` where the token goes. Every link template must be `https://` (`http://` only for localhost); prefer the token in the fragment, `https://app.example.com/reset#token={token}`, which browsers do not send to servers or put in `Referer` |
 | `InvitationLinkTemplate` | | Required with `AddToamaisutaaSmtpInvitationEmail` |
 | `EmailVerificationLinkTemplate` | | Required with `AddToamaisutaaSmtpEmailVerification` |
 | `MagicLinkTemplate` | | Required with `AddToamaisutaaSmtpMagicLink` |

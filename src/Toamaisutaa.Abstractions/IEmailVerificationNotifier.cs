@@ -37,6 +37,14 @@ public interface IEmailVerificationNotifier
         EmailVerificationContext context,
         CancellationToken cancellationToken = default) =>
         SendAsync(user, email, verificationToken, cancellationToken);
+
+    /// <summary>
+    /// Somebody asked to use <paramref name="email"/>, which another account has already proven, so no
+    /// link was issued. The caller is told the same as when one is, so it cannot learn which addresses
+    /// have accounts; this tells the address's owner instead. The default sends nothing.
+    /// </summary>
+    Task SendAddressInUseAsync(ToamaisutaaUser requester, string email, CancellationToken cancellationToken = default) =>
+        Task.CompletedTask;
 }
 
 public sealed record EmailVerificationContext

@@ -25,6 +25,27 @@ public class SmtpEmailStartupCheckTests
         await Check(Valid(), out _).StartAsync(CancellationToken.None);
     }
 
+    /// <summary>The token is a credential; over http it crosses the network in the clear.</summary>
+    [Test]
+    [Arguments("http://app.example.com/reset?token={token}")]
+    [Arguments("/reset?token={token}")]
+    public async Task RefusesALinkThatIsNotHttps(string template)
+    {
+        var options = Valid();
+        options.PasswordResetLinkTemplate = template;
+
+        await Assert.That(() => Check(options, out _).StartAsync(CancellationToken.None)).Throws<InvalidOperationException>();
+    }
+
+    [Test]
+    public async Task AcceptsPlainHttpOnLocalhost()
+    {
+        var options = Valid();
+        options.PasswordResetLinkTemplate = "http://localhost:5173/reset#token={token}";
+
+        await Check(options, out _).StartAsync(CancellationToken.None);
+    }
+
     [Test]
     public async Task RefusesToStartWithNoHost()
     {

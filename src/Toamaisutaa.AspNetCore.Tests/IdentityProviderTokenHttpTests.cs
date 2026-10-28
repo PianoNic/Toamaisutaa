@@ -3,6 +3,7 @@ using System.Globalization;
 using System.Security.Claims;
 using System.Security.Cryptography;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.DependencyInjection;
@@ -631,7 +632,7 @@ public class IdentityProviderTokenHttpTests
         await Assert.That(invitedAccount).IsNotEqualTo(providerAccount);
     }
 
-    private sealed class UserInfoRecorder : HttpMessageHandler
+    private sealed class UserInfoRecorder(string body = "{}") : HttpMessageHandler
     {
         public System.Collections.Concurrent.ConcurrentQueue<string> BearerTokens { get; } = new();
 
@@ -641,9 +642,83 @@ public class IdentityProviderTokenHttpTests
 
             return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
             {
-                Content = new StringContent("{}", System.Text.Encoding.UTF8, "application/json"),
+                Content = new StringContent(body, System.Text.Encoding.UTF8, "application/json"),
             });
         }
+    }
+
+    private static void MapFreshAndRole(IEndpointRouteBuilder endpoints)
+    {
+        endpoints.MapGet("/test/fresh", () => "fresh")
+            .RequireAuthorization(policy => policy.RequireAuthenticatedUser().RequireFreshSecondFactor(TimeSpan.FromHours(1)));
+
+        endpoints.MapGet("/test/teacher", () => "teacher")
+            .RequireAuthorization(policy => policy.RequireRole("teacher"));
+
+        endpoints.MapGet("/test/mfa", () => "mfa").RequireAuthorization("Toamaisutaa.TwoFactor");
+    }
+
+    /// <summary>
+    /// Userinfo is fetched for roles. A provider whose profile attributes users can edit would otherwise
+    /// let one put toa_2fa_at there and pass a freshness policy it never met.
+    /// </summary>
+    [Test]
+    public async Task Userinfo_adds_the_role_and_nothing_that_vouches_for_a_second_factor()
+    {
+        using var identityProviderKey = RSA.Create(2048);
+        using var localKey = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+
+        // Inside the policy's window, so only where it came from can refuse it.
+        var now = DateTimeOffset.UtcNow.AddMinutes(-10).ToUnixTimeSeconds();
+        var userInfo = new UserInfoRecorder($$"""{"roles":["teacher"],"toa_2fa_at":{{now}},"amr":["pwd","mfa"]}""");
+
+        await using var app = await StartAsync(
+            identityProviderKey,
+            localKey,
+            services => services.AddHttpClient(ToamaisutaaDefaults.UserInfoHttpClientName).ConfigurePrimaryHttpMessageHandler(() => userInfo),
+            MapFreshAndRole,
+            fetchUserInfo: true);
+
+        var provider = Mint(app, new RsaSecurityKey(identityProviderKey) { KeyId = IdentityProviderKeyId }, SecurityAlgorithms.RsaSha256, IdentityProvider, "grace-subject");
+
+        await Assert.That((await app.Client.Get("/test/teacher", provider)).StatusCode).IsEqualTo(HttpStatusCode.OK);
+        await Assert.That((await app.Client.Get("/test/fresh", provider)).StatusCode).IsEqualTo(HttpStatusCode.Forbidden);
+
+        // The token itself says nothing about a second factor; userinfo's amr must not add one.
+        await Assert.That((await app.Client.Get("/test/mfa", provider)).StatusCode).IsEqualTo(HttpStatusCode.Forbidden);
+    }
+
+    [Test]
+    public async Task A_second_factor_time_on_a_providers_token_does_not_count_as_fresh()
+    {
+        using var identityProviderKey = RSA.Create(2048);
+        using var localKey = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+
+        await using var app = await StartAsync(identityProviderKey, localKey, mapExtra: MapFreshAndRole);
+
+        var provider = Mint(
+            app,
+            new RsaSecurityKey(identityProviderKey) { KeyId = IdentityProviderKeyId },
+            SecurityAlgorithms.RsaSha256,
+            IdentityProvider,
+            "grace-subject",
+            new Claim(ToamaisutaaDefaults.SecondFactorAtClaim, app.Time.Now.AddMinutes(-10).ToUnixTimeSeconds().ToString(CultureInfo.InvariantCulture), ClaimValueTypes.Integer64));
+
+        await Assert.That((await app.Client.Get("/test/fresh", provider)).StatusCode).IsEqualTo(HttpStatusCode.Forbidden);
+    }
+
+    /// <summary>The same policy still passes this application's own fresh token, or the test above proves nothing.</summary>
+    [Test]
+    public async Task A_second_factor_time_on_a_local_token_still_counts_as_fresh()
+    {
+        using var identityProviderKey = RSA.Create(2048);
+        using var localKey = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+
+        await using var app = await StartAsync(identityProviderKey, localKey, mapExtra: MapFreshAndRole);
+        var account = await Account.RegisterAsync(app);
+        await account.EnrolAsync();
+
+        await Assert.That((await app.Client.Get("/test/fresh", account.AccessToken)).StatusCode).IsEqualTo(HttpStatusCode.OK);
     }
 
     private static Claim AuthTime(DateTimeOffset at) =>

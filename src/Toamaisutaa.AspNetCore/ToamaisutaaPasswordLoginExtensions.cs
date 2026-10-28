@@ -69,6 +69,7 @@ public static class ToamaisutaaPasswordLoginExtensions
         services.TryAddScoped<TrustedDeviceGate>();
 
         services.TryAddScoped<AuthenticationEventPublisher>();
+        Toamaisutaa.AspNetCore.HttpContextAuthenticationActor.Register(services);
 
         // Also registered by the passkey package, because either call may come first.
         services.TryAddScoped<LocalSessionIssuer>();

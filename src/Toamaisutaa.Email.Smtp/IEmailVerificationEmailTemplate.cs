@@ -24,6 +24,25 @@ public interface IEmailVerificationEmailTemplate
     /// </summary>
     EmailVerificationEmailContent Build(ToamaisutaaUser user, string email, string verificationToken, EmailVerificationContext context) =>
         Build(user, email, verificationToken);
+
+    /// <summary>
+    /// To the owner of an address another account asked for, which this one has already proven. No
+    /// link, and no name: the asker chose their user name.
+    /// </summary>
+    EmailVerificationEmailContent BuildAddressInUse(ToamaisutaaUser requester, string email) => new()
+    {
+        Subject = "Someone tried to use your email address",
+        PlainTextBody =
+            "Hi,\n\n"
+            + $"Someone tried to add {email} to their account here. It is already on an account, so nothing was "
+            + "changed and no link was sent.\n\n"
+            + "If that was you, you already have an account with this address: sign in to it, or reset its password.\n",
+        HtmlBody =
+            "<p>Hi,</p>"
+            + $"<p>Someone tried to add {System.Net.WebUtility.HtmlEncode(email)} to their account here. It is already on an "
+            + "account, so nothing was changed and no link was sent.</p>"
+            + "<p>If that was you, you already have an account with this address: sign in to it, or reset its password.</p>",
+    };
 }
 
 /// <summary>The subject and body <see cref="SmtpEmailVerificationNotifier"/> sends.

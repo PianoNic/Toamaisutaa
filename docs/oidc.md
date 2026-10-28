@@ -27,7 +27,7 @@ Everything binds from the `Oidc` section.
 | `Oidc:ClockSkew` | `00:00:30` | Leeway on expiry. JwtBearer's own default is five minutes, which is also five more minutes a revoked token lives |
 | `Oidc:NameClaim` | `name` | |
 | `Oidc:RoleClaim` | `roles` | Set to `groups` for Pocket ID, Authentik and Entra |
-| `Oidc:FetchClaimsFromUserInfo` | `true` | Reads roles from userinfo when the access token omits them |
+| `Oidc:FetchClaimsFromUserInfo` | `true` | Reads roles from userinfo when the access token omits them, and only roles |
 | `Oidc:UserInfoCacheDuration` | `00:05:00` | Cached per subject and grant, per issuer and audience |
 | `Oidc:ShareUserInfoCacheAcrossInstances` | `false` | Lets the userinfo cache use your `IDistributedCache` as a second level |
 | `Oidc:Scope` | `openid profile email roles` | Served to the client |
@@ -59,7 +59,9 @@ Two things help:
 Pocket ID, Okta and Entra keep group membership out of the access token to bound its size. When the
 configured role claim is missing, Toamaisutaa asks the issuer's userinfo endpoint once, flattens the
 response - arrays become one claim per entry, which is the only shape that lets a role check match a
-single group - and merges what it finds.
+single group - and merges the role claim from it. Only that: anything else userinfo returns can be a
+profile attribute the user edits, and a `toa_2fa_at` or `amr` among them would vouch for a second
+factor the provider never checked.
 
 A userinfo endpoint that is down logs a warning and lets the token's own claims decide. It never
 turns a valid login into a 500.

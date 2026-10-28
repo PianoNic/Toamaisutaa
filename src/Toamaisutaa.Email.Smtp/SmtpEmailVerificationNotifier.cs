@@ -38,4 +38,17 @@ internal sealed class SmtpEmailVerificationNotifier(
 
         logger.LogInformation("Email verification sent for user {UserId}.", user.Id);
     }
+
+    public async Task SendAddressInUseAsync(ToamaisutaaUser requester, string email, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(requester);
+        ArgumentNullException.ThrowIfNull(email);
+
+        var content = template.BuildAddressInUse(requester, email);
+        var message = SmtpMessages.Create(options.Value, email, content.Subject, content.PlainTextBody, content.HtmlBody);
+
+        await sender.SendAsync(message, cancellationToken).ConfigureAwait(false);
+
+        logger.LogInformation("Address-in-use notice sent for an email change asked by user {UserId}.", requester.Id);
+    }
 }

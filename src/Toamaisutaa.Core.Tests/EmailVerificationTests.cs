@@ -49,7 +49,7 @@ public class EmailVerificationTests
     }
 
     [Test]
-    public async Task RequestingAnAddressAnotherLocalAccountHoldsIsAConflict()
+    public async Task RequestingAnAddressAnotherLocalAccountHasProvenLooksSentAndSendsNoLink()
     {
         var harness = PasswordHarness.Create();
         var user = await harness.RegisterAsync();
@@ -58,8 +58,9 @@ public class EmailVerificationTests
 
         var result = await harness.Accounts.RequestEmailChangeAsync(user.Id, "grace@example.com", "correct horse battery");
 
-        await Assert.That(result.Succeeded).IsFalse();
-        await Assert.That(result.Conflict).IsTrue();
+        // The caller cannot tell this from a link sent, or any account could list which addresses are taken.
+        await Assert.That(result.Succeeded).IsTrue();
+        await Assert.That(result.Conflict).IsFalse();
         await Assert.That(harness.EmailVerificationNotifier.Sent.Count).IsEqualTo(sentBefore);
     }
 
