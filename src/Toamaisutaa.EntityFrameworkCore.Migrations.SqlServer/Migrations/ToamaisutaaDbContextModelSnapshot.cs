@@ -593,6 +593,9 @@ namespace Toamaisutaa.EntityFrameworkCore.Migrations.SqlServer.Migrations
                     b.Property<long>("CreatedAt")
                         .HasColumnType("bigint");
 
+                    b.Property<long?>("DisabledAt")
+                        .HasColumnType("bigint");
+
                     b.Property<string>("DisplayName")
                         .HasMaxLength(256)
                         .HasColumnType("nvarchar(256)");

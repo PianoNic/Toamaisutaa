@@ -26,6 +26,16 @@ public class ToamaisutaaUser
     /// </remarks>
     public string SecurityStamp { get; set; } = default!;
 
+    /// <summary>
+    /// Set while an administrator has disabled the account. Every way in refuses it: password, magic
+    /// link, passkey, refresh, password reset, and a token presented to <c>ICurrentUser</c>.
+    /// </summary>
+    /// <remarks>
+    /// Disabling also moves <see cref="SecurityStamp"/> and revokes every session, so a token issued
+    /// before it stops working at its next refresh.
+    /// </remarks>
+    public DateTimeOffset? DisabledAt { get; set; }
+
     public DateTimeOffset CreatedAt { get; set; }
 
     public DateTimeOffset UpdatedAt { get; set; }
@@ -36,3 +46,9 @@ public class ToamaisutaaUser
 /// though its signature and expiry are still good.
 /// </summary>
 public sealed class SecurityStampChangedException(string message) : Exception(message);
+
+/// <summary>
+/// Thrown when a token names an account that <see cref="ToamaisutaaUser.DisabledAt"/> marks as
+/// disabled. Unlike a stale stamp, refreshing does not help.
+/// </summary>
+public sealed class AccountDisabledException(string message) : Exception(message);

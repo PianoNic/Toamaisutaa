@@ -80,6 +80,19 @@ public sealed record PasswordReset : AuthenticationEvent
     public override string Kind => "password-reset";
 }
 
+/// <summary>An administrator disabled the account. Published with the <see cref="SessionRevoked"/>
+/// and <see cref="TrustedDeviceRevoked"/> that disabling triggers.</summary>
+public sealed record AccountDisabled : AuthenticationEvent
+{
+    public override string Kind => "account-disabled";
+}
+
+/// <summary>An administrator enabled an account that was disabled.</summary>
+public sealed record AccountEnabled : AuthenticationEvent
+{
+    public override string Kind => "account-enabled";
+}
+
 /// <summary>
 /// A verification link was redeemed, so the account's login identifier and the address every reset
 /// link and magic link is sent to are now the ones that link named.

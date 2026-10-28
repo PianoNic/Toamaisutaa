@@ -75,6 +75,11 @@ internal sealed class HttpContextCurrentUser(
 
         var user = await provisioner.ProvisionAsync(principal, cancellationToken);
 
+        // Before the stamp, which disabling also moves, because refreshing will not help. An identity
+        // provider's token is refused here too, since it carries no stamp to go stale.
+        if (user.DisabledAt is not null)
+            throw new AccountDisabledException("This account is disabled. Signing in again will not help.");
+
         // Only locally issued tokens carry a stamp; an identity-provider token has nothing to check.
         var presented = Find(ToamaisutaaDefaults.SecurityStampClaim);
 

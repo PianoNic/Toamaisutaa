@@ -65,6 +65,8 @@ cannot promise.
 | `trusted-device-revoked` | A device stopped being trusted | `DeviceId`, `Reason` |
 | `session-revoked` | A refresh family stopped being usable | `SessionId`, `Reason` |
 | `refresh-token-reuse-detected` | An already-rotated refresh token was presented | `SessionId` |
+| `account-disabled` | An administrator disabled the account | |
+| `account-enabled` | An administrator enabled it again | |
 
 `SessionId` is the refresh family, which is also what the access token carries as `toa_sid`, so a
 `sign-in-succeeded` row and the `session-revoked` row that ends it line up on one value.

@@ -56,5 +56,5 @@ builder.Services.AddSingleton<IUserRoleProvider, YourRoleProvider>();
 ```
 
 This is what a local account needs before it can reach the
-[admin provisioning endpoints](/provisioning-accounts#the-three-admin-endpoints-need-an-admin-role),
+[admin provisioning endpoints](/provisioning-accounts#the-admin-endpoints-need-an-admin-role),
 which ask for the role `Oidc:AdminRole` names.

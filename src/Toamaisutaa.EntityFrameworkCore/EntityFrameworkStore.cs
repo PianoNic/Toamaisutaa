@@ -149,6 +149,15 @@ internal sealed class EntityFrameworkStore<TContext>(TContext context, TimeProvi
                 cancellationToken);
     }
 
+    public async Task SetDisabledAtAsync(Guid userId, DateTimeOffset? disabledAt, CancellationToken cancellationToken = default) =>
+        await context.Set<ToamaisutaaUser>()
+            .Where(user => user.Id == userId)
+            .ExecuteUpdateAsync(
+                setters => setters
+                    .SetProperty(user => user.DisabledAt, disabledAt)
+                    .SetProperty(user => user.UpdatedAt, timeProvider.GetUtcNow()),
+                cancellationToken);
+
     /// <summary>Every user gets one on creation, because a null stamp would make the refresh check
     /// always pass or always fail.</summary>
     private static string NewSecurityStamp() =>
