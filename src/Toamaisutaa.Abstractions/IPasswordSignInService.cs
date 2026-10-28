@@ -268,6 +268,12 @@ public enum SignInOutcome
 
     /// <summary>An administrator disabled the account. The caller is told only that sign-in failed.</summary>
     AccountDisabled,
+
+    /// <summary>
+    /// A code from another identity provider's sign-in is unknown, spent, expired, or presented without
+    /// the verifier it was bound to.
+    /// </summary>
+    InvalidExternalLogin,
 }
 
 /// <summary>How the second factor was satisfied. Written to <c>toa_2fa_source</c>.</summary>

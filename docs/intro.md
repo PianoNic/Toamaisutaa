@@ -36,6 +36,8 @@ Use OIDC if you can.
   rotating refresh tokens, lockout, reset
   tokens, TOTP, and [two ways to get someone into an account](/provisioning-accounts) without open
   registration. Off until you ask.
+- **"Sign in with Google" next to the password box.** [Any number of providers](/external-login),
+  configured by whoever hosts the app, each ending in your own tokens and sessions.
 - **Storage on your terms.** Four databases' migrations, your own `DbContext`, or no database at all.
 - **Seams, not assumptions.** Hashing, claims mapping, provisioning, roles and secret protection are
   each one interface you can replace.

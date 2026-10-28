@@ -73,8 +73,11 @@ internal sealed class TokenCleanupService(
         var throttles = scope.ServiceProvider.GetService<ISignInThrottleStore>();
         var removedThrottles = throttles is null ? 0 : await throttles.DeleteExpiredAsync(now, now - options.Value.LockoutWindow, cancellationToken);
 
+        var externalLogins = scope.ServiceProvider.GetService<IExternalLoginRequestStore>();
+        var removedExternalLogins = externalLogins is null ? 0 : await externalLogins.DeleteExpiredAsync(now, cancellationToken);
+
         var removed = removedRefresh + removedReset + removedChallenges + removedDevices + removedInvitations
-            + removedVerifications + removedMagicLinks + removedPasskeyChallenges + removedThrottles;
+            + removedVerifications + removedMagicLinks + removedPasskeyChallenges + removedThrottles + removedExternalLogins;
 
         if (removed > 0)
         {
@@ -82,8 +85,8 @@ internal sealed class TokenCleanupService(
                 "Removed {RefreshTokens} expired refresh token(s), {ResetTokens} expired reset token(s), {Challenges} "
                 + "expired two-factor challenge(s), {Devices} expired trusted device row(s), {Invitations} expired "
                 + "invitation token(s), {Verifications} expired email verification token(s), {MagicLinks} expired "
-                + "magic-link token(s), {PasskeyChallenges} expired passkey challenge(s) and {Throttles} spent sign-in "
-                + "throttle row(s).",
+                + "magic-link token(s), {PasskeyChallenges} expired passkey challenge(s), {Throttles} spent sign-in "
+                + "throttle row(s) and {ExternalLogins} expired external sign-in(s).",
                 removedRefresh,
                 removedReset,
                 removedChallenges,
@@ -92,7 +95,8 @@ internal sealed class TokenCleanupService(
                 removedVerifications,
                 removedMagicLinks,
                 removedPasskeyChallenges,
-                removedThrottles);
+                removedThrottles,
+                removedExternalLogins);
         }
     }
 }

@@ -127,6 +127,7 @@ internal sealed class ToamaisutaaMetrics : IDisposable
         SignInOutcome.TwoFactorNotEnrolled => "two_factor_not_enrolled",
         SignInOutcome.NotALocalSession => "not_a_local_session",
         SignInOutcome.InvalidPasskey => "invalid_passkey",
+        SignInOutcome.InvalidExternalLogin => "invalid_external_login",
         _ => outcome.ToString(),
     };
 
