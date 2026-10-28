@@ -39,7 +39,9 @@ public class CurrentPasswordLockoutHttpTests
             settings["LocalLogin:RateLimit:Window"] = "01:00:00";
 
             // The lockout would otherwise answer first and hide whether the limiter is there at all.
-            settings["LocalLogin:LockoutEnabled"] = "false";
+            // Lockout stays on, since two-factor refuses to start without it, but out of reach, so
+            // only the rate limit can be what answers 429.
+            settings["LocalLogin:MaxFailedAttempts"] = "1000";
         });
 
         var account = await Account.RegisterAsync(app);
@@ -69,7 +71,7 @@ public class CurrentPasswordLockoutHttpTests
 
         var proved = proveWith == "step-up"
             ? await account.StepUpAsync()
-            : await app.Client.PostJson(proveWith, new { proof = Totp.Code(account.Secret!, app.Time.Now) }, account.AccessToken);
+            : await app.Client.PostJson(proveWith, new { proof = Totp.Code(account.Secret!, app.Time.Now), currentPassword = account.Password }, account.AccessToken);
 
         await Assert.That(proved.IsSuccessStatusCode).IsTrue();
 

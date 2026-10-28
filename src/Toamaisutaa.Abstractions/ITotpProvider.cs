@@ -40,6 +40,16 @@ public interface ISecretProtector
     /// <summary>True when the row was written under a key that is no longer the active one, so the
     /// caller can re-encrypt it while it has the plaintext in hand.</summary>
     bool NeedsRewrap(string keyVersion);
+
+    /// <summary>
+    /// Encrypts bound to <paramref name="associatedData"/> - the owning user's id - so a ciphertext
+    /// copied into another user's row no longer decrypts there. The default ignores it, so a
+    /// protector of your own keeps working, unbound, until it implements this.
+    /// </summary>
+    ProtectedSecret Protect(byte[] plaintext, byte[] associatedData) => Protect(plaintext);
+
+    /// <summary>Decrypts what <see cref="Protect(byte[], byte[])"/> bound, and older unbound rows too.</summary>
+    byte[] Unprotect(ProtectedSecret secret, byte[] associatedData) => Unprotect(secret);
 }
 
 public sealed record ProtectedSecret(byte[] Ciphertext, byte[] Nonce, byte[] Tag, string KeyVersion);

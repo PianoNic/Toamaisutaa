@@ -168,7 +168,7 @@ public class TwoFactorTests
         var started = await harness.SignInAsync("pianonic", "correct horse battery");
 
         harness.Clock.Now = harness.Clock.Now.AddSeconds(30);
-        var disabled = await harness.TwoFactor.DisableAsync(user.Id, harness.CurrentCode(secret));
+        var disabled = await harness.TwoFactor.DisableAsync(user.Id, harness.CurrentCode(secret), harness.ManagementProof);
         await Assert.That(disabled.Succeeded).IsTrue();
 
         harness.Clock.Now = harness.Clock.Now.AddSeconds(30);
@@ -252,7 +252,7 @@ public class TwoFactorTests
         var (secret, oldCodes) = await harness.EnrolAsync(user.Id);
 
         harness.Clock.Now = harness.Clock.Now.AddSeconds(30);
-        var regenerated = await harness.TwoFactor.RegenerateRecoveryCodesAsync(user.Id, harness.CurrentCode(secret));
+        var regenerated = await harness.TwoFactor.RegenerateRecoveryCodesAsync(user.Id, harness.CurrentCode(secret), harness.ManagementProof);
 
         await Assert.That(regenerated.RecoveryCodes.Intersect(oldCodes).Any()).IsFalse();
 
@@ -269,7 +269,7 @@ public class TwoFactorTests
         var user = await harness.RegisterAsync();
         await harness.EnrolAsync(user.Id);
 
-        var result = await harness.TwoFactor.DisableAsync(user.Id, "000000");
+        var result = await harness.TwoFactor.DisableAsync(user.Id, "000000", harness.ManagementProof);
 
         await Assert.That(result.Succeeded).IsFalse();
         await Assert.That((await harness.TwoFactor.GetStatusAsync(user.Id)).Enabled).IsTrue();
@@ -283,7 +283,7 @@ public class TwoFactorTests
         var (secret, _) = await harness.EnrolAsync(user.Id);
 
         harness.Clock.Now = harness.Clock.Now.AddSeconds(30);
-        await harness.TwoFactor.DisableAsync(user.Id, harness.CurrentCode(secret));
+        await harness.TwoFactor.DisableAsync(user.Id, harness.CurrentCode(secret), harness.ManagementProof);
 
         await Assert.That(harness.TwoFactorStore.Codes.Count(code => code.UserId == user.Id)).IsEqualTo(0);
 
@@ -309,9 +309,9 @@ public class TwoFactorTests
             harness.Clock.Now = harness.Clock.Now.AddSeconds(30);
 
             if (operation == "disable")
-                await harness.TwoFactor.DisableAsync(user.Id, harness.CurrentCode(secret));
+                await harness.TwoFactor.DisableAsync(user.Id, harness.CurrentCode(secret), harness.ManagementProof);
             else
-                await harness.TwoFactor.RegenerateRecoveryCodesAsync(user.Id, harness.CurrentCode(secret));
+                await harness.TwoFactor.RegenerateRecoveryCodesAsync(user.Id, harness.CurrentCode(secret), harness.ManagementProof);
         }
 
         await Assert.That(harness.Users.Users.Single(entry => entry.Id == user.Id).SecurityStamp).IsNotEqualTo(before);
@@ -394,7 +394,10 @@ public class TwoFactorTests
 
         await Assert.That(after.Unprotect(wrapped)).IsEquivalentTo(secret);
         await Assert.That(after.NeedsRewrap("1")).IsTrue();
-        await Assert.That(after.NeedsRewrap("2")).IsFalse();
+
+        // The current key, but not yet bound to its user: rewritten too, so it gets bound.
+        await Assert.That(after.NeedsRewrap("2")).IsTrue();
+        await Assert.That(after.NeedsRewrap("2:u")).IsFalse();
     }
 
     [Test]

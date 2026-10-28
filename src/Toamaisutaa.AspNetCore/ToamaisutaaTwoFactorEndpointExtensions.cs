@@ -36,6 +36,7 @@ public static class ToamaisutaaTwoFactorEndpointExtensions
         group.AddEndpointFilter<StaleSecurityStampFilter>();
 
         group.MapGet("/", StatusAsync)
+            .WithMetadata(AllowsPendingTwoFactorEnrolment.Instance)
             .RequireAuthorization()
             .WithName($"{endpointNamePrefix}ToamaisutaaTwoFactorStatus")
             .WithSummary("Whether the caller has enrolled, and how many recovery codes remain.")
@@ -43,6 +44,7 @@ public static class ToamaisutaaTwoFactorEndpointExtensions
             .Produces<ErrorResponse>(StatusCodes.Status401Unauthorized);
 
         group.MapPost("/begin", BeginAsync)
+            .WithMetadata(AllowsPendingTwoFactorEnrolment.Instance)
             .RequireAuthorization()
             .AddEndpointFilter<PasswordRateLimitFilter>()
             .WithName($"{endpointNamePrefix}ToamaisutaaTwoFactorBegin")
@@ -58,6 +60,7 @@ public static class ToamaisutaaTwoFactorEndpointExtensions
             .Produces(StatusCodes.Status429TooManyRequests);
 
         group.MapPost("/confirm", ConfirmAsync)
+            .WithMetadata(AllowsPendingTwoFactorEnrolment.Instance)
             .RequireAuthorization()
             .AddEndpointFilter<PasswordRateLimitFilter>()
             .WithName($"{endpointNamePrefix}ToamaisutaaTwoFactorConfirm")
@@ -201,6 +204,7 @@ public static class ToamaisutaaTwoFactorEndpointExtensions
 
     private static async Task<IResult> DisableAsync(
         DisableTwoFactorRequest request,
+        HttpContext context,
         ICurrentUser currentUser,
         ITwoFactorService twoFactor,
         CancellationToken cancellationToken)
@@ -209,7 +213,7 @@ public static class ToamaisutaaTwoFactorEndpointExtensions
             return Results.BadRequest();
 
         var user = await currentUser.GetOrProvisionAsync(cancellationToken);
-        var result = await twoFactor.DisableAsync(user.Id, request.Proof, cancellationToken);
+        var result = await twoFactor.DisableAsync(user.Id, request.Proof, CredentialProof(context, request.CurrentPassword), cancellationToken);
 
         return result.Succeeded
             ? Results.NoContent()
@@ -218,6 +222,7 @@ public static class ToamaisutaaTwoFactorEndpointExtensions
 
     private static async Task<IResult> RegenerateAsync(
         RegenerateRecoveryCodesRequest request,
+        HttpContext context,
         ICurrentUser currentUser,
         ITwoFactorService twoFactor,
         CancellationToken cancellationToken)
@@ -229,13 +234,24 @@ public static class ToamaisutaaTwoFactorEndpointExtensions
 
         try
         {
-            return Results.Ok(await twoFactor.RegenerateRecoveryCodesAsync(user.Id, request.Proof, cancellationToken));
+            return Results.Ok(await twoFactor.RegenerateRecoveryCodesAsync(
+                user.Id,
+                request.Proof,
+                CredentialProof(context, request.CurrentPassword),
+                cancellationToken));
         }
         catch (TwoFactorEnrolmentException exception)
         {
             return Results.BadRequest(new ValidationErrorResponse { Errors = [exception.Message] });
         }
     }
+
+    /// <summary>When the caller signed in comes off its own token, never the body.</summary>
+    private static TwoFactorEnrolmentProof CredentialProof(HttpContext context, string? currentPassword) => new()
+    {
+        CurrentPassword = currentPassword,
+        AuthenticatedAt = CallerAuthentication.AuthenticatedAt(context.User),
+    };
 
     private static async Task<IResult> VerifyAsync(
         VerifyTwoFactorRequest request,

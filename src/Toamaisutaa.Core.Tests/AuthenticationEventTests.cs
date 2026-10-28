@@ -197,7 +197,7 @@ public class AuthenticationEventTests
         await Assert.That(harness.Events.Single<TwoFactorEnrolled>().UserId).IsEqualTo(user.Id);
 
         harness.Clock.Now = harness.Clock.Now.AddSeconds(30);
-        await harness.TwoFactor.DisableAsync(user.Id, harness.CurrentCode(secret));
+        await harness.TwoFactor.DisableAsync(user.Id, harness.CurrentCode(secret), harness.ManagementProof);
 
         await Assert.That(harness.Events.Single<TwoFactorDisabled>().UserId).IsEqualTo(user.Id);
 
@@ -232,7 +232,7 @@ public class AuthenticationEventTests
 
         await harness.EnrolAsync(user.Id);
 
-        var result = await harness.TwoFactor.DisableAsync(user.Id, "000000");
+        var result = await harness.TwoFactor.DisableAsync(user.Id, "000000", harness.ManagementProof);
 
         await Assert.That(result.Succeeded).IsFalse();
 
@@ -251,7 +251,7 @@ public class AuthenticationEventTests
 
         var (_, codes) = await harness.EnrolAsync(user.Id);
 
-        var result = await harness.TwoFactor.DisableAsync(user.Id, codes[0]);
+        var result = await harness.TwoFactor.DisableAsync(user.Id, codes[0], harness.ManagementProof);
 
         await Assert.That(result.Succeeded).IsTrue();
 

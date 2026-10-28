@@ -138,7 +138,7 @@ public class PasswordlessTwoFactorLockoutTests
         harness.Clock.Now += TimeSpan.FromSeconds(30);
         harness.TwoFactorStore.LoseNextStep = true;
 
-        var lost = await harness.TwoFactor.DisableAsync(user.Id, harness.CurrentCode(secret));
+        var lost = await harness.TwoFactor.DisableAsync(user.Id, harness.CurrentCode(secret), harness.ManagementProof);
 
         await Assert.That(lost.Succeeded).IsFalse();
         await Assert.That((await harness.TwoFactorStore.FindAsync(user.Id))!.FailedAttemptCount).IsEqualTo(0);
@@ -175,7 +175,7 @@ public class PasswordlessTwoFactorLockoutTests
         for (var i = 0; i < harness.Options.MaxFailedAttempts + 1; i++)
         {
             harness.Clock.Now += TimeSpan.FromSeconds(30);
-            await harness.TwoFactor.DisableAsync(user.Id, "000000");
+            await harness.TwoFactor.DisableAsync(user.Id, "000000", harness.ManagementProof);
         }
 
         await Assert.That(harness.Events.OfKind<AccountLockedOut>()).HasCount().EqualTo(1);

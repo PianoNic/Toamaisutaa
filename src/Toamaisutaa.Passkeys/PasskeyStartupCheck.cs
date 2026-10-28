@@ -19,6 +19,15 @@ internal sealed class PasskeyStartupCheck(
         CheckStores(problems);
         CheckCeremony(settings, problems);
 
+        // Every anonymous /assertion/begin writes a challenge row, so without the sweep the table grows
+        // as fast as anyone cares to call it.
+        if (!services.Any(descriptor => descriptor.ImplementationType == typeof(TokenCleanupService)))
+        {
+            problems.Add(
+                "Passkeys are registered but expired challenges are never deleted: every anonymous /assertion/begin "
+                + "writes a row. Call AddToamaisutaaTokenCleanup().");
+        }
+
         if (problems.Count > 0)
             throw StartupProblems.Refusal("Toamaisutaa passkeys are registered but not usable:", problems);
 

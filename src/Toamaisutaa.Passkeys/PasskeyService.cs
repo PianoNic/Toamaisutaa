@@ -615,7 +615,7 @@ internal sealed class PasskeyService(
         "Passkey registration", "Registering a passkey", "register", NeedsSecondFactorWhenEnrolled: true, AcceptsRecentSecondFactor: false);
 
     private static readonly ProvenOperation Removal = new(
-        "Passkey removal", "Removing a passkey", "remove it", NeedsSecondFactorWhenEnrolled: false, AcceptsRecentSecondFactor: true);
+        "Passkey removal", "Removing a passkey", "remove it", NeedsSecondFactorWhenEnrolled: true, AcceptsRecentSecondFactor: true);
 
     private async Task RequireLiveCredentialAsync(
         Guid userId,

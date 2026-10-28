@@ -42,11 +42,24 @@ internal sealed class TwoFactorVerifier(
         if (enrolment.IsEnabled && recoveryCodeProvider.LooksLikeRecoveryCode(code))
             return await RedeemRecoveryCodeAsync(userId, code, beforeSpending, cancellationToken);
 
-        var secret = protector.Unprotect(new ProtectedSecret(
-            enrolment.SecretCiphertext,
-            enrolment.SecretNonce,
-            enrolment.SecretTag,
-            enrolment.EncryptionKeyVersion));
+        byte[] secret;
+
+        try
+        {
+            secret = protector.Unprotect(
+                new ProtectedSecret(enrolment.SecretCiphertext, enrolment.SecretNonce, enrolment.SecretTag, enrolment.EncryptionKeyVersion),
+                SecretBinding.For(userId));
+        }
+        catch (System.Security.Cryptography.CryptographicException)
+        {
+            // Bound to another user, or altered: it was copied or edited in the database.
+            logger.LogError(
+                "Second factor refused for user {UserId}: the stored TOTP secret does not decrypt as this user's. "
+                + "It was copied from another row or altered in the database.",
+                userId);
+
+            return TwoFactorVerification.Failed;
+        }
 
         try
         {
@@ -151,7 +164,7 @@ internal sealed class TwoFactorVerifier(
         byte[] secret,
         CancellationToken cancellationToken)
     {
-        var rewrapped = protector.Protect(secret);
+        var rewrapped = protector.Protect(secret, SecretBinding.For(enrolment.UserId));
 
         // Lost to another request's rewrap or re-enrolment, which already left a current secret.
         if (!await enrolments.RewrapSecretAsync(

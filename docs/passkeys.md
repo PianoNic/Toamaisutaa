@@ -6,6 +6,7 @@ front of it is the one it belongs to.
 
 ```csharp
 builder.Services.AddToamaisutaaPasskeys(builder.Configuration);   // section "Passkeys"
+builder.Services.AddToamaisutaaTokenCleanup();                    // required, see below
 
 app.MapToamaisutaaPasskeyEndpoints();
 ```
@@ -268,6 +269,12 @@ possession alone, and the enforcement above applies to it exactly as it does to 
 
 Enrolment alone decides that, in every enforcement mode.
 
+## The cleanup sweep is required
+
+Every anonymous `/assertion/begin` writes a challenge row, so without a sweep the table grows as fast
+as anyone cares to call it. Startup refuses passkeys unless `AddToamaisutaaTokenCleanup()` is
+registered.
+
 ## What is stored
 
 Two tables, `ToamaisutaaPasskeyCredentials` and `ToamaisutaaPasskeyChallenges`. Run the migration
@@ -288,9 +295,10 @@ A challenge is spent the moment it is redeemed, whether or not the assertion the
 uses. `404` covers both a passkey that does not exist and one belonging to somebody else, so the
 endpoint cannot be used to find out which ids are real.
 
-It takes proof as registering does - `{ "currentPassword": "..." }` in the body, or a second factor
-within `Passkeys:RegistrationProofWindow` - and answers `400` without it. Unlike registering, the
-password alone is enough even on an account with a second factor.
+It takes proof as registering does, and answers `400` without it: on an account with a TOTP
+enrolment, a `code` in the body; otherwise `currentPassword`, or a second factor within
+`Passkeys:RegistrationProofWindow`. A stolen token plus a phished password would otherwise remove the
+owner's passkey and leave them nothing but that password.
 
 Deleting one ends every session on the account, including the one that asked, since nothing records
 which session a given key opened. Sign in again afterwards.
