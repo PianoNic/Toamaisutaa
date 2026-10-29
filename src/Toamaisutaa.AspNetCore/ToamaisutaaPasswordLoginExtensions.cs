@@ -68,6 +68,12 @@ public static class ToamaisutaaPasswordLoginExtensions
         services.AddOptions<ToamaisutaaTrustedDeviceOptions>();
         services.TryAddScoped<TrustedDeviceGate>();
 
+        // A method of the application's own replaces the code: registered before this call it wins the
+        // TryAdd, registered after it is the one resolved.
+        services.TryAddScoped<EmailVerificationGate>();
+        services.TryAddSingleton<EmailVerificationCodeHashes>();
+        services.TryAddScoped<IEmailVerificationMethod, EmailVerificationCodeMethod>();
+
         services.TryAddScoped<AuthenticationEventPublisher>();
         Toamaisutaa.AspNetCore.HttpContextAuthenticationActor.Register(services);
 

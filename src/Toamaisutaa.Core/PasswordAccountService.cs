@@ -37,6 +37,10 @@ internal sealed class PasswordAccountService(
         if (!string.IsNullOrWhiteSpace(request.Email) && !IsBareAddress(request.Email))
             return AccountResult.Failure(NotABareAddress);
 
+        // Without one there is nothing to confirm, and the account could never sign in.
+        if (options.Value.RequireVerifiedEmailForSignIn && string.IsNullOrWhiteSpace(request.Email))
+            return AccountResult.Failure("Give an email address. It has to be confirmed before you can sign in.");
+
         var errors = await validator.ValidateAsync(request.Password, cancellationToken);
         if (errors.Count > 0)
             return new AccountResult { Succeeded = false, Errors = errors };
@@ -70,11 +74,12 @@ internal sealed class PasswordAccountService(
         logger.LogInformation("Registered local account for user {UserId}.", user.Id);
         await events.PublishAsync(new AccountCreated { OccurredAt = now, UserId = user.Id, Source = "registration" }, cancellationToken);
 
-        var tokens = await signIn.SignInAsync(
+        // With RequireVerifiedEmailForSignIn this answers with the challenge and mails the first proof.
+        var signedIn = await signIn.SignInAsync(
             new PasswordSignInRequest { Identifier = request.UserName.Trim(), Password = request.Password },
             cancellationToken);
 
-        return new AccountResult { Succeeded = true, UserId = user.Id, Tokens = tokens.Tokens };
+        return new AccountResult { Succeeded = true, UserId = user.Id, Tokens = signedIn.Tokens, EmailVerification = signedIn.EmailVerification };
     }
 
     public async Task<AccountResult> SetPasswordAsync(
@@ -179,6 +184,13 @@ internal sealed class PasswordAccountService(
 
         if (password is null && string.IsNullOrWhiteSpace(email))
             return AccountResult.Failure(NowhereToDeliver);
+
+        if (options.Value.RequireVerifiedEmailForSignIn && string.IsNullOrWhiteSpace(email))
+        {
+            return AccountResult.Failure(
+                "LocalLogin:RequireVerifiedEmailForSignIn is on, so an account needs an email address to confirm before it "
+                + "can sign in. Give one, or send an invitation instead.");
+        }
 
         var adminNotifier = ResolveAdminPasswordNotifier();
         var effectivePassword = password ?? AdminPasswordGenerator.Generate();
@@ -1074,45 +1086,8 @@ internal sealed class PasswordAccountService(
         await emailVerificationTokens.InvalidateAllForUserAsync(userId, now, cancellationToken);
     }
 
-    /// <summary>
-    /// A proven claim outranks an unproven hold, or anybody could register someone else's address first
-    /// and lock the real owner out.
-    /// </summary>
-    private async Task ReleaseUnverifiedHoldAsync(
-        string normalizedEmail,
-        Guid claimant,
-        DateTimeOffset now,
-        CancellationToken cancellationToken)
-    {
-        var holder = await credentials.FindByNormalizedEmailAsync(normalizedEmail, cancellationToken);
-        if (holder is null || holder.UserId == claimant || holder.EmailConfirmedAt is not null)
-            return;
-
-        // Read now: the update below clears it on this same instance.
-        var releasedEmail = holder.Email ?? normalizedEmail;
-
-        await credentials.UpdateAsync(
-            holder,
-            current =>
-            {
-                if (current.EmailConfirmedAt is not null || current.NormalizedEmail != normalizedEmail)
-                    return;
-
-                current.Email = null;
-                current.NormalizedEmail = null;
-                current.UpdatedAt = now;
-            },
-            cancellationToken);
-
-        logger.LogWarning(
-            "Released the unverified email address held by user {HolderId}: user {ClaimantId} proved they own it.",
-            holder.UserId,
-            claimant);
-
-        await events.PublishAsync(
-            new EmailAddressReleased { OccurredAt = now, UserId = holder.UserId, Email = releasedEmail, ClaimedByUserId = claimant },
-            cancellationToken);
-    }
+    private Task ReleaseUnverifiedHoldAsync(string normalizedEmail, Guid claimant, DateTimeOffset now, CancellationToken cancellationToken) =>
+        credentials.ReleaseUnverifiedHoldAsync(normalizedEmail, claimant, now, events, logger, cancellationToken);
 
     /// <summary>
     /// An unverified email hold does not count, because verifying releases it.

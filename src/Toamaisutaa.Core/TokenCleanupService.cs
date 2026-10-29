@@ -64,6 +64,12 @@ internal sealed class TokenCleanupService(
         var verifications = scope.ServiceProvider.GetService<IEmailVerificationTokenStore>();
         var removedVerifications = verifications is null ? 0 : await verifications.DeleteExpiredAsync(now, cancellationToken);
 
+        var verificationChallenges = scope.ServiceProvider.GetService<IEmailVerificationChallengeStore>();
+        var removedVerificationChallenges = verificationChallenges is null ? 0 : await verificationChallenges.DeleteExpiredAsync(now, cancellationToken);
+
+        var verificationCodes = scope.ServiceProvider.GetService<IEmailVerificationCodeStore>();
+        removedVerificationChallenges += verificationCodes is null ? 0 : await verificationCodes.DeleteExpiredAsync(now, cancellationToken);
+
         var magicLinks = scope.ServiceProvider.GetService<IMagicLinkTokenStore>();
         var removedMagicLinks = magicLinks is null ? 0 : await magicLinks.DeleteExpiredAsync(now, cancellationToken);
 
@@ -77,14 +83,15 @@ internal sealed class TokenCleanupService(
         var removedExternalLogins = externalLogins is null ? 0 : await externalLogins.DeleteExpiredAsync(now, cancellationToken);
 
         var removed = removedRefresh + removedReset + removedChallenges + removedDevices + removedInvitations
-            + removedVerifications + removedMagicLinks + removedPasskeyChallenges + removedThrottles + removedExternalLogins;
+            + removedVerifications + removedVerificationChallenges + removedMagicLinks + removedPasskeyChallenges + removedThrottles + removedExternalLogins;
 
         if (removed > 0)
         {
             logger.LogInformation(
                 "Removed {RefreshTokens} expired refresh token(s), {ResetTokens} expired reset token(s), {Challenges} "
                 + "expired two-factor challenge(s), {Devices} expired trusted device row(s), {Invitations} expired "
-                + "invitation token(s), {Verifications} expired email verification token(s), {MagicLinks} expired "
+                + "invitation token(s), {Verifications} expired email verification token(s), {VerificationCodes} expired "
+                + "email verification code and challenge row(s), {MagicLinks} expired "
                 + "magic-link token(s), {PasskeyChallenges} expired passkey challenge(s), {Throttles} spent sign-in "
                 + "throttle row(s) and {ExternalLogins} expired external sign-in(s).",
                 removedRefresh,
@@ -93,6 +100,7 @@ internal sealed class TokenCleanupService(
                 removedDevices,
                 removedInvitations,
                 removedVerifications,
+                removedVerificationChallenges,
                 removedMagicLinks,
                 removedPasskeyChallenges,
                 removedThrottles,

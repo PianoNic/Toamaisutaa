@@ -146,6 +146,7 @@ internal sealed class PasswordHarness
             new DummyPasswordHash(Hasher),
             gate,
             deviceGate,
+            new EmailVerificationGate(provider, publisher, wrapped, NullLogger<EmailVerificationGate>.Instance),
             new SignInThrottle(Throttles, wrapped),
             Metrics,
             publisher,

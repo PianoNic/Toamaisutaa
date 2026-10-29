@@ -34,6 +34,15 @@ public sealed record ChangeEmailRequest(string NewEmail, string CurrentPassword)
 
 public sealed record VerifyEmailRequest(string Token);
 
+/// <summary>
+/// Answers an email-verification challenge from <c>/auth/register</c> or <c>/auth/login</c>.
+/// <see cref="Code"/> is what was mailed: six digits, for the default method.
+/// </summary>
+public sealed record VerifyEmailCodeRequest(string Challenge, string Code);
+
+/// <summary>Asks for another proof for an email-verification challenge.</summary>
+public sealed record ResendEmailCodeRequest(string Challenge);
+
 /// <summary>The address a magic link is asked for. Answered identically whether or not it belongs to
 /// anybody.</summary>
 public sealed record MagicLinkRequest(string Email);

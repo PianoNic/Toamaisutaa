@@ -22,6 +22,84 @@ namespace Toamaisutaa.EntityFrameworkCore.Migrations.Postgres.Migrations
 
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
 
+            modelBuilder.Entity("Toamaisutaa.Abstractions.ToamaisutaaEmailVerificationChallenge", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid");
+
+                    b.Property<long?>("ConsumedAt")
+                        .HasColumnType("bigint");
+
+                    b.Property<long>("CreatedAt")
+                        .HasColumnType("bigint");
+
+                    b.Property<long>("ExpiresAt")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("NormalizedEmail")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)");
+
+                    b.Property<string>("SecurityStamp")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<string>("TokenHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TokenHash")
+                        .IsUnique();
+
+                    b.HasIndex("UserId");
+
+                    b.ToTable("ToamaisutaaEmailVerificationChallenges", (string)null);
+                });
+
+            modelBuilder.Entity("Toamaisutaa.Abstractions.ToamaisutaaEmailVerificationCode", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("CodeHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<long?>("ConsumedAt")
+                        .HasColumnType("bigint");
+
+                    b.Property<long>("CreatedAt")
+                        .HasColumnType("bigint");
+
+                    b.Property<long>("ExpiresAt")
+                        .HasColumnType("bigint");
+
+                    b.Property<int>("FailedAttempts")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("NormalizedEmail")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("UserId");
+
+                    b.ToTable("ToamaisutaaEmailVerificationCodes", (string)null);
+                });
+
             modelBuilder.Entity("Toamaisutaa.Abstractions.ToamaisutaaEmailVerificationToken", b =>
                 {
                     b.Property<Guid>("Id")
@@ -800,6 +878,24 @@ namespace Toamaisutaa.EntityFrameworkCore.Migrations.Postgres.Migrations
                     b.HasKey("UserId");
 
                     b.ToTable("ToamaisutaaUserTwoFactors", (string)null);
+                });
+
+            modelBuilder.Entity("Toamaisutaa.Abstractions.ToamaisutaaEmailVerificationChallenge", b =>
+                {
+                    b.HasOne("Toamaisutaa.Abstractions.ToamaisutaaUser", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Toamaisutaa.Abstractions.ToamaisutaaEmailVerificationCode", b =>
+                {
+                    b.HasOne("Toamaisutaa.Abstractions.ToamaisutaaUser", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("Toamaisutaa.Abstractions.ToamaisutaaEmailVerificationToken", b =>

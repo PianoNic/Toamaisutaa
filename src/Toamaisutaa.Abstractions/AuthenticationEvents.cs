@@ -63,6 +63,15 @@ public sealed record MagicLinkRequested : AuthenticationEvent
     public override string Kind => "magic-link-requested";
 }
 
+/// <summary>A proof for an unverified address was sent, at registration, sign-in or a resend.</summary>
+public sealed record EmailVerificationSent : AuthenticationEvent
+{
+    public override string Kind => "email-verification-sent";
+
+    /// <summary><see cref="IEmailVerificationMethod.Name"/>: <c>code</c> for the default.</summary>
+    public required string Method { get; init; }
+}
+
 /// <summary>A verification link for a new address was issued; nothing has moved until it is redeemed.</summary>
 public sealed record EmailChangeRequested : AuthenticationEvent
 {
@@ -180,7 +189,7 @@ public sealed record AccountEnabled : AuthenticationEvent
 }
 
 /// <summary>
-/// A verification link was redeemed, so the account's login identifier and the address every reset
+/// A verification link or code was redeemed, so the account's login identifier and the address every reset
 /// link and magic link is sent to are now the ones that link named.
 /// </summary>
 /// <remarks>

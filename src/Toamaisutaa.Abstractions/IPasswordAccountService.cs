@@ -188,6 +188,13 @@ public sealed record AccountResult
 
     public TokenPair? Tokens { get; init; }
 
+    /// <summary>
+    /// Set instead of <see cref="Tokens"/> by a registration that
+    /// <see cref="ToamaisutaaLocalLoginOptions.RequireVerifiedEmailForSignIn"/> holds back: the account
+    /// exists, and signs in once its address is confirmed.
+    /// </summary>
+    public EmailVerificationChallenge? EmailVerification { get; init; }
+
     /// <summary>The user name or email is already taken, answered as 409 rather than 400.</summary>
     public bool Conflict { get; init; }
 

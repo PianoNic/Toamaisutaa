@@ -17,6 +17,84 @@ namespace Toamaisutaa.EntityFrameworkCore.Migrations.Sqlite.Migrations
 #pragma warning disable 612, 618
             modelBuilder.HasAnnotation("ProductVersion", "10.0.10");
 
+            modelBuilder.Entity("Toamaisutaa.Abstractions.ToamaisutaaEmailVerificationChallenge", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("TEXT");
+
+                    b.Property<long?>("ConsumedAt")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<long>("CreatedAt")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<long>("ExpiresAt")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("NormalizedEmail")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("SecurityStamp")
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("TokenHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TokenHash")
+                        .IsUnique();
+
+                    b.HasIndex("UserId");
+
+                    b.ToTable("ToamaisutaaEmailVerificationChallenges", (string)null);
+                });
+
+            modelBuilder.Entity("Toamaisutaa.Abstractions.ToamaisutaaEmailVerificationCode", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("CodeHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
+
+                    b.Property<long?>("ConsumedAt")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<long>("CreatedAt")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<long>("ExpiresAt")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("FailedAttempts")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("NormalizedEmail")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("UserId");
+
+                    b.ToTable("ToamaisutaaEmailVerificationCodes", (string)null);
+                });
+
             modelBuilder.Entity("Toamaisutaa.Abstractions.ToamaisutaaEmailVerificationToken", b =>
                 {
                     b.Property<Guid>("Id")
@@ -795,6 +873,24 @@ namespace Toamaisutaa.EntityFrameworkCore.Migrations.Sqlite.Migrations
                     b.HasKey("UserId");
 
                     b.ToTable("ToamaisutaaUserTwoFactors", (string)null);
+                });
+
+            modelBuilder.Entity("Toamaisutaa.Abstractions.ToamaisutaaEmailVerificationChallenge", b =>
+                {
+                    b.HasOne("Toamaisutaa.Abstractions.ToamaisutaaUser", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Toamaisutaa.Abstractions.ToamaisutaaEmailVerificationCode", b =>
+                {
+                    b.HasOne("Toamaisutaa.Abstractions.ToamaisutaaUser", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("Toamaisutaa.Abstractions.ToamaisutaaEmailVerificationToken", b =>

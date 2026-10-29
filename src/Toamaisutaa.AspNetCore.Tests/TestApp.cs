@@ -34,6 +34,7 @@ internal sealed class TestApp : IAsyncDisposable
         List<(Guid UserId, string Password)> issuedPasswords,
         List<(Guid UserId, string Token)> issuedInvitations,
         List<(Guid UserId, string Email, string Token)> issuedEmailVerifications,
+        List<(Guid UserId, string Email, string Code)> issuedEmailCodes,
         List<(Guid UserId, string Token)> issuedMagicLinks)
     {
         _app = app;
@@ -43,6 +44,7 @@ internal sealed class TestApp : IAsyncDisposable
         IssuedPasswords = issuedPasswords;
         IssuedInvitations = issuedInvitations;
         IssuedEmailVerifications = issuedEmailVerifications;
+        IssuedEmailCodes = issuedEmailCodes;
         IssuedMagicLinks = issuedMagicLinks;
     }
 
@@ -71,6 +73,9 @@ internal sealed class TestApp : IAsyncDisposable
     public List<(Guid UserId, string Email, string Token)> IssuedEmailVerifications { get; }
 
     public List<(Guid UserId, string Token)> IssuedMagicLinks { get; }
+
+    /// <summary>What the notifier was handed to mail when a sign-in waits on a confirmed address.</summary>
+    public List<(Guid UserId, string Email, string Code)> IssuedEmailCodes { get; }
 
     /// <summary>
     /// Anchored at the real clock and never moved far, because the bearer handler validates
@@ -174,6 +179,7 @@ internal sealed class TestApp : IAsyncDisposable
         var issuedPasswords = new List<(Guid UserId, string Password)>();
         var issuedInvitations = new List<(Guid UserId, string Token)>();
         var issuedEmailVerifications = new List<(Guid UserId, string Email, string Token)>();
+        var issuedEmailCodes = new List<(Guid UserId, string Email, string Code)>();
         var issuedMagicLinks = new List<(Guid UserId, string Token)>();
 
         if (includeAdminPasswordNotifier)
@@ -183,7 +189,7 @@ internal sealed class TestApp : IAsyncDisposable
             builder.Services.AddSingleton<IInvitationNotifier>(new CapturingInvitationNotifier(issuedInvitations));
 
         if (includeEmailVerificationNotifier)
-            builder.Services.AddSingleton<IEmailVerificationNotifier>(new CapturingEmailVerificationNotifier(issuedEmailVerifications));
+            builder.Services.AddSingleton<IEmailVerificationNotifier>(new CapturingEmailVerificationNotifier(issuedEmailVerifications, issuedEmailCodes));
 
         if (includeMagicLinkNotifier ?? includeEmailVerificationNotifier)
             builder.Services.AddSingleton<IMagicLinkNotifier>(new CapturingMagicLinkNotifier(issuedMagicLinks));
@@ -268,6 +274,7 @@ internal sealed class TestApp : IAsyncDisposable
             issuedPasswords,
             issuedInvitations,
             issuedEmailVerifications,
+            issuedEmailCodes,
             issuedMagicLinks);
     }
 
@@ -337,11 +344,19 @@ internal sealed class TestApp : IAsyncDisposable
         }
     }
 
-    private sealed class CapturingEmailVerificationNotifier(List<(Guid UserId, string Email, string Token)> sent) : IEmailVerificationNotifier
+    private sealed class CapturingEmailVerificationNotifier(
+        List<(Guid UserId, string Email, string Token)> sent,
+        List<(Guid UserId, string Email, string Code)> codes) : IEmailVerificationNotifier
     {
         public Task SendAsync(ToamaisutaaUser user, string email, string verificationToken, CancellationToken cancellationToken = default)
         {
             sent.Add((user.Id, email, verificationToken));
+            return Task.CompletedTask;
+        }
+
+        public Task SendCodeAsync(ToamaisutaaUser user, string email, string code, TimeSpan validFor, CancellationToken cancellationToken = default)
+        {
+            codes.Add((user.Id, email, code));
             return Task.CompletedTask;
         }
     }

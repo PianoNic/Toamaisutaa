@@ -32,6 +32,10 @@ internal sealed class Account(TestApp app, string userName, string password)
         return account;
     }
 
+    /// <summary>For an account that signed in some other way than <see cref="RegisterAsync"/>.</summary>
+    public static Account SignedIn(TestApp app, string userName, string accessToken) =>
+        new(app, userName, DefaultPassword) { AccessToken = accessToken };
+
     /// <summary>Asking to change to the address already held is the documented way to verify it.</summary>
     public async Task VerifyEmailAsync()
     {

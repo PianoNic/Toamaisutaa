@@ -45,6 +45,22 @@ public interface IEmailVerificationNotifier
     /// </summary>
     Task SendAddressInUseAsync(ToamaisutaaUser requester, string email, CancellationToken cancellationToken = default) =>
         Task.CompletedTask;
+
+    /// <summary>
+    /// Sends the six-digit code that confirms <paramref name="email"/> when
+    /// <see cref="ToamaisutaaLocalLoginOptions.RequireVerifiedEmailForSignIn"/> holds a sign-in back.
+    /// Called with the raw code, the only moment it exists in the clear; never log it.
+    /// </summary>
+    /// <remarks>
+    /// The default throws, and startup refuses the option with a notifier that does not implement this,
+    /// unless an <see cref="IEmailVerificationMethod"/> of your own replaces the code.
+    /// <paramref name="validFor"/> is <see cref="ToamaisutaaLocalLoginOptions.EmailVerificationCodeLifetime"/>,
+    /// for a message that says how long the code lasts.
+    /// </remarks>
+    Task SendCodeAsync(ToamaisutaaUser user, string email, string code, TimeSpan validFor, CancellationToken cancellationToken = default) =>
+        throw new NotSupportedException(
+            $"{GetType().Name} does not implement {nameof(IEmailVerificationNotifier)}.{nameof(SendCodeAsync)}, which "
+            + "LocalLogin:RequireVerifiedEmailForSignIn needs to mail a verification code.");
 }
 
 public sealed record EmailVerificationContext

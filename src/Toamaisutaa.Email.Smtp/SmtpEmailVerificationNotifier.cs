@@ -39,6 +39,25 @@ internal sealed class SmtpEmailVerificationNotifier(
         logger.LogInformation("Email verification sent for user {UserId}.", user.Id);
     }
 
+    public async Task SendCodeAsync(
+        ToamaisutaaUser user,
+        string email,
+        string code,
+        TimeSpan validFor,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(user);
+        ArgumentNullException.ThrowIfNull(email);
+        ArgumentNullException.ThrowIfNull(code);
+
+        var content = template.BuildCode(user, email, code, validFor);
+        var message = SmtpMessages.Create(options.Value, email, content.Subject, content.PlainTextBody, content.HtmlBody);
+
+        await sender.SendAsync(message, cancellationToken).ConfigureAwait(false);
+
+        logger.LogInformation("Email verification code sent for user {UserId}.", user.Id);
+    }
+
     public async Task SendAddressInUseAsync(ToamaisutaaUser requester, string email, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(requester);
