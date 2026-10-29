@@ -31,6 +31,10 @@ public static class ToamaisutaaEntityFrameworkServiceCollectionExtensions
         services.TryAddScoped<IEmailVerificationTokenStore>(provider => provider.GetRequiredService<EntityFrameworkPasswordStore<TContext>>());
         services.TryAddScoped<IMagicLinkTokenStore>(provider => provider.GetRequiredService<EntityFrameworkPasswordStore<TContext>>());
 
+        services.TryAddScoped<EntityFrameworkEmailVerificationStore<TContext>>();
+        services.TryAddScoped<IEmailVerificationChallengeStore>(provider => provider.GetRequiredService<EntityFrameworkEmailVerificationStore<TContext>>());
+        services.TryAddScoped<IEmailVerificationCodeStore>(provider => provider.GetRequiredService<EntityFrameworkEmailVerificationStore<TContext>>());
+
         services.TryAddScoped<ISignInThrottleStore, EntityFrameworkSignInThrottleStore<TContext>>();
 
         services.TryAddScoped<EntityFrameworkTwoFactorStore<TContext>>();

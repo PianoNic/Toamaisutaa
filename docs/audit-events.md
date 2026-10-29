@@ -58,7 +58,7 @@ cannot promise.
 | `password-changed` | A password was set with proof of the old one, or by an administrator | `SetByAdministrator` |
 | `password-reset` | A password was set by spending a reset token | |
 | `email-address-released` | An account lost an address it held unverified, because another proved the mailbox | `Email`, `ClaimedByUserId` |
-| `email-changed` | A verification link was redeemed, so the address is now the one it named | `PreviousEmail`, `Email` |
+| `email-changed` | A verification link or code was redeemed, so the address is now the one it named | `PreviousEmail`, `Email` |
 | `two-factor-enrolled` | An enrolment was confirmed with a working code | |
 | `two-factor-disabled` | A confirmed second factor was turned off | |
 | `two-factor-failed` | A second factor was presented and refused | `Reason` |
@@ -74,6 +74,7 @@ cannot promise.
 | `password-reset-requested` | A reset link was issued (an unknown or unverified address issues nothing, and publishes nothing) | |
 | `magic-link-requested` | A sign-in link was issued | |
 | `email-change-requested` | A verification link for a new address was issued | `Email` |
+| `email-verification-sent` | A code (or your own method's proof) went to an unverified address at registration, sign-in or a resend | `Method` |
 | `external-login-authenticated` | A provider vouched for the account; the `sign-in-succeeded` with `fed` follows the exchange | `ProviderKey` |
 | `external-login-linked` | A provider was linked, by the owner or by a verified address | `ProviderKey` |
 | `external-login-unlinked` | The owner removed a linked provider | `ProviderKey` |

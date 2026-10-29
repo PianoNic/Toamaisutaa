@@ -41,6 +41,10 @@ public class ToamaisutaaDbContext : DbContext
 
     public DbSet<ToamaisutaaEmailVerificationToken> EmailVerificationTokens => Set<ToamaisutaaEmailVerificationToken>();
 
+    public DbSet<ToamaisutaaEmailVerificationChallenge> EmailVerificationChallenges => Set<ToamaisutaaEmailVerificationChallenge>();
+
+    public DbSet<ToamaisutaaEmailVerificationCode> EmailVerificationCodes => Set<ToamaisutaaEmailVerificationCode>();
+
     public DbSet<ToamaisutaaMagicLinkToken> MagicLinkTokens => Set<ToamaisutaaMagicLinkToken>();
 
     public DbSet<ToamaisutaaUserTwoFactor> UserTwoFactors => Set<ToamaisutaaUserTwoFactor>();

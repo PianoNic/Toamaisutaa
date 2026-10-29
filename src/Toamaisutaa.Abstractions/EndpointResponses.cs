@@ -77,6 +77,38 @@ public sealed record TwoFactorChallengeResponse
 }
 
 /// <summary>
+/// The third success shape of <c>/auth/login</c>, and the second of <c>/auth/register</c>: the password
+/// is right but the address has never been confirmed, and
+/// <see cref="ToamaisutaaLocalLoginOptions.RequireVerifiedEmailForSignIn"/> is on, so there are no
+/// tokens yet.
+/// </summary>
+/// <remarks>
+/// Present <see cref="Challenge"/> with what was sent to <c>/auth/email/verify-code</c>, or to
+/// <c>/auth/email/resend-code</c> for another.
+/// </remarks>
+public sealed record EmailVerificationChallengeResponse
+{
+    /// <summary>Always <see langword="true"/>. It exists so a client can branch on one field.</summary>
+    [JsonPropertyName("email_verification_required")]
+    public bool EmailVerificationRequired { get; init; } = true;
+
+    [JsonPropertyName("challenge")]
+    public required string Challenge { get; init; }
+
+    /// <summary>Seconds until the challenge expires. The code itself may expire sooner.</summary>
+    [JsonPropertyName("expires_in")]
+    public required int ExpiresIn { get; init; }
+
+    /// <summary>Which screen to show: <c>code</c> for the default, a six-digit field.</summary>
+    [JsonPropertyName("method")]
+    public required string Method { get; init; }
+
+    /// <summary>Where it was sent, masked: <c>a***@example.com</c>.</summary>
+    [JsonPropertyName("email")]
+    public required string Email { get; init; }
+}
+
+/// <summary>
 /// What <c>/auth/2fa/step-up</c> returns: a challenge for a session that is already signed in.
 /// </summary>
 /// <remarks>

@@ -178,8 +178,30 @@ public sealed class ToamaisutaaLocalLoginOptions
     /// </remarks>
     public bool RequireVerifiedEmailForPasswordReset { get; set; } = true;
 
+    /// <summary>
+    /// Off by default. A password sign-in, a registration and a refresh of a password session issue no
+    /// tokens for a credential whose address was never verified; the password is answered with an
+    /// email-verification challenge instead, and the address is proven by whatever
+    /// <see cref="IEmailVerificationMethod"/> is registered - a six-digit code by default.
+    /// </summary>
+    /// <remarks>
+    /// Turning it on stops every unverified account signing in with a password until it confirms its
+    /// address, and refuses their refresh tokens. A credential with no address at all cannot be
+    /// confirmed, so it cannot sign in with a password either.
+    /// </remarks>
+    public bool RequireVerifiedEmailForSignIn { get; set; }
+
+    /// <summary>How long a mailed verification code stays valid. Asking for another retires it.</summary>
+    public TimeSpan EmailVerificationCodeLifetime { get; set; } = TimeSpan.FromMinutes(15);
+
+    /// <summary>
+    /// How long the challenge handed back instead of tokens can be answered or used to ask for another
+    /// code. Past it, signing in again starts a new one.
+    /// </summary>
+    public TimeSpan EmailVerificationChallengeLifetime { get; set; } = TimeSpan.FromHours(1);
+
     /// <summary>How often the opt-in cleanup service deletes expired refresh, reset, invitation,
-    /// email-verification and magic-link rows, plus expired two-factor challenge, trusted-device
+    /// email-verification (links, codes and challenges) and magic-link rows, plus expired two-factor challenge, trusted-device
     /// and passkey-challenge rows when those features are registered.</summary>
     public TimeSpan TokenCleanupInterval { get; set; } = TimeSpan.FromHours(6);
 

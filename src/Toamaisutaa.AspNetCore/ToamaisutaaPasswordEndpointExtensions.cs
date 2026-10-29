@@ -48,8 +48,12 @@ public static class ToamaisutaaPasswordEndpointExtensions
                 + "confirmed second factor it is instead a challenge and no tokens:\n\n"
                 + "```json\n{ \"two_factor_required\": true, \"challenge\": \"No1CXq9-...\", \"expires_in\": 300 }\n```\n\n"
                 + "Branch on `two_factor_required`, which is absent from the token shape. Present "
-                + "the challenge with a code to `/auth/2fa/verify` to finish signing in.")
+                + "the challenge with a code to `/auth/2fa/verify` to finish signing in.\n\n"
+                + "With `LocalLogin:RequireVerifiedEmailForSignIn` on, an account whose address was never confirmed "
+                + "gets a third: `{ \"email_verification_required\": true, \"challenge\": \"...\", \"method\": \"code\", ... }`, "
+                + "answered at `/auth/email/verify-code`.")
             .Produces<TwoFactorChallengeResponse>()
+            .Produces<EmailVerificationChallengeResponse>()
             .Produces<TokenResponse>()
             .Produces<ErrorResponse>(StatusCodes.Status401Unauthorized)
             .Produces(StatusCodes.Status429TooManyRequests);
@@ -101,7 +105,10 @@ public static class ToamaisutaaPasswordEndpointExtensions
                 .AddEndpointFilter<PasswordRateLimitFilter>()
                 .WithName($"{endpointNamePrefix}ToamaisutaaRegister")
                 .WithSummary("Creates a local account and signs it in.")
-                .WithDescription("Mapped only when `LocalLogin:AllowSelfRegistration` is true.")
+                .WithDescription(
+                    "Mapped only when `LocalLogin:AllowSelfRegistration` is true. With "
+                    + "`LocalLogin:RequireVerifiedEmailForSignIn` on, `email` is required and the 201 carries an "
+                    + "email-verification challenge instead of tokens; a code has been mailed to the address.")
                 .Produces<TokenResponse>(StatusCodes.Status201Created)
                 .Produces<ValidationErrorResponse>(StatusCodes.Status400BadRequest)
                 .Produces<ValidationErrorResponse>(StatusCodes.Status409Conflict)
@@ -170,6 +177,41 @@ public static class ToamaisutaaPasswordEndpointExtensions
                 .Produces(StatusCodes.Status204NoContent)
                 .Produces<ValidationErrorResponse>(StatusCodes.Status400BadRequest)
                 .Produces<ValidationErrorResponse>(StatusCodes.Status409Conflict);
+        }
+
+        if (options.RequireVerifiedEmailForSignIn)
+        {
+            group.MapPost("/email/verify-code", VerifyEmailCodeAsync)
+                .AllowAnonymous()
+                .AddEndpointFilter<PasswordRateLimitFilter>()
+                .WithName($"{endpointNamePrefix}ToamaisutaaVerifyEmailCode")
+                .WithSummary("Confirms the address a sign-in was held back for, and finishes signing in.")
+                .WithDescription(
+                    "Answers the `email_verification_required` challenge from `/auth/register` or `/auth/login`. A token pair, "
+                    + "or the two-factor challenge for an account with a second factor. **400** `invalid_code` is a wrong "
+                    + "code that may be tried again; **400** `code_expired` means none is outstanding any more - expired, "
+                    + "spent, or tried too often - so offer `/auth/email/resend-code`. **401** means the challenge itself is "
+                    + "done: sign in again. Wrong codes count toward the account's lockout. Mapped only when "
+                    + "`LocalLogin:RequireVerifiedEmailForSignIn` is on.")
+                .Produces<TokenResponse>()
+                .Produces<TwoFactorChallengeResponse>()
+                .Produces<ErrorResponse>(StatusCodes.Status400BadRequest)
+                .Produces<ErrorResponse>(StatusCodes.Status401Unauthorized)
+                .Produces(StatusCodes.Status429TooManyRequests);
+
+            group.MapPost("/email/resend-code", ResendEmailCodeAsync)
+                .AllowAnonymous()
+                .AddEndpointFilter<PasswordRateLimitFilter>()
+                .WithName($"{endpointNamePrefix}ToamaisutaaResendEmailCode")
+                .WithSummary("Sends another code for an email-verification challenge.")
+                .WithDescription(
+                    "Retires the code sent before. **429** inside `LocalLogin:MailRequestCooldown` of the last one, with "
+                    + "`Retry-After`. **401** means the challenge is done: sign in again. Mapped only when "
+                    + "`LocalLogin:RequireVerifiedEmailForSignIn` is on.")
+                .Produces(StatusCodes.Status204NoContent)
+                .Produces<ErrorResponse>(StatusCodes.Status401Unauthorized)
+                .Produces<ValidationErrorResponse>(StatusCodes.Status429TooManyRequests)
+                .Produces<ErrorResponse>(StatusCodes.Status502BadGateway);
         }
 
         if (endpoints.ServiceProvider.GetService<IMagicLinkNotifier>() is not null)
@@ -391,6 +433,9 @@ public static class ToamaisutaaPasswordEndpointExtensions
             });
         }
 
+        if (result.Outcome == SignInOutcome.EmailVerificationRequired && result.EmailVerification is { } verification)
+            return EmailVerificationRequired(verification, StatusCodes.Status200OK);
+
         if (result.Succeeded)
             return SignInSucceeded(result);
 
@@ -429,6 +474,105 @@ public static class ToamaisutaaPasswordEndpointExtensions
             },
             statusCode: statusCode);
 
+    internal static IResult EmailVerificationRequired(EmailVerificationChallenge challenge, int statusCode) =>
+        Results.Json(
+            new EmailVerificationChallengeResponse
+            {
+                Challenge = challenge.Token,
+                ExpiresIn = challenge.ExpiresIn,
+                Method = challenge.Method,
+                Email = challenge.Email,
+            },
+            statusCode: statusCode);
+
+    private static async Task<IResult> VerifyEmailCodeAsync(
+        VerifyEmailCodeRequest request,
+        HttpContext context,
+        IPasswordSignInService signIn,
+        CancellationToken cancellationToken)
+    {
+        if (request is null || string.IsNullOrWhiteSpace(request.Challenge))
+            return SignInFailed();
+
+        if (string.IsNullOrWhiteSpace(request.Code))
+            return InvalidCode();
+
+        var result = await signIn.VerifyEmailChallengeAsync(
+            new EmailVerificationSignInRequest
+            {
+                ChallengeToken = request.Challenge,
+                Proof = request.Code,
+                UserAgent = context.Request.Headers.UserAgent.ToString(),
+                IpAddress = context.Connection.RemoteIpAddress?.ToString(),
+            },
+            cancellationToken);
+
+        if (result.Outcome == SignInOutcome.TwoFactorRequired && result.Challenge is { } challenge)
+        {
+            return Results.Ok(new TwoFactorChallengeResponse
+            {
+                Challenge = challenge.Token,
+                ExpiresIn = challenge.ExpiresIn,
+                SecondFactors = challenge.SecondFactors,
+            });
+        }
+
+        // Only somebody who typed the password holds a challenge, so telling a wrong code from a spent one
+        // tells nobody anything new.
+        return result.Outcome switch
+        {
+            SignInOutcome.Succeeded => SignInSucceeded(result),
+            SignInOutcome.InvalidEmailVerificationCode => InvalidCode(),
+            SignInOutcome.EmailVerificationCodeExpired => Results.Json(
+                new ErrorResponse
+                {
+                    Error = "code_expired",
+                    ErrorDescription = "That code has expired or was tried too many times. Ask for a new one.",
+                },
+                statusCode: StatusCodes.Status400BadRequest),
+            _ => SignInFailed(),
+        };
+    }
+
+    private static IResult InvalidCode() =>
+        Results.Json(
+            new ErrorResponse { Error = "invalid_code", ErrorDescription = "That code is not right. Check it and try again." },
+            statusCode: StatusCodes.Status400BadRequest);
+
+    private static async Task<IResult> ResendEmailCodeAsync(
+        ResendEmailCodeRequest request,
+        HttpContext context,
+        IPasswordSignInService signIn,
+        CancellationToken cancellationToken)
+    {
+        if (request is null || string.IsNullOrWhiteSpace(request.Challenge))
+            return SignInFailed();
+
+        var result = await signIn.ResendEmailVerificationAsync(request.Challenge, cancellationToken);
+
+        switch (result.Outcome)
+        {
+            case EmailVerificationResendOutcome.Sent:
+                return Results.NoContent();
+
+            case EmailVerificationResendOutcome.CoolingDown:
+                var wait = result.RetryAfter ?? TimeSpan.Zero;
+                context.Response.Headers.RetryAfter = ((int)Math.Ceiling(wait.TotalSeconds)).ToString(System.Globalization.CultureInfo.InvariantCulture);
+
+                return Results.Json(
+                    new ValidationErrorResponse { Errors = [$"A code was sent a moment ago. Wait {Spoken(wait)} before asking for another."] },
+                    statusCode: StatusCodes.Status429TooManyRequests);
+
+            case EmailVerificationResendOutcome.NotificationFailed:
+                return Results.Json(
+                    new ErrorResponse { Error = "notification_failed", ErrorDescription = "The code could not be sent. Try again in a moment." },
+                    statusCode: StatusCodes.Status502BadGateway);
+
+            default:
+                return SignInFailed();
+        }
+    }
+
     private static async Task<IResult> RefreshAsync(
         RefreshRequest request,
         IPasswordSignInService signIn,
@@ -462,6 +606,9 @@ public static class ToamaisutaaPasswordEndpointExtensions
             return Results.BadRequest();
 
         var result = await accounts.RegisterAsync(request, cancellationToken);
+
+        if (result.Succeeded && result.EmailVerification is { } verification)
+            return EmailVerificationRequired(verification, StatusCodes.Status201Created);
 
         if (result.Succeeded)
             return Tokens(result.Tokens!, false, null, StatusCodes.Status201Created);

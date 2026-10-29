@@ -43,6 +43,36 @@ public interface IEmailVerificationEmailTemplate
             + "account, so nothing was changed and no link was sent.</p>"
             + "<p>If that was you, you already have an account with this address: sign in to it, or reset its password.</p>",
     };
+
+    /// <summary>
+    /// The code that confirms <paramref name="email"/> before an account signs in, with
+    /// <c>LocalLogin:RequireVerifiedEmailForSignIn</c> on. Implement it for your own wording; the code is
+    /// in the clear only here, so nothing downstream logs it.
+    /// </summary>
+    /// <remarks>
+    /// No name, as in the link mails: it is whatever the registrant typed, and this goes to an address
+    /// nobody has proven yet.
+    /// </remarks>
+    EmailVerificationEmailContent BuildCode(ToamaisutaaUser user, string email, string code, TimeSpan validFor) => new()
+    {
+        Subject = $"Your verification code is {code}",
+        PlainTextBody =
+            "Hi,\n\n"
+            + $"Your verification code is {code}\n\n"
+            + $"Enter it to confirm that {email} belongs to your account. It works for {Duration(validFor)}.\n\n"
+            + "If you did not sign up or sign in, you can ignore this email.\n",
+        HtmlBody =
+            "<p>Hi,</p>"
+            + $"<p>Your verification code is <strong style=\"font-size:1.5em;letter-spacing:0.15em\">{code}</strong></p>"
+            + $"<p>Enter it to confirm that {System.Net.WebUtility.HtmlEncode(email)} belongs to your account. It works for {Duration(validFor)}.</p>"
+            + "<p>If you did not sign up or sign in, you can ignore this email.</p>",
+    };
+
+    private static string Duration(TimeSpan period) => period.TotalMinutes < 1
+        ? $"{Math.Ceiling(period.TotalSeconds)} seconds"
+        : period.TotalHours < 1
+            ? Math.Ceiling(period.TotalMinutes) is 1 ? "1 minute" : $"{Math.Ceiling(period.TotalMinutes)} minutes"
+            : Math.Ceiling(period.TotalHours) is 1 ? "1 hour" : $"{Math.Ceiling(period.TotalHours)} hours";
 }
 
 /// <summary>The subject and body <see cref="SmtpEmailVerificationNotifier"/> sends.

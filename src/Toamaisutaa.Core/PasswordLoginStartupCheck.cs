@@ -115,6 +115,9 @@ internal sealed class PasswordLoginStartupCheck(
                 + "link is only ever sent to a verified address, so no address could ever qualify and /auth/magic-link "
                 + "would answer 204 without sending anything. Register one, or drop the magic-link notifier.");
         }
+
+        if (settings.RequireVerifiedEmailForSignIn)
+            CheckSignInVerification(problems);
     }
 
     private void CheckSigningKeys(ToamaisutaaLocalLoginOptions settings, List<string> problems)
@@ -235,6 +238,57 @@ internal sealed class PasswordLoginStartupCheck(
         {
             return false;
         }
+    }
+
+    private void CheckSignInVerification(List<string> problems)
+    {
+        if (!IsRegistered(typeof(IEmailVerificationChallengeStore)))
+        {
+            problems.Add(
+                $"LocalLogin:RequireVerifiedEmailForSignIn is on but no {nameof(IEmailVerificationChallengeStore)} is registered. "
+                + "Call AddToamaisutaaEntityFrameworkStores<TContext>() or AddToamaisutaaDbContext(...), or register one yourself.");
+        }
+
+        // The last registration is the one resolved; anything but the default brings its own delivery.
+        var method = services.LastOrDefault(descriptor => descriptor.ServiceType == typeof(IEmailVerificationMethod));
+        if (method?.ImplementationType != typeof(EmailVerificationCodeMethod))
+            return;
+
+        if (!IsRegistered(typeof(IEmailVerificationCodeStore)))
+        {
+            problems.Add(
+                $"LocalLogin:RequireVerifiedEmailForSignIn is on with the default code method but no {nameof(IEmailVerificationCodeStore)} "
+                + "is registered. Call AddToamaisutaaEntityFrameworkStores<TContext>() or AddToamaisutaaDbContext(...), or register one yourself.");
+        }
+
+        var notifier = services.LastOrDefault(descriptor => descriptor.ServiceType == typeof(IEmailVerificationNotifier));
+
+        if (notifier is null)
+        {
+            problems.Add(
+                $"LocalLogin:RequireVerifiedEmailForSignIn is on but no {nameof(IEmailVerificationNotifier)} is registered, so no "
+                + "verification code could be sent and no unverified account could ever sign in. Register one, register an "
+                + $"{nameof(IEmailVerificationMethod)} of your own, or turn the option off.");
+        }
+        else if (NotifierType(notifier) is { } type && !ImplementsSendCode(type))
+        {
+            problems.Add(
+                $"LocalLogin:RequireVerifiedEmailForSignIn is on but {type.Name} does not implement "
+                + $"{nameof(IEmailVerificationNotifier)}.{nameof(IEmailVerificationNotifier.SendCodeAsync)}, so no verification code could "
+                + $"be sent. Implement it, register an {nameof(IEmailVerificationMethod)} of your own, or turn the option off.");
+        }
+    }
+
+    /// <summary>Null for a factory registration, whose type is not known until it runs.</summary>
+    private static Type? NotifierType(ServiceDescriptor descriptor) =>
+        descriptor.IsKeyedService ? null : descriptor.ImplementationType ?? descriptor.ImplementationInstance?.GetType();
+
+    private static bool ImplementsSendCode(Type type)
+    {
+        var map = type.GetInterfaceMap(typeof(IEmailVerificationNotifier));
+        var index = Array.FindIndex(map.InterfaceMethods, method => method.Name == nameof(IEmailVerificationNotifier.SendCodeAsync));
+
+        return index >= 0 && map.TargetMethods[index].DeclaringType != typeof(IEmailVerificationNotifier);
     }
 
     private bool IsRegistered(Type serviceType)

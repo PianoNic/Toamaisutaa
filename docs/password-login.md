@@ -26,15 +26,17 @@ through OIDC is supported and touches nothing on the external side.
 
 | Method | Route | Answers |
 |---|---|---|
-| POST | `/auth/login` | 200 with a token pair, 200 with a two-factor challenge, or 401 |
+| POST | `/auth/login` | 200 with a token pair, 200 with a two-factor challenge, 200 with an email-verification challenge, or 401 |
 | POST | `/auth/refresh` | 200 with a rotated pair, or 401 |
 | POST | `/auth/logout` | 204 |
-| POST | `/auth/register` | 201, 400, or 409. Only mapped when `AllowSelfRegistration` is true |
+| POST | `/auth/register` | 201 with a token pair or an email-verification challenge, 400, or 409. Only mapped when `AllowSelfRegistration` is true |
 | POST | `/auth/password` | 204, 400, or 429. Authenticated. Sets a first password or changes an existing one |
 | POST | `/auth/password/forgot` | 204, always |
 | POST | `/auth/password/reset` | 204 or 400 |
 | POST | `/auth/email` | 204, 400, 409, or 429. Authenticated. Only mapped when an `IEmailVerificationNotifier` is registered |
 | POST | `/auth/email/verify` | 204, 400, or 409. Only mapped when an `IEmailVerificationNotifier` is registered |
+| POST | `/auth/email/verify-code` | 200 with a token pair, 200 with a two-factor challenge, 400, or 401. Only mapped when `RequireVerifiedEmailForSignIn` is true |
+| POST | `/auth/email/resend-code` | 204, 401, 429, or 502. Only mapped when `RequireVerifiedEmailForSignIn` is true |
 | POST | `/auth/magic-link` | 204, always. Only mapped when an `IMagicLinkNotifier` is registered |
 | POST | `/auth/magic-link/verify` | 200 with a token pair, 200 with a two-factor challenge, or 401. Only mapped when an `IMagicLinkNotifier` is registered |
 | POST | `/auth/users` | 201, 400, 403, or 409. Admin only. Only mapped when an `IAdminPasswordIssuedNotifier` is registered and `Oidc:AdminRole` is set |
@@ -108,7 +110,9 @@ shape.
 ```
 
 **`POST /auth/register`** answers **201** with the same token-pair shape, so a registration signs the
-user straight in.
+user straight in - unless `LocalLogin:RequireVerifiedEmailForSignIn` is on, when it answers 201 with an
+`email_verification_required` challenge and mails a code. See
+[requiring a verified address to sign in](/email-verification#requiring-a-verified-address-to-sign-in).
 
 ```json
 { "userName": "ada", "email": "ada@example.com", "password": "correct horse battery staple" }
@@ -475,6 +479,9 @@ hands you - rather than expecting to construct one.
 | `LocalLogin:EmailVerificationTokenLifetime` | `1.00:00:00` | Single use |
 | `LocalLogin:MagicLinkTokenLifetime` | `00:15:00` | Single use. See [magic-link sign-in](/magic-link) |
 | `LocalLogin:RequireVerifiedEmailForPasswordReset` | `true` | See [email verification](/email-verification#a-reset-needs-a-verified-address) before upgrading |
+| `LocalLogin:RequireVerifiedEmailForSignIn` | `false` | A password sign-in waits on a confirmed address. See [email verification](/email-verification#requiring-a-verified-address-to-sign-in) |
+| `LocalLogin:EmailVerificationCodeLifetime` | `00:15:00` | Single use |
+| `LocalLogin:EmailVerificationChallengeLifetime` | `01:00:00` | |
 | `LocalLogin:AllowSelfRegistration` | `false` | When false the endpoint is not mapped at all |
 | `LocalLogin:EndpointPrefix` | `/auth` | |
 | `LocalLogin:SessionEndpointPrefix` | `/sessions` | Appended to `EndpointPrefix`. See [sessions](/sessions) |

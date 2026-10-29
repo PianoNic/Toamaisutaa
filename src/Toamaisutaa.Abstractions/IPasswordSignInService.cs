@@ -31,6 +31,23 @@ public interface IPasswordSignInService
     Task<SignInResult> VerifyMagicLinkAsync(MagicLinkSignInRequest request, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Finishes a sign-in that stopped at <see cref="SignInOutcome.EmailVerificationRequired"/>: checks
+    /// the proof through <see cref="IEmailVerificationMethod"/>, marks the address verified, and signs in.
+    /// </summary>
+    /// <remarks>
+    /// Stops again at <see cref="SignInOutcome.TwoFactorRequired"/> for an account with a second factor,
+    /// finished at <see cref="VerifyTwoFactorAsync"/>; the address is verified either way. A wrong proof
+    /// counts toward the account's lockout, as a wrong second-factor code does.
+    /// </remarks>
+    Task<SignInResult> VerifyEmailChallengeAsync(EmailVerificationSignInRequest request, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Sends another proof for a sign-in that stopped at <see cref="SignInOutcome.EmailVerificationRequired"/>,
+    /// unless one went out inside <see cref="ToamaisutaaLocalLoginOptions.MailRequestCooldown"/>.
+    /// </summary>
+    Task<EmailVerificationResendResult> ResendEmailVerificationAsync(string challengeToken, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Asks for a second factor from a session that is already signed in, so that a policy
     /// requiring a <i>fresh</i> one can be satisfied without signing out.
     /// </summary>
@@ -132,6 +149,47 @@ public sealed record MagicLinkSignInRequest
     public string? IpAddress { get; init; }
 }
 
+/// <summary>
+/// The proof for a sign-in held back by an unverified address, and the client presenting it.
+/// </summary>
+/// <remarks>
+/// There is no device token or remember-device here: a trusted device stands in for a second factor,
+/// and none has been presented yet. An account with one is sent on to the two-factor challenge, which
+/// takes them.
+/// </remarks>
+public sealed record EmailVerificationSignInRequest
+{
+    public required string ChallengeToken { get; init; }
+
+    /// <summary>What the person was sent: the six digits, for the default method.</summary>
+    public required string Proof { get; init; }
+
+    public string? UserAgent { get; init; }
+
+    public string? IpAddress { get; init; }
+}
+
+public sealed record EmailVerificationResendResult
+{
+    public required EmailVerificationResendOutcome Outcome { get; init; }
+
+    /// <summary>With <see cref="EmailVerificationResendOutcome.CoolingDown"/>, how long until another may be sent.</summary>
+    public TimeSpan? RetryAfter { get; init; }
+}
+
+public enum EmailVerificationResendOutcome
+{
+    Sent,
+
+    CoolingDown,
+
+    /// <summary>The challenge is unknown, spent, expired, or its account changed since. Sign in again.</summary>
+    InvalidChallenge,
+
+    /// <summary>The method threw, so nothing was delivered. The challenge still stands.</summary>
+    NotificationFailed,
+}
+
 public sealed record TwoFactorSignInRequest
 {
     public required string ChallengeToken { get; init; }
@@ -163,6 +221,12 @@ public sealed record SignInResult
     /// it, with a code, to finish signing in.
     /// </summary>
     public TwoFactorChallenge? Challenge { get; init; }
+
+    /// <summary>
+    /// Set only when <see cref="Outcome"/> is <see cref="SignInOutcome.EmailVerificationRequired"/>.
+    /// Present it, with what was sent to the address, to finish signing in.
+    /// </summary>
+    public EmailVerificationChallenge? EmailVerification { get; init; }
 
     /// <summary>Set when a recovery code was spent to get here and few remain.</summary>
     public bool RecoveryCodesRunningLow { get; init; }
@@ -196,6 +260,21 @@ public sealed record TwoFactorChallenge(string Token, int ExpiresIn)
     /// <c>/auth/passkeys/second-factor</c>), or both.
     /// </summary>
     public IReadOnlyList<string> SecondFactors { get; init; } = [TwoFactorSource.Otp];
+}
+
+/// <summary>
+/// A sign-in held back until its address is confirmed. Opaque random bytes, like
+/// <see cref="TwoFactorChallenge"/>, so it can never be presented as a bearer token.
+/// </summary>
+/// <param name="Token">The raw challenge. Present it with the proof, or to ask for another proof.</param>
+/// <param name="ExpiresIn">Seconds until the challenge expires; the proof itself may expire sooner.</param>
+public sealed record EmailVerificationChallenge(string Token, int ExpiresIn)
+{
+    /// <summary><see cref="IEmailVerificationMethod.Name"/>: <c>code</c> for the default.</summary>
+    public required string Method { get; init; }
+
+    /// <summary>The address the proof went to, masked - <c>a***@example.com</c> - for a "we sent it to" line.</summary>
+    public required string Email { get; init; }
 }
 
 /// <summary>
@@ -274,6 +353,25 @@ public enum SignInOutcome
     /// the verifier it was bound to.
     /// </summary>
     InvalidExternalLogin,
+
+    /// <summary>
+    /// The password was right but the address was never verified, and
+    /// <see cref="ToamaisutaaLocalLoginOptions.RequireVerifiedEmailForSignIn"/> is on. Not a failure: the
+    /// result carries an email-verification challenge, and no tokens.
+    /// </summary>
+    EmailVerificationRequired,
+
+    /// <summary>The proof did not match. The challenge stands and may be answered again.</summary>
+    InvalidEmailVerificationCode,
+
+    /// <summary>No proof is outstanding to answer the challenge with: expired, spent, or tried too often. Ask for another.</summary>
+    EmailVerificationCodeExpired,
+
+    /// <summary>
+    /// The address was never verified and cannot be from here: the credential has no address, or a
+    /// password session is being refreshed. Sign in again, which offers the challenge where it can.
+    /// </summary>
+    EmailNotVerified,
 }
 
 /// <summary>How the second factor was satisfied. Written to <c>toa_2fa_source</c>.</summary>

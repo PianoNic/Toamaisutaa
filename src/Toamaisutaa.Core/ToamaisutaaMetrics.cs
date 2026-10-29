@@ -128,6 +128,10 @@ internal sealed class ToamaisutaaMetrics : IDisposable
         SignInOutcome.NotALocalSession => "not_a_local_session",
         SignInOutcome.InvalidPasskey => "invalid_passkey",
         SignInOutcome.InvalidExternalLogin => "invalid_external_login",
+        SignInOutcome.EmailVerificationRequired => "email_verification_required",
+        SignInOutcome.InvalidEmailVerificationCode => "invalid_email_verification_code",
+        SignInOutcome.EmailVerificationCodeExpired => "email_verification_code_expired",
+        SignInOutcome.EmailNotVerified => "email_not_verified",
         _ => outcome.ToString(),
     };
 

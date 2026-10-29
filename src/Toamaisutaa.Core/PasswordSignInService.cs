@@ -17,6 +17,7 @@ internal sealed class PasswordSignInService(
     DummyPasswordHash dummy,
     TwoFactorGate twoFactor,
     TrustedDeviceGate trustedDevices,
+    EmailVerificationGate emailVerification,
     SignInThrottle throttle,
     ToamaisutaaMetrics metrics,
     AuthenticationEventPublisher events,
@@ -146,6 +147,11 @@ internal sealed class PasswordSignInService(
 
         if (rehash is not null)
             logger.LogInformation("Rehashed the stored password for user {UserId} with current parameters.", credential.UserId);
+
+        // After the password, so verification state is never told to somebody without it, and before
+        // the second factor, which the challenge goes on to once the address is proven.
+        if (emailVerification.Required && credential.EmailConfirmedAt is null)
+            return await HoldForEmailVerificationAsync(user, credential, rehash, now, cancellationToken);
 
         // The device token is consulted only after lockout and the password, or holding one would
         // skip lockout and reveal device trust to somebody without the password.
@@ -432,6 +438,259 @@ internal sealed class PasswordSignInService(
         return result;
     }
 
+    private async Task<SignInResult> HoldForEmailVerificationAsync(
+        ToamaisutaaUser user,
+        ToamaisutaaPasswordCredential credential,
+        Rehash? rehash,
+        DateTimeOffset now,
+        CancellationToken cancellationToken)
+    {
+        // The count is left alone, as before a second factor: it holds wrong codes, and clearing it
+        // would let a password holder guess codes indefinitely by signing in again.
+        if (rehash is { } pending)
+        {
+            credential = await credentials.UpdateAsync(
+                credential,
+                current =>
+                {
+                    pending.ApplyTo(current);
+                    current.UpdatedAt = now;
+                },
+                cancellationToken);
+        }
+
+        if (credential.Email is null)
+        {
+            logger.LogWarning(
+                "Sign-in refused for user {UserId}: LocalLogin:RequireVerifiedEmailForSignIn is on and the credential has no "
+                + "email address, so there is nothing to confirm. Add one at /auth/email from another session, or sign in another way.",
+                user.Id);
+
+            await events.PublishAsync(new SignInFailed { OccurredAt = now, UserId = user.Id, Reason = SignInOutcome.EmailNotVerified }, cancellationToken);
+            return Refused(SignInOutcome.EmailNotVerified);
+        }
+
+        var challenge = await emailVerification.IssueChallengeAsync(user, credential, now, cancellationToken);
+
+        logger.LogInformation("Password accepted for user {UserId}; the email address has to be confirmed first.", user.Id);
+        metrics.SignInCompleted(SignInOutcome.EmailVerificationRequired, methods: null);
+
+        return new SignInResult { Outcome = SignInOutcome.EmailVerificationRequired, EmailVerification = challenge };
+    }
+
+    public async Task<SignInResult> VerifyEmailChallengeAsync(EmailVerificationSignInRequest request, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        var now = timeProvider.GetUtcNow();
+        var guard = await GuardEmailChallengeAsync(request.ChallengeToken, now, cancellationToken);
+
+        if (guard.Outcome != SignInOutcome.Succeeded)
+            return await RefuseEmailVerificationAsync(guard.UserId, guard.Outcome, now, cancellationToken);
+
+        var stored = guard.Challenge!;
+        var user = guard.User!;
+        var credential = guard.Credential!;
+
+        if (LockoutPolicy.IsLockedOut(credential, now))
+            return await RefuseLockedOutAsync(user.Id, credential.LockedOutUntil, "the account", now, cancellationToken);
+
+        // Reserved before the proof is checked, so one challenge cannot take unlimited guesses.
+        var reservation = await credentials.ReserveAttemptAsync(credential, options.Value, now, cancellationToken);
+        credential = reservation.Credential;
+
+        if (!reservation.Allowed)
+            return await RefuseLockedOutAsync(user.Id, credential.LockedOutUntil, "the account", now, cancellationToken);
+
+        var proof = await emailVerification.Method.VerifyAsync(
+            new EmailVerificationProofRequest { User = user, Email = credential.Email!, Proof = request.Proof },
+            cancellationToken);
+
+        if (proof != EmailVerificationProofOutcome.Verified)
+        {
+            // Nothing was compared when nothing was outstanding, so that is no guess.
+            if (proof == EmailVerificationProofOutcome.Expired)
+                await credentials.TryRefundAsync(reservation, now, cancellationToken);
+            else
+                await ReportWrongCodeAsync(reservation, "Email verification", now, cancellationToken);
+
+            var outcome = proof == EmailVerificationProofOutcome.Invalid
+                ? SignInOutcome.InvalidEmailVerificationCode
+                : SignInOutcome.EmailVerificationCodeExpired;
+
+            return await RefuseEmailVerificationAsync(user.Id, outcome, now, cancellationToken);
+        }
+
+        // Spent only once the proof is right, so a mistyped code does not send the person back to the password.
+        if (!await emailVerification.ConsumeAsync(stored.Id, now, cancellationToken))
+        {
+            await credentials.TryRefundAsync(reservation, now, cancellationToken);
+            return await RefuseEmailVerificationAsync(user.Id, SignInOutcome.ChallengeAlreadyUsed, now, cancellationToken);
+        }
+
+        // A reset can land while the proof was checked; read fresh, as the two-factor path does.
+        if (stored.SecurityStamp is not null
+            && !string.Equals(await users.ReadSecurityStampAsync(user.Id, cancellationToken), stored.SecurityStamp, StringComparison.Ordinal))
+        {
+            return await RefuseEmailVerificationAsync(user.Id, SignInOutcome.InvalidChallenge, now, cancellationToken);
+        }
+
+        var confirmed = false;
+
+        // Conditional on the address the challenge names, which another account proving it would have cleared.
+        credential = await credentials.UpdateAsync(
+            credential,
+            current =>
+            {
+                confirmed = string.Equals(current.NormalizedEmail, stored.NormalizedEmail, StringComparison.Ordinal);
+
+                if (!confirmed)
+                    return;
+
+                current.EmailConfirmedAt ??= now;
+                current.UpdatedAt = now;
+            },
+            cancellationToken);
+
+        if (!confirmed)
+            return await RefuseEmailVerificationAsync(user.Id, SignInOutcome.InvalidChallenge, now, cancellationToken);
+
+        // The writes a redeemed link makes. Sessions and the stamp stay: proving an address is not a credential change.
+        await credentials.ReleaseUnverifiedHoldAsync(stored.NormalizedEmail, user.Id, now, events, logger, cancellationToken);
+        await users.SetEmailAsync(user.Id, credential.Email!, cancellationToken);
+
+        await events.PublishAsync(
+            new EmailChanged { OccurredAt = now, UserId = user.Id, PreviousEmail = credential.Email, Email = credential.Email! },
+            cancellationToken);
+
+        logger.LogInformation("Email verified for user {UserId} with {Method}.", user.Id, emailVerification.Method.Name);
+
+        if (await twoFactor.RequiresChallengeAsync(user.Id, cancellationToken))
+        {
+            // Only this attempt back: the count holds wrong second-factor codes as well.
+            await credentials.RefundAsync(reservation with { Credential = credential }, now, cancellationToken);
+
+            var challenge = await twoFactor.IssueChallengeAsync(
+                user.Id,
+                now,
+                cancellationToken,
+                authenticationMethods: "pwd",
+                securityStamp: stored.SecurityStamp ?? user.SecurityStamp);
+
+            logger.LogInformation("Email confirmed for user {UserId}; a second factor is required.", user.Id);
+            metrics.SignInCompleted(SignInOutcome.TwoFactorRequired, methods: null);
+
+            return new SignInResult { Outcome = SignInOutcome.TwoFactorRequired, Challenge = challenge };
+        }
+
+        await credentials.RegisterSuccessAsync(credential, now, cancellationToken);
+
+        string[] passwordOnly = ["pwd"];
+
+        var result = await IssueAsync(
+            user,
+            familyId: null,
+            familyStartedAt: null,
+            methods: passwordOnly,
+            recoveryCodesRunningLow: false,
+            twoFactorSource: null,
+            secondFactorAt: null,
+            trustedDevice: null,
+            newSignIn: true,
+            client: ClientMetadata.Describe(request.UserAgent, request.IpAddress, options.Value.IpAddressStorage),
+            now,
+            cancellationToken);
+
+        metrics.SignInCompleted(result.Outcome, passwordOnly);
+        return result;
+    }
+
+    public async Task<EmailVerificationResendResult> ResendEmailVerificationAsync(string challengeToken, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(challengeToken);
+
+        var now = timeProvider.GetUtcNow();
+        var guard = await GuardEmailChallengeAsync(challengeToken, now, cancellationToken);
+
+        if (guard.Outcome != SignInOutcome.Succeeded)
+        {
+            logger.LogInformation("Email verification resend refused: the challenge is no longer usable ({Outcome}).", guard.Outcome);
+            return new EmailVerificationResendResult { Outcome = EmailVerificationResendOutcome.InvalidChallenge };
+        }
+
+        try
+        {
+            var issued = await emailVerification.SendAsync(emailVerification.Method, guard.User!, guard.Credential!.Email!, now, cancellationToken);
+
+            return issued.Outcome == EmailVerificationIssueOutcome.Sent
+                ? new EmailVerificationResendResult { Outcome = EmailVerificationResendOutcome.Sent }
+                : new EmailVerificationResendResult { Outcome = EmailVerificationResendOutcome.CoolingDown, RetryAfter = issued.RetryAfter };
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
+        {
+            logger.LogError(ex, "Email verification for user {UserId} could not be sent again.", guard.User!.Id);
+            return new EmailVerificationResendResult { Outcome = EmailVerificationResendOutcome.NotificationFailed };
+        }
+    }
+
+    /// <summary>Everything a challenge has to still be true about before its proof is worth checking.</summary>
+    private async Task<EmailChallengeGuard> GuardEmailChallengeAsync(string challengeToken, DateTimeOffset now, CancellationToken cancellationToken)
+    {
+        var stored = await emailVerification.FindAsync(challengeToken, cancellationToken);
+
+        if (stored is null)
+            return EmailChallengeGuard.Failed(SignInOutcome.InvalidChallenge, null);
+
+        if (stored.ConsumedAt is not null)
+            return EmailChallengeGuard.Failed(SignInOutcome.ChallengeAlreadyUsed, stored.UserId);
+
+        if (stored.ExpiresAt <= now)
+            return EmailChallengeGuard.Failed(SignInOutcome.ChallengeExpired, stored.UserId);
+
+        var user = await users.FindByIdAsync(stored.UserId, cancellationToken);
+
+        if (user is null)
+            return EmailChallengeGuard.Failed(SignInOutcome.InvalidChallenge, null);
+
+        if (user.DisabledAt is not null)
+            return EmailChallengeGuard.Failed(SignInOutcome.AccountDisabled, user.Id);
+
+        if (stored.SecurityStamp is not null && !string.Equals(stored.SecurityStamp, user.SecurityStamp, StringComparison.Ordinal))
+            return EmailChallengeGuard.Failed(SignInOutcome.InvalidChallenge, user.Id);
+
+        // The address moved since - released to an account that proved it, or changed - so this proves nothing now.
+        var credential = await credentials.FindByUserIdAsync(stored.UserId, cancellationToken);
+
+        if (credential?.Email is null || !string.Equals(credential.NormalizedEmail, stored.NormalizedEmail, StringComparison.Ordinal))
+            return EmailChallengeGuard.Failed(SignInOutcome.InvalidChallenge, user.Id);
+
+        return new EmailChallengeGuard { Outcome = SignInOutcome.Succeeded, Challenge = stored, User = user, Credential = credential, UserId = user.Id };
+    }
+
+    private async Task<SignInResult> RefuseEmailVerificationAsync(Guid? userId, SignInOutcome outcome, DateTimeOffset now, CancellationToken cancellationToken)
+    {
+        logger.LogInformation("Email verification sign-in refused for user {UserId}: {Outcome}.", userId, outcome);
+
+        await events.PublishAsync(new SignInFailed { OccurredAt = now, UserId = userId, Reason = outcome }, cancellationToken);
+
+        return Refused(outcome);
+    }
+
+    private readonly record struct EmailChallengeGuard
+    {
+        internal SignInOutcome Outcome { get; init; }
+
+        internal Guid? UserId { get; init; }
+
+        internal ToamaisutaaEmailVerificationChallenge? Challenge { get; init; }
+
+        internal ToamaisutaaUser? User { get; init; }
+
+        internal ToamaisutaaPasswordCredential? Credential { get; init; }
+
+        internal static EmailChallengeGuard Failed(SignInOutcome outcome, Guid? userId) => new() { Outcome = outcome, UserId = userId };
+    }
+
     public async Task<StepUpChallengeResult> BeginStepUpAsync(StepUpRequest request, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
@@ -713,6 +972,22 @@ internal sealed class PasswordSignInService(
             return Failed(SignInOutcome.SecurityStampChanged);
         }
 
+        // Only a session a password started: one from a passkey, a provider or a magic link (which
+        // needs a proven address anyway) did not go through the check this backs up. Without it, turning
+        // the option on would leave every unverified account its sessions for the next ninety days.
+        if (emailVerification.Required
+            && IsPasswordSession(stored.AuthenticationMethods)
+            && await credentials.FindByUserIdAsync(stored.UserId, cancellationToken) is { EmailConfirmedAt: null })
+        {
+            logger.LogInformation(
+                "Refresh refused for user {UserId}: the address was never verified and LocalLogin:RequireVerifiedEmailForSignIn "
+                + "is on. Signing in again offers the verification challenge.",
+                stored.UserId);
+
+            await RevokeFamilyAsync(stored, "email-not-verified", now, cancellationToken);
+            return Failed(SignInOutcome.EmailNotVerified);
+        }
+
         // The conditional write decides: the loser presented a token another request is exchanging,
         // which is reuse.
         if (!await refreshTokens.MarkRotatedAsync(stored.Id, now, cancellationToken))
@@ -760,6 +1035,10 @@ internal sealed class PasswordSignInService(
 
         return issued;
     }
+
+    /// <summary>Empty is how families issued before methods were recorded read, and they were all passwords.</summary>
+    private static bool IsPasswordSession(string authenticationMethods) =>
+        authenticationMethods.Length == 0 || authenticationMethods.Split(' ').Contains("pwd", StringComparer.Ordinal);
 
     /// <summary>
     /// Two parties hold the chain and there is no way to tell which is the owner, so neither keeps it.
