@@ -168,7 +168,7 @@ public static class ToamaisutaaTwoFactorEndpointExtensions
         var proof = new TwoFactorEnrolmentProof
         {
             CurrentPassword = request?.CurrentPassword,
-            AuthenticatedAt = CallerAuthentication.AuthenticatedAt(context.User),
+            AuthenticatedAt = await CallerAuthentication.SignedInAtAsync(context, user.Id, cancellationToken),
         };
 
         try

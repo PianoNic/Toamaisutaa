@@ -645,7 +645,7 @@ public static class ToamaisutaaPasswordEndpointExtensions
             user.Id,
             request.CurrentPassword,
             request.NewPassword,
-            CallerAuthentication.AuthenticatedAt(context.User),
+            await CallerAuthentication.SignedInAtAsync(context, user.Id, cancellationToken),
             cancellationToken);
 
         return result.Succeeded

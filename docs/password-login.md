@@ -128,8 +128,10 @@ identity provider and is gaining its first password. Answers 204, 400, or 429 wh
 rate limit refuses it.
 
 A first password has no current one to prove, so it needs a recent sign-in instead: the caller's
-token must carry an `auth_time` from the identity provider, or a `toa_2fa_at`, within
-`LocalLogin:FirstPasswordProofWindow` (five minutes by default). Otherwise a stolen access token would
+token must carry an `auth_time` from the identity provider, or a `toa_2fa_at`, or belong to a
+session (`toa_sid`) that started, within `LocalLogin:FirstPasswordProofWindow` (five minutes by
+default). A local token issued after an identity-provider sign-in carries neither claim, so the
+session's start is what counts there; a refresh keeps that start, so it never counts as a new sign-in. Otherwise a stolen access token would
 be enough to add a password that outlives it. Send the user back through the identity provider with
 `max_age` or `prompt=login` first, so the token they come back with is fresh.
 
