@@ -30,6 +30,7 @@ through OIDC is supported and touches nothing on the external side.
 | POST | `/auth/refresh` | 200 with a rotated pair, or 401 |
 | POST | `/auth/logout` | 204 |
 | POST | `/auth/register` | 201 with a token pair or an email-verification challenge, 400, or 409. Only mapped when `AllowSelfRegistration` is true |
+| GET | `/auth/password` | 200 with `{ "has_password": true }` or `false`. Authenticated |
 | POST | `/auth/password` | 204, 400, or 429. Authenticated. Sets a first password or changes an existing one |
 | POST | `/auth/password/forgot` | 204, always |
 | POST | `/auth/password/reset` | 204 or 400 |
@@ -37,6 +38,7 @@ through OIDC is supported and touches nothing on the external side.
 | POST | `/auth/email/verify` | 204, 400, or 409. Only mapped when an `IEmailVerificationNotifier` is registered |
 | POST | `/auth/email/verify-code` | 200 with a token pair, 200 with a two-factor challenge, 400, or 401. Only mapped when `RequireVerifiedEmailForSignIn` is true |
 | POST | `/auth/email/resend-code` | 204, 401, 429, or 502. Only mapped when `RequireVerifiedEmailForSignIn` is true |
+| POST | `/auth/email/change-address` | 200 with a new challenge, 400, 401, or 409. Only mapped when `RequireVerifiedEmailForSignIn` is true |
 | POST | `/auth/magic-link` | 204, always. Only mapped when an `IMagicLinkNotifier` is registered |
 | POST | `/auth/magic-link/verify` | 200 with a token pair, 200 with a two-factor challenge, or 401. Only mapped when an `IMagicLinkNotifier` is registered |
 | POST | `/auth/users` | 201, 400, 403, or 409. Admin only. Only mapped when an `IAdminPasswordIssuedNotifier` is registered and `Oidc:AdminRole` is set |
@@ -118,13 +120,19 @@ user straight in - unless `LocalLogin:RequireVerifiedEmailForSignIn` is on, when
 { "userName": "ada", "email": "ada@example.com", "password": "correct horse battery staple" }
 ```
 
+**`GET /auth/password`** - authenticated. `{ "has_password": false }` for an account that arrived
+through an identity provider and has never set one, so a client knows whether to ask for the current
+password or offer a first one.
+
 **`POST /auth/password`** - authenticated. Omit `currentPassword` when the account arrived through an
 identity provider and is gaining its first password. Answers 204, 400, or 429 when the per-address
 rate limit refuses it.
 
 A first password has no current one to prove, so it needs a recent sign-in instead: the caller's
-token must carry an `auth_time` from the identity provider, or a `toa_2fa_at`, within
-`LocalLogin:FirstPasswordProofWindow` (five minutes by default). Otherwise a stolen access token would
+token must carry an `auth_time` from the identity provider, or a `toa_2fa_at`, or belong to a
+session (`toa_sid`) that started, within `LocalLogin:FirstPasswordProofWindow` (five minutes by
+default). A local token issued after an identity-provider sign-in carries neither claim, so the
+session's start is what counts there; a refresh keeps that start, so it never counts as a new sign-in. Otherwise a stolen access token would
 be enough to add a password that outlives it. Send the user back through the identity provider with
 `max_age` or `prompt=login` first, so the token they come back with is fresh.
 

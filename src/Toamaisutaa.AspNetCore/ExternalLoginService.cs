@@ -338,6 +338,11 @@ internal sealed class ExternalLoginService(
                 logger.LogInformation("External sign-in through {ProviderKey} refused: no account is linked, and sign-up is off.", providerKey);
                 return Return(request, ("error", "account_not_found"));
             }
+            else if (settings.RequireVerifiedEmailForSignUp && (profile.EmailVerified != true || string.IsNullOrWhiteSpace(profile.Email)))
+            {
+                logger.LogInformation("External sign-up through {ProviderKey} refused: the provider did not verify the address.", providerKey);
+                return Return(request, ("error", "email_not_verified"));
+            }
             else
             {
                 user = await CreateAsync(providerKey, profile, now, cancellationToken);

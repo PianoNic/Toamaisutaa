@@ -43,6 +43,9 @@ public sealed record VerifyEmailCodeRequest(string Challenge, string Code);
 /// <summary>Asks for another proof for an email-verification challenge.</summary>
 public sealed record ResendEmailCodeRequest(string Challenge);
 
+/// <summary>Moves an email-verification challenge to another address, for a mistyped one.</summary>
+public sealed record ChangeEmailCodeAddressRequest(string Challenge, string NewEmail);
+
 /// <summary>The address a magic link is asked for. Answered identically whether or not it belongs to
 /// anybody.</summary>
 public sealed record MagicLinkRequest(string Email);

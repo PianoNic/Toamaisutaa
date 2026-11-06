@@ -541,6 +541,66 @@ public class ExternalLoginHttpTests
     }
 
     [Test]
+    public async Task A_sign_up_needs_an_address_the_provider_verified_when_the_provider_requires_it()
+    {
+        var idp = new FakeIdentityProvider();
+        await using var app = await StartAsync(idp, settings => settings[$"ExternalLogin:Providers:{Provider}:RequireVerifiedEmailForSignUp"] = "true");
+
+        var unverified = await ReturnAsync(app, idp, new Person("alice-at-idp", "alice@idp.test", EmailVerified: false), NewVerifier());
+        var verified = await ReturnAsync(app, idp, new Person("bob-at-idp", "bob@idp.test", EmailVerified: true), NewVerifier());
+
+        await Assert.That(Query(unverified, "error")).IsEqualTo("email_not_verified");
+        await Assert.That(Query(unverified, "code")).IsNull();
+        await Assert.That(Query(verified, "error")).IsNull();
+        await Assert.That(Query(verified, "code")).IsNotNull();
+    }
+
+    /// <summary>
+    /// A local token from a provider sign-in carries no <c>auth_time</c>, so the session's start is the only sign-in
+    /// time there is. Without it a passwordless account could never add a password or a second factor.
+    /// </summary>
+    [Test]
+    public async Task A_passwordless_account_adds_a_first_password_and_starts_two_factor_right_after_a_provider_sign_in()
+    {
+        var idp = new FakeIdentityProvider();
+        await using var app = await StartAsync(idp);
+
+        var forPassword = (await SignInAsync(app, idp, new Person("alice-at-idp", Name: "Alice"))).String("access_token")!;
+        var forTwoFactor = (await SignInAsync(app, idp, new Person("bob-at-idp", Name: "Bob"))).String("access_token")!;
+
+        var password = await app.Client.PostJson("/auth/password", new { newPassword = Account.DefaultPassword }, forPassword);
+        var twoFactor = await app.Client.PostJson("/auth/2fa/begin", new { }, forTwoFactor);
+
+        await Assert.That(password.StatusCode).IsEqualTo(HttpStatusCode.NoContent);
+        await Assert.That(twoFactor.StatusCode).IsEqualTo(HttpStatusCode.OK);
+        await Assert.That((await twoFactor.Json()).Has("secret")).IsTrue();
+    }
+
+    [Test]
+    public async Task A_passwordless_session_started_before_the_window_adds_neither_a_password_nor_two_factor()
+    {
+        var idp = new FakeIdentityProvider();
+        await using var app = await StartAsync(idp, settings =>
+        {
+            settings["LocalLogin:FirstPasswordProofWindow"] = "00:01:00";
+            settings["TwoFactor:EnrolmentProofWindow"] = "00:01:00";
+        });
+
+        var body = await SignInAsync(app, idp, new Person("alice-at-idp", Name: "Alice"));
+
+        // Past both windows, and inside the test host's clock skew. The refresh issues a new token in the same session,
+        // which must not count as signing in again.
+        app.Time.Advance(TimeSpan.FromMinutes(2));
+        var refreshed = (await (await app.Client.PostJson("/auth/refresh", new { refreshToken = body.String("refresh_token") })).Json()).String("access_token")!;
+
+        var password = await app.Client.PostJson("/auth/password", new { newPassword = Account.DefaultPassword }, refreshed);
+        var twoFactor = await app.Client.PostJson("/auth/2fa/begin", new { }, refreshed);
+
+        await Assert.That(password.StatusCode).IsEqualTo(HttpStatusCode.BadRequest);
+        await Assert.That(twoFactor.StatusCode).IsEqualTo(HttpStatusCode.BadRequest);
+    }
+
+    [Test]
     public async Task An_identity_linked_to_one_account_cannot_be_linked_to_another()
     {
         var idp = new FakeIdentityProvider();

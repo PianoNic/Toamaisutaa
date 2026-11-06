@@ -131,6 +131,16 @@ public static class ToamaisutaaPasswordEndpointExtensions
             .Produces<ErrorResponse>(StatusCodes.Status401Unauthorized)
             .Produces(StatusCodes.Status429TooManyRequests);
 
+        group.MapGet("/password", PasswordStatusAsync)
+            .RequireAuthorization()
+            .WithName($"{endpointNamePrefix}ToamaisutaaPasswordStatus")
+            .WithSummary("Whether the caller's account has a password.")
+            .WithDescription(
+                "`has_password` false means `POST /auth/password` takes no `currentPassword` and sets a first "
+                + "password, which needs a sign-in within `LocalLogin:FirstPasswordProofWindow`.")
+            .Produces<PasswordStatusResponse>()
+            .Produces<ErrorResponse>(StatusCodes.Status401Unauthorized);
+
         group.MapPost("/password/forgot", ForgotPassword)
             .AllowAnonymous()
             .AddEndpointFilter<PasswordRateLimitFilter>()
@@ -212,6 +222,22 @@ public static class ToamaisutaaPasswordEndpointExtensions
                 .Produces<ErrorResponse>(StatusCodes.Status401Unauthorized)
                 .Produces<ValidationErrorResponse>(StatusCodes.Status429TooManyRequests)
                 .Produces<ErrorResponse>(StatusCodes.Status502BadGateway);
+
+            group.MapPost("/email/change-address", ChangeEmailCodeAddressAsync)
+                .AllowAnonymous()
+                .AddEndpointFilter<PasswordRateLimitFilter>()
+                .WithName($"{endpointNamePrefix}ToamaisutaaChangeEmailCodeAddress")
+                .WithSummary("Moves an email-verification challenge to another address, for a mistyped one.")
+                .WithDescription(
+                    "Send the `challenge` and `newEmail`. Answers with a new `email_verification_required` challenge, and "
+                    + "the proof goes to the new address; the old challenge stops working. **400** for an address that is "
+                    + "not one, **409** when another account uses it, **401** when the challenge is done: sign in again. "
+                    + "Mapped only when `LocalLogin:RequireVerifiedEmailForSignIn` is on.")
+                .Produces<EmailVerificationChallengeResponse>()
+                .Produces<ValidationErrorResponse>(StatusCodes.Status400BadRequest)
+                .Produces<ErrorResponse>(StatusCodes.Status401Unauthorized)
+                .Produces<ValidationErrorResponse>(StatusCodes.Status409Conflict)
+                .Produces(StatusCodes.Status429TooManyRequests);
         }
 
         if (endpoints.ServiceProvider.GetService<IMagicLinkNotifier>() is not null)
@@ -573,6 +599,25 @@ public static class ToamaisutaaPasswordEndpointExtensions
         }
     }
 
+    private static async Task<IResult> ChangeEmailCodeAddressAsync(
+        ChangeEmailCodeAddressRequest request,
+        IPasswordSignInService signIn,
+        CancellationToken cancellationToken)
+    {
+        if (request is null || string.IsNullOrWhiteSpace(request.Challenge))
+            return SignInFailed();
+
+        var result = await signIn.ChangeEmailVerificationAddressAsync(request.Challenge, request.NewEmail ?? string.Empty, cancellationToken);
+
+        return result.Outcome switch
+        {
+            EmailVerificationAddressChangeOutcome.Changed => EmailVerificationRequired(result.Challenge!, StatusCodes.Status200OK),
+            EmailVerificationAddressChangeOutcome.InvalidEmail => Results.BadRequest(new ValidationErrorResponse { Errors = ["Enter a valid email address."] }),
+            EmailVerificationAddressChangeOutcome.Taken => Results.Conflict(new ValidationErrorResponse { Errors = ["Another account already uses that email address."] }),
+            _ => SignInFailed(),
+        };
+    }
+
     private static async Task<IResult> RefreshAsync(
         RefreshRequest request,
         IPasswordSignInService signIn,
@@ -635,12 +680,25 @@ public static class ToamaisutaaPasswordEndpointExtensions
             user.Id,
             request.CurrentPassword,
             request.NewPassword,
-            CallerAuthentication.AuthenticatedAt(context.User),
+            await CallerAuthentication.SignedInAtAsync(context, user.Id, cancellationToken),
             cancellationToken);
 
         return result.Succeeded
             ? Results.NoContent()
             : Results.BadRequest(new ValidationErrorResponse { Errors = result.Errors });
+    }
+
+    private static async Task<IResult> PasswordStatusAsync(
+        ICurrentUser currentUser,
+        IPasswordCredentialStore credentials,
+        CancellationToken cancellationToken)
+    {
+        var user = await currentUser.GetOrProvisionAsync(cancellationToken);
+
+        return Results.Ok(new PasswordStatusResponse
+        {
+            HasPassword = await credentials.FindByUserIdAsync(user.Id, cancellationToken) is not null,
+        });
     }
 
     private static IResult ForgotPassword(

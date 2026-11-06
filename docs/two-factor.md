@@ -58,7 +58,8 @@ Send the current password:
 
 An account with no password - one an identity provider owns, or a passkey-only one - sends no body
 and instead needs a sign-in within `TwoFactor:EnrolmentProofWindow` (five minutes by default), read
-off the token's `auth_time` or `toa_2fa_at`. A wrong password counts toward the account's lockout.
+off the token's `auth_time` or `toa_2fa_at`, or the start of the session its `toa_sid` names. A
+refresh keeps the session's start, so it never counts as signing in again. A wrong password counts toward the account's lockout.
 Many providers leave `auth_time` out of access tokens - see
 [the warning on first passwords](/password-login#bodies), which applies here too.
 

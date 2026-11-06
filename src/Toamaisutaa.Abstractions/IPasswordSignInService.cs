@@ -48,6 +48,17 @@ public interface IPasswordSignInService
     Task<EmailVerificationResendResult> ResendEmailVerificationAsync(string challengeToken, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Points a sign-in that stopped at <see cref="SignInOutcome.EmailVerificationRequired"/> at another
+    /// address, for someone who mistyped theirs, and sends the proof there. The old challenge stops working;
+    /// the result carries the new one.
+    /// </summary>
+    /// <remarks>
+    /// The challenge is the proof: it was only handed out for the right password. The address stays
+    /// unverified until the new proof comes back, and one another account already uses is refused.
+    /// </remarks>
+    Task<EmailVerificationAddressChangeResult> ChangeEmailVerificationAddressAsync(string challengeToken, string newEmail, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Asks for a second factor from a session that is already signed in, so that a policy
     /// requiring a <i>fresh</i> one can be satisfied without signing out.
     /// </summary>
@@ -175,6 +186,28 @@ public sealed record EmailVerificationResendResult
 
     /// <summary>With <see cref="EmailVerificationResendOutcome.CoolingDown"/>, how long until another may be sent.</summary>
     public TimeSpan? RetryAfter { get; init; }
+}
+
+public sealed record EmailVerificationAddressChangeResult
+{
+    public required EmailVerificationAddressChangeOutcome Outcome { get; init; }
+
+    /// <summary>With <see cref="EmailVerificationAddressChangeOutcome.Changed"/>, the challenge to answer now.</summary>
+    public EmailVerificationChallenge? Challenge { get; init; }
+}
+
+public enum EmailVerificationAddressChangeOutcome
+{
+    Changed,
+
+    /// <summary>The challenge is unknown, spent, expired, or its account changed since. Sign in again.</summary>
+    InvalidChallenge,
+
+    /// <summary>Not a bare email address.</summary>
+    InvalidEmail,
+
+    /// <summary>Another local account already uses the address.</summary>
+    Taken,
 }
 
 public enum EmailVerificationResendOutcome

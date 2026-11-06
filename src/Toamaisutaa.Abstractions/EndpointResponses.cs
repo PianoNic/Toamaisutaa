@@ -277,6 +277,17 @@ public sealed record ExternalProviderResponse
     public string? IconUrl { get; init; }
 }
 
+/// <summary>What <c>GET /auth/password</c> answers.</summary>
+/// <remarks>
+/// An account that arrived through an identity provider has no password until it sets one, and a client
+/// needs to know which before it asks for the current password or offers a first one.
+/// </remarks>
+public sealed record PasswordStatusResponse
+{
+    [JsonPropertyName("has_password")]
+    public required bool HasPassword { get; init; }
+}
+
 /// <summary>One provider linked to the caller's account.</summary>
 public sealed record ExternalLoginResponse
 {

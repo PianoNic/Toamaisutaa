@@ -189,6 +189,42 @@ public class IdentityProviderTokenHttpTests
     }
 
     [Test]
+    public async Task The_password_status_says_whether_the_account_has_a_password_yet()
+    {
+        using var identityProviderKey = RSA.Create(2048);
+        using var localKey = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+
+        await using var app = await StartAsync(identityProviderKey, localKey);
+        var key = new RsaSecurityKey(identityProviderKey) { KeyId = IdentityProviderKeyId };
+
+        var fresh = Mint(app, key, SecurityAlgorithms.RsaSha256, IdentityProvider, "grace-subject", AuthTime(app.Time.Now.AddMinutes(-1)));
+
+        var before = await app.Client.Get("/auth/password", fresh);
+        await Assert.That(before.StatusCode).IsEqualTo(HttpStatusCode.OK);
+        await Assert.That((await before.Json()).Bool("has_password")).IsEqualTo(false);
+
+        var set = await app.Client.PostJson("/auth/password", new { newPassword = Account.DefaultPassword }, fresh);
+        await Assert.That(set.StatusCode).IsEqualTo(HttpStatusCode.NoContent);
+
+        var after = await app.Client.Get("/auth/password", fresh);
+        await Assert.That((await after.Json()).Bool("has_password")).IsEqualTo(true);
+    }
+
+    [Test]
+    public async Task The_password_status_is_true_for_a_registered_account_and_needs_a_token()
+    {
+        await using var app = await TestApp.StartAsync();
+        var account = await Account.RegisterAsync(app);
+
+        var status = await app.Client.Get("/auth/password", account.AccessToken);
+        await Assert.That(status.StatusCode).IsEqualTo(HttpStatusCode.OK);
+        await Assert.That((await status.Json()).Bool("has_password")).IsEqualTo(true);
+
+        var anonymous = await app.Client.Get("/auth/password");
+        await Assert.That(anonymous.StatusCode).IsEqualTo(HttpStatusCode.Unauthorized);
+    }
+
+    [Test]
     public async Task A_first_password_does_not_make_the_providers_email_a_login_identifier()
     {
         using var identityProviderKey = RSA.Create(2048);
