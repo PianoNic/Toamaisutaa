@@ -30,6 +30,7 @@ through OIDC is supported and touches nothing on the external side.
 | POST | `/auth/refresh` | 200 with a rotated pair, or 401 |
 | POST | `/auth/logout` | 204 |
 | POST | `/auth/register` | 201 with a token pair or an email-verification challenge, 400, or 409. Only mapped when `AllowSelfRegistration` is true |
+| GET | `/auth/password` | 200 with `{ "has_password": true }` or `false`. Authenticated |
 | POST | `/auth/password` | 204, 400, or 429. Authenticated. Sets a first password or changes an existing one |
 | POST | `/auth/password/forgot` | 204, always |
 | POST | `/auth/password/reset` | 204 or 400 |
@@ -117,6 +118,10 @@ user straight in - unless `LocalLogin:RequireVerifiedEmailForSignIn` is on, when
 ```json
 { "userName": "ada", "email": "ada@example.com", "password": "correct horse battery staple" }
 ```
+
+**`GET /auth/password`** - authenticated. `{ "has_password": false }` for an account that arrived
+through an identity provider and has never set one, so a client knows whether to ask for the current
+password or offer a first one.
 
 **`POST /auth/password`** - authenticated. Omit `currentPassword` when the account arrived through an
 identity provider and is gaining its first password. Answers 204, 400, or 429 when the per-address

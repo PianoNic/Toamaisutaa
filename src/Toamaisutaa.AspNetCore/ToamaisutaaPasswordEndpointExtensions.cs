@@ -131,6 +131,16 @@ public static class ToamaisutaaPasswordEndpointExtensions
             .Produces<ErrorResponse>(StatusCodes.Status401Unauthorized)
             .Produces(StatusCodes.Status429TooManyRequests);
 
+        group.MapGet("/password", PasswordStatusAsync)
+            .RequireAuthorization()
+            .WithName($"{endpointNamePrefix}ToamaisutaaPasswordStatus")
+            .WithSummary("Whether the caller's account has a password.")
+            .WithDescription(
+                "`has_password` false means `POST /auth/password` takes no `currentPassword` and sets a first "
+                + "password, which needs a sign-in within `LocalLogin:FirstPasswordProofWindow`.")
+            .Produces<PasswordStatusResponse>()
+            .Produces<ErrorResponse>(StatusCodes.Status401Unauthorized);
+
         group.MapPost("/password/forgot", ForgotPassword)
             .AllowAnonymous()
             .AddEndpointFilter<PasswordRateLimitFilter>()
@@ -641,6 +651,19 @@ public static class ToamaisutaaPasswordEndpointExtensions
         return result.Succeeded
             ? Results.NoContent()
             : Results.BadRequest(new ValidationErrorResponse { Errors = result.Errors });
+    }
+
+    private static async Task<IResult> PasswordStatusAsync(
+        ICurrentUser currentUser,
+        IPasswordCredentialStore credentials,
+        CancellationToken cancellationToken)
+    {
+        var user = await currentUser.GetOrProvisionAsync(cancellationToken);
+
+        return Results.Ok(new PasswordStatusResponse
+        {
+            HasPassword = await credentials.FindByUserIdAsync(user.Id, cancellationToken) is not null,
+        });
     }
 
     private static IResult ForgotPassword(
