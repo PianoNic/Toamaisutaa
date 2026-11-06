@@ -59,6 +59,65 @@ public class SignInEmailVerificationHttpTests
         return await verify.Json();
     }
 
+    private static Task<HttpResponseMessage> ChangeAddressAsync(TestApp app, string challenge, string newEmail) =>
+        app.Client.PostJson("/auth/email/change-address", new { challenge, newEmail });
+
+    [Test]
+    public async Task A_mistyped_address_is_corrected_on_the_challenge_and_the_new_code_signs_in()
+    {
+        await using var app = await StartAsync();
+        var first = await ChallengeOf(await RegisterAsync(app, email: "ada@exmaple.com"));
+        var typoCode = app.IssuedEmailCodes[^1].Code;
+
+        var changed = await ChangeAddressAsync(app, first, "ada@example.com");
+        var body = await changed.Json();
+
+        await Assert.That(changed.StatusCode).IsEqualTo(HttpStatusCode.OK);
+        await Assert.That(body.Bool("email_verification_required")).IsEqualTo(true);
+        await Assert.That(body.String("email")).IsEqualTo("a***@example.com");
+        await Assert.That(app.IssuedEmailCodes[^1].Email).IsEqualTo("ada@example.com");
+
+        var second = body.String("challenge")!;
+        var oldChallenge = await VerifyAsync(app, first, app.IssuedEmailCodes[^1].Code);
+        var oldCode = await VerifyAsync(app, second, typoCode);
+        var signedIn = await VerifyAsync(app, second, app.IssuedEmailCodes[^1].Code);
+
+        await Assert.That(oldChallenge.StatusCode).IsEqualTo(HttpStatusCode.Unauthorized);
+        await Assert.That(oldCode.StatusCode).IsEqualTo(HttpStatusCode.BadRequest);
+        await Assert.That(signedIn.StatusCode).IsEqualTo(HttpStatusCode.OK);
+        await Assert.That((await signedIn.Json()).Has("access_token")).IsTrue();
+    }
+
+    /// <summary>The cooldown is per address: the corrected one has had nothing yet, so it is not held back.</summary>
+    [Test]
+    public async Task A_corrected_address_gets_its_code_inside_the_mail_cooldown()
+    {
+        await using var app = await StartAsync(settings => settings["LocalLogin:MailRequestCooldown"] = "00:01:00");
+        var challenge = await ChallengeOf(await RegisterAsync(app, email: "ada@exmaple.com"));
+
+        var changed = await ChangeAddressAsync(app, challenge, "ada@example.com");
+
+        await Assert.That(changed.StatusCode).IsEqualTo(HttpStatusCode.OK);
+        await Assert.That(app.IssuedEmailCodes.Count).IsEqualTo(2);
+        await Assert.That(app.IssuedEmailCodes[^1].Email).IsEqualTo("ada@example.com");
+    }
+
+    [Test]
+    public async Task Correcting_an_address_refuses_one_another_account_uses_and_a_dead_challenge()
+    {
+        await using var app = await StartAsync();
+        await RegisterVerifiedAsync(app, "grace");
+        var challenge = await ChallengeOf(await RegisterAsync(app, "ada"));
+
+        var taken = await ChangeAddressAsync(app, challenge, "grace@example.com");
+        var invalid = await ChangeAddressAsync(app, challenge, "not an address");
+        var unknown = await ChangeAddressAsync(app, "no-such-challenge", "ada2@example.com");
+
+        await Assert.That(taken.StatusCode).IsEqualTo(HttpStatusCode.Conflict);
+        await Assert.That(invalid.StatusCode).IsEqualTo(HttpStatusCode.BadRequest);
+        await Assert.That(unknown.StatusCode).IsEqualTo(HttpStatusCode.Unauthorized);
+    }
+
     [Test]
     public async Task Registering_answers_201_with_a_challenge_instead_of_tokens_and_mails_a_code()
     {

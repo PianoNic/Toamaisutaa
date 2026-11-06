@@ -60,6 +60,7 @@ https://api.example.com/auth/external/{key}/callback
 | `ClientSecret` | none | Sent to the token endpoint when set. Leave it out for a public client; PKCE is used either way |
 | `Scopes` | `openid profile email` | Must include `openid` |
 | `AllowSignUp` | `false` | Whether a stranger can create an account by signing in here |
+| `RequireVerifiedEmailForSignUp` | `false` | With `AllowSignUp`, create an account only when the provider sent `email_verified` true; otherwise `error=email_not_verified` |
 | `LinkByVerifiedEmail` | `false` | Whether a first sign-in joins the account that already holds its address. See below |
 | `TrustEmailVerified` | `false` | Whether an address this provider verified goes in the token as `email`. See below |
 
@@ -135,6 +136,7 @@ What can come back on the return URL instead of `code`:
 |---|---|
 | `access_denied` | The user said no at the provider |
 | `account_not_found` | Nobody is linked to that identity and `AllowSignUp` is off |
+| `email_not_verified` | A sign-up, with `RequireVerifiedEmailForSignUp` on, and the provider did not verify the address |
 | `account_exists` | Somebody here already holds the address the provider gave. Sign in another way and link the provider from settings |
 | `external_login_failed` | Anything else. The log line says what |
 

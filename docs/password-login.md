@@ -38,6 +38,7 @@ through OIDC is supported and touches nothing on the external side.
 | POST | `/auth/email/verify` | 204, 400, or 409. Only mapped when an `IEmailVerificationNotifier` is registered |
 | POST | `/auth/email/verify-code` | 200 with a token pair, 200 with a two-factor challenge, 400, or 401. Only mapped when `RequireVerifiedEmailForSignIn` is true |
 | POST | `/auth/email/resend-code` | 204, 401, 429, or 502. Only mapped when `RequireVerifiedEmailForSignIn` is true |
+| POST | `/auth/email/change-address` | 200 with a new challenge, 400, 401, or 409. Only mapped when `RequireVerifiedEmailForSignIn` is true |
 | POST | `/auth/magic-link` | 204, always. Only mapped when an `IMagicLinkNotifier` is registered |
 | POST | `/auth/magic-link/verify` | 200 with a token pair, 200 with a two-factor challenge, or 401. Only mapped when an `IMagicLinkNotifier` is registered |
 | POST | `/auth/users` | 201, 400, 403, or 409. Admin only. Only mapped when an `IAdminPasswordIssuedNotifier` is registered and `Oidc:AdminRole` is set |

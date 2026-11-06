@@ -633,6 +633,64 @@ internal sealed class PasswordSignInService(
         }
     }
 
+    public async Task<EmailVerificationAddressChangeResult> ChangeEmailVerificationAddressAsync(string challengeToken, string newEmail, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(challengeToken);
+
+        var email = newEmail?.Trim() ?? string.Empty;
+
+        if (!System.Net.Mail.MailAddress.TryCreate(email, out var parsed)
+            || parsed.DisplayName.Length != 0
+            || !string.Equals(parsed.Address, email, StringComparison.Ordinal)
+            || !Normalizer.FoldsCleanly(email))
+        {
+            return new EmailVerificationAddressChangeResult { Outcome = EmailVerificationAddressChangeOutcome.InvalidEmail };
+        }
+
+        var now = timeProvider.GetUtcNow();
+        var guard = await GuardEmailChallengeAsync(challengeToken, now, cancellationToken);
+
+        if (guard.Outcome != SignInOutcome.Succeeded)
+        {
+            logger.LogInformation("Email verification address change refused: the challenge is no longer usable ({Outcome}).", guard.Outcome);
+            return new EmailVerificationAddressChangeResult { Outcome = EmailVerificationAddressChangeOutcome.InvalidChallenge };
+        }
+
+        var normalized = Normalizer.Normalize(email);
+
+        if (await credentials.IsTakenByAnotherAsync(guard.User!.Id, normalized, cancellationToken))
+            return new EmailVerificationAddressChangeResult { Outcome = EmailVerificationAddressChangeOutcome.Taken };
+
+        ToamaisutaaPasswordCredential credential;
+
+        try
+        {
+            // The old challenge names the old address, so the guard refuses it from here on.
+            credential = await credentials.UpdateAsync(
+                guard.Credential!,
+                current =>
+                {
+                    current.Email = email;
+                    current.NormalizedEmail = normalized;
+                    current.EmailConfirmedAt = null;
+                    current.UpdatedAt = now;
+                },
+                cancellationToken);
+        }
+        catch (PasswordIdentifierConflictException)
+        {
+            return new EmailVerificationAddressChangeResult { Outcome = EmailVerificationAddressChangeOutcome.Taken };
+        }
+
+        logger.LogInformation("User {UserId} moved their pending email verification to another address.", guard.User.Id);
+
+        return new EmailVerificationAddressChangeResult
+        {
+            Outcome = EmailVerificationAddressChangeOutcome.Changed,
+            Challenge = await emailVerification.IssueChallengeAsync(guard.User, credential, now, cancellationToken),
+        };
+    }
+
     /// <summary>Everything a challenge has to still be true about before its proof is worth checking.</summary>
     private async Task<EmailChallengeGuard> GuardEmailChallengeAsync(string challengeToken, DateTimeOffset now, CancellationToken cancellationToken)
     {

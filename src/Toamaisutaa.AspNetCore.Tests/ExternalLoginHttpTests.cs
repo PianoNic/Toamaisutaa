@@ -540,6 +540,21 @@ public class ExternalLoginHttpTests
         await Assert.That(stale.StatusCode).IsEqualTo(HttpStatusCode.BadRequest);
     }
 
+    [Test]
+    public async Task A_sign_up_needs_an_address_the_provider_verified_when_the_provider_requires_it()
+    {
+        var idp = new FakeIdentityProvider();
+        await using var app = await StartAsync(idp, settings => settings[$"ExternalLogin:Providers:{Provider}:RequireVerifiedEmailForSignUp"] = "true");
+
+        var unverified = await ReturnAsync(app, idp, new Person("alice-at-idp", "alice@idp.test", EmailVerified: false), NewVerifier());
+        var verified = await ReturnAsync(app, idp, new Person("bob-at-idp", "bob@idp.test", EmailVerified: true), NewVerifier());
+
+        await Assert.That(Query(unverified, "error")).IsEqualTo("email_not_verified");
+        await Assert.That(Query(unverified, "code")).IsNull();
+        await Assert.That(Query(verified, "error")).IsNull();
+        await Assert.That(Query(verified, "code")).IsNotNull();
+    }
+
     /// <summary>
     /// A local token from a provider sign-in carries no <c>auth_time</c>, so the session's start is the only sign-in
     /// time there is. Without it a passwordless account could never add a password or a second factor.

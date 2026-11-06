@@ -38,10 +38,12 @@ internal sealed class EmailVerificationCodeMethod(
         var cooldown = options.Value.MailRequestCooldown;
 
         // Read from the store rather than an in-memory cooldown, so every instance agrees and a sign-in
-        // inside it leaves the code already in the mailbox working.
+        // inside it leaves the code already in the mailbox working. Per address: a corrected address has
+        // had nothing yet, and the code that went to the mistyped one cannot confirm it.
         if (cooldown > TimeSpan.Zero
             && await codes.FindLatestAsync(request.User.Id, cancellationToken) is { } latest
-            && latest.CreatedAt + cooldown > now)
+            && latest.CreatedAt + cooldown > now
+            && string.Equals(latest.NormalizedEmail, Normalizer.Normalize(request.Email), StringComparison.Ordinal))
         {
             return EmailVerificationIssueResult.CoolingDown(latest.CreatedAt + cooldown - now);
         }

@@ -87,6 +87,17 @@ public sealed class ToamaisutaaExternalProviderOptions
     public bool AllowSignUp { get; set; }
 
     /// <summary>
+    /// Off by default. With <see cref="AllowSignUp"/> on, a new account is only created when the provider
+    /// says it verified the address (<c>email_verified</c> true); otherwise the sign-in comes back with
+    /// <c>error=email_not_verified</c>.
+    /// </summary>
+    /// <remarks>
+    /// An account an identity provider owns has no local address to confirm with a code, so the
+    /// provider's word is the only proof there is. Accounts already linked keep signing in.
+    /// </remarks>
+    public bool RequireVerifiedEmailForSignUp { get; set; }
+
+    /// <summary>
     /// Off by default. Whether a first sign-in whose address matches an existing account joins that
     /// account, provided the provider says it verified the address.
     /// </summary>

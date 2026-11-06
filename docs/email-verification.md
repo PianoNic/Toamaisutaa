@@ -171,6 +171,7 @@ Both anonymous, rate limited like `/auth/login`, and mapped only with the option
 |---|---|---|
 | POST | `/auth/email/verify-code` | 200 with a token pair, 200 with a two-factor challenge, 400, or 401 |
 | POST | `/auth/email/resend-code` | 204, 401, 429, or 502 |
+| POST | `/auth/email/change-address` | 200 with a new challenge, 400, 401, or 409 |
 
 ```json
 // POST /auth/email/verify-code
@@ -178,7 +179,15 @@ Both anonymous, rate limited like `/auth/login`, and mapped only with the option
 
 // POST /auth/email/resend-code
 { "challenge": "q2Vb3..." }
+
+// POST /auth/email/change-address - for someone who mistyped their address
+{ "challenge": "q2Vb3...", "newEmail": "ada@example.com" }
 ```
+
+`change-address` moves the account to the new address, still unverified, and mails the code there.
+It answers with a new challenge; the old one stops working, and so does the code that went to the
+mistyped address. 409 means another account already uses the address. The mail cooldown counts per
+address, so the corrected one gets its code straight away.
 
 | Answer | Body | Means |
 |---|---|---|
